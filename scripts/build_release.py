@@ -16,6 +16,33 @@ from install_support import ensure_uv
 from _version import __version__
 
 
+def public_source(root, destination):
+    """Build from tracked, non-ignored working files; never copy local packages."""
+    root, destination = Path(root).resolve(), Path(destination)
+    names = subprocess.check_output(['git', '-C', str(root), 'ls-files', '-z']).decode().split('\0')
+    names = [name for name in names if name]
+    ignored = subprocess.run(['git', '-C', str(root), 'check-ignore', '--no-index', '-z', '--stdin'],
+                             input=('\0'.join(names)+'\0').encode(), capture_output=True)
+    if ignored.returncode not in (0, 1):
+        raise RuntimeError('Cannot audit release source ignore rules')
+    excluded = set(ignored.stdout.decode().split('\0'))
+    destination.mkdir(parents=True)
+    for name in names:
+        if name in excluded:
+            continue
+        source = root / name
+        if source.is_symlink():
+            raise ValueError('Release source symlinks require review: ' + name)
+        if not source.is_file():
+            continue
+        target = destination / name
+        target.parent.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(source, target)
+    if not (destination / 'pyproject.toml').is_file():
+        raise ValueError('Tracked release source is incomplete')
+    return destination
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', required=True, help='Final HTTPS public base URL')
@@ -28,7 +55,8 @@ def main():
     if output.exists():
         parser.error('Output already exists; choose a fresh release directory')
     with tempfile.TemporaryDirectory(prefix='loop-wheel-') as directory:
-        subprocess.run([ensure_uv(), 'build', '--wheel', '--out-dir', directory, str(ROOT)], check=True)
+        source = public_source(ROOT, Path(directory) / 'source')
+        subprocess.run([ensure_uv(), 'build', '--wheel', '--out-dir', directory, str(source)], check=True)
         wheel, = Path(directory).glob('loop_ros-*.whl')
         expected = 'loop_ros-' + __version__ + '-py3-none-any.whl'
         if wheel.name != expected:
@@ -36,7 +64,7 @@ def main():
         with zipfile.ZipFile(wheel) as archive:
             for name in archive.namelist():
                 parts = Path(name).parts
-                if any(p in ('artifacts', '.loop', '.looper', '.venv', '__pycache__') for p in parts) or any(
+                if any(p in ('artifacts', '.loop', '.looper', '.venv', '__pycache__', 'candidates', 'user_skills', 'user_tools') for p in parts) or any(
                     p in name for p in ('credentials.json', 'config.local.json', '.sqlite', 'DEPLOYMENT.md')):
                     raise ValueError('Private/runtime file found in wheel: ' + name)
                 if not name.startswith(('loop_robot/', 'loop_ros-' + __version__ + '.dist-info/')):

@@ -19,7 +19,7 @@ def user_config_file(name):
 def validate_provider(provider):
     import re
     required = {"base_url", "model", "api_key_env", "timeout_s"}
-    if not isinstance(provider, dict) or not required <= set(provider) or set(provider) - required - {"token_field", "protocol", "vision_model"}:
+    if not isinstance(provider, dict) or not required <= set(provider) or set(provider) - required - {"token_field", "protocol", "vision_model", "context_window", "max_output_tokens", "compact_threshold", "stream_usage", "image_token_budget"}:
         raise ValueError("provider fields: base_url/model/api_key_env/timeout_s/token_field; do not store API keys")
     if "vision_model" in provider and (not isinstance(provider["vision_model"], str) or not provider["vision_model"].strip() or len(provider["vision_model"]) > 2048):
         raise ValueError("vision_model must be a nonempty model ID")
@@ -39,6 +39,16 @@ def validate_provider(provider):
         raise ValueError("invalid token field")
     if provider.get("protocol", "openai") not in ("openai", "openai-responses"):
         raise ValueError("Supported protocols: openai, openai-responses")
+    for field in ('context_window', 'max_output_tokens', 'image_token_budget'):
+        if field in provider and (type(provider[field]) is not int or provider[field] < 1):
+            raise ValueError(field + ' must be a positive integer')
+    if provider.get('context_window', 32768) <= provider.get('max_output_tokens', 4096) + 1024:
+        raise ValueError('context_window must leave at least 1024 tokens beyond output reserve')
+    threshold = provider.get('compact_threshold', .8)
+    if type(threshold) not in (int, float) or not .1 <= threshold <= .95:
+        raise ValueError('compact_threshold must be 0.1..0.95')
+    if 'stream_usage' in provider and type(provider['stream_usage']) is not bool:
+        raise ValueError('stream_usage must be boolean')
     return dict(provider)
 
 

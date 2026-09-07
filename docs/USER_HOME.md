@@ -87,3 +87,10 @@ Agent resource admission settings live in the `resources` section of `~/.loop/co
 Long-running local/SSH program profiles live in `~/.loop/processes/*.json` (or `LOOP_HOME/processes`). They contain argv, absolute local cwd, optional stop argv and environment variable names; never credentials. Copy profiles privately and recheck host paths and dependencies before starting them. Live process nodes are not migrated or resumed automatically. See [process nodes](PROCESS_NODES.md).
 
 Executable Skills use `skills/NAME/run.json` and `scripts/` alongside SKILL.md. `/skills save PROFILE NAME TITLE` exports an existing process profile for offline selection without replacing existing packages. Copy the whole package on migration and inspect external dependencies; see [OFFLINE_SKILLS](OFFLINE_SKILLS.md).
+
+
+## Publication boundary
+
+User-generated Skills (including run.json and scripts), portable user tools, and unreviewed general-tool candidates never enter this project's commit/push or release uploads. Keep user packages in ~/.loop/skills and ~/.loop/tools; local candidates remain under the ignored toolchain/candidates directory. Removing an already staged candidate from the index must preserve its local files. Review approval must be explicit before promoting a candidate into maintained source.
+
+The three maintained simulation templates under configs/skills are distribution defaults, not user-generated packages. Their SKILL.md paths are explicitly listed in package-data; new user packages or arbitrary companion scripts are not included by a wildcard. Root-level Python files use an explicit maintained-module allowlist in .gitignore because the repository root is also the Python package directory.

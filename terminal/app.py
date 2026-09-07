@@ -239,9 +239,9 @@ class App:
             pass  # Memory availability must not mask the operation's real outcome.
         self.session_task.receipt(name, args, result)
 
-    def enforce_node_permissions(self):
+    def enforce_node_permissions(self, close_viewer=True):
         permissions = self.permissions.snapshot()
-        if permissions['mode'] == 'plan' or any(permissions['rules'][name] == 'deny' for name in ('simulator_control', 'open_simulator')):
+        if close_viewer and (permissions['mode'] == 'plan' or any(permissions['rules'][name] == 'deny' for name in ('simulator_control', 'open_simulator'))):
             self.viewer.close()
         for node in self.nodes.status()['nodes']:
             if not node['process_alive']:
@@ -603,7 +603,10 @@ class App:
                 client.config = new
                 client.key = self.key_cache.get((new["base_url"], new["api_key_env"]))
             self.config["expert"] = self.client.config
+            self.agent.context_report = {}
             if clear_history:
+                self.agent.token_usage = {}
+                self.agent.history_message_limit = 32
                 self.agent.history.clear(); self.agent.turn_summaries.clear()
             return selected
 
@@ -771,6 +774,11 @@ class App:
                 with self.runtime.lock:
                     if any(r['state'] in ('running', 'queued') for r in self.runtime.records.values()):
                         raise ValueError('Wait for or cancel running subagents before changing model')
+                if self.client.config['model'] != tail.strip():
+                    self.client.config.pop('context_window', None)
+                self.agent.token_usage = {}
+                self.agent.context_report = {}
+                self.agent.history_message_limit = 32
                 self.config["llm"]["model"] = tail.strip()
                 self.client.config['model'] = tail.strip()
                 self.agent.history.clear(); self.agent.turn_summaries.clear()

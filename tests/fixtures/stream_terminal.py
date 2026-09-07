@@ -19,6 +19,17 @@ terminal = Terminal(app)
 
 
 def reply(text, *args):
+    if text == '配色':
+        app.workspace_root = Path(sys.argv[1]).parent
+        path = app.workspace_root / 'color_sample.py'
+        path.write_text('value = 1\n')
+        app.agent.on_event('tool', 'edit_file({"path":"color_sample.py","old_text":"value = 1","new_text":"value = 42"})')
+        receipt = app.tool('edit_file', {'path':'color_sample.py','old_text':'value = 1','new_text':'value = 42'})
+        app.agent.on_event('result', json.dumps(receipt))
+        for part in ('修改完成。\n```python\n', 'def greet():\n', '    # 中文注释\n', '    return "你好"\n', '```\n'):
+            app.agent.on_event('answer_delta', part)
+            time.sleep(.25)
+        return '修改完成。'
     if text == '你好':
         app.agent.on_event('reasoning_delta', '推理起点：' + '检查场景和任务约束。' * 25 + '推理终点。')
         app.agent.on_event('tool', 'web_search({"query":"机器人"})')

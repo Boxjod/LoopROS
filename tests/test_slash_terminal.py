@@ -43,6 +43,9 @@ class SlashTerminalTests(unittest.TestCase):
                 return '\n'.join(screen.display)
             try:
                 send(duration=.6)
+                self.assertIn('tasks 0', '\n'.join(screen.display))
+                self.assertIn('Tokens 0', '\n'.join(screen.display))
+                self.assertIn('Context ~', '\n'.join(screen.display))
                 send('/context',.3)
                 self.assertIn('stored messages', '\n'.join(screen.display))
                 send('/compact',.3)

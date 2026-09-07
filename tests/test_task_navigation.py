@@ -1,9 +1,21 @@
 import unittest
+import tempfile
+from pathlib import Path
 from unittest.mock import Mock
 from terminal.interactive import Terminal
 
 
 class TaskNavigationTests(unittest.TestCase):
+    def test_unfinished_count_is_scoped_and_includes_waiting(self):
+        from core.tasks import TaskStore
+        with tempfile.TemporaryDirectory() as folder:
+            store = TaskStore(Path(folder)/'tasks.sqlite')
+            for state in ('queued','running','waiting_input','retry_wait','succeeded','cancelled'):
+                task = store.submit({'goal':state,'session_id':'current'})
+                store.update(task['id'],state)
+            store.submit({'goal':'Other session','session_id':'other'})
+            self.assertEqual(store.unfinished_count('current'),4)
+            self.assertEqual(store.unfinished_count('empty'),0)
     def test_empty_task_alias_lists_without_submitting_or_starting_service(self):
         import json
         import tempfile

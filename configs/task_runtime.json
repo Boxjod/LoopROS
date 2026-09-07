@@ -5,6 +5,8 @@
   "retry_initial_s": 5,
   "retry_max_s": 300,
   "stalled_attempts": 3,
+  "max_attempts": 8,
+  "max_replans": 1,
   "worker_tools": [
     "run_sim",
     "simulator_status",
@@ -22,7 +24,22 @@
     "generate_scene",
     "compose_scene",
     "load_model",
-    "simulator_control"
+    "simulator_control",
+    "read_file",
+    "list_files",
+    "search_files",
+    "write_file",
+    "edit_file",
+    "python_check",
+    "run_python",
+    "skill_list",
+    "skill_read",
+    "node_profiles",
+    "node_start",
+    "node_status",
+    "node_logs",
+    "node_command",
+    "node_stop"
   ],
   "scheduled_tools": [
     "robot_docs",

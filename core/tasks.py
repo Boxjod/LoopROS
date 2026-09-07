@@ -2,6 +2,8 @@
 from contextlib import contextmanager
 import hashlib
 import json
+import os
+import tempfile
 from pathlib import Path
 import sqlite3
 import time
@@ -79,10 +81,31 @@ class TaskStore:
             db.execute('INSERT INTO events(task_id,kind,data,created) VALUES(?,?,?,?)',(identity,'submitted',json.dumps(spec,ensure_ascii=False),time.time()))
         return self.get(identity)
 
+    def define_checks(self, identity, checks):
+        validate_spec({'goal':'Acceptance proposal','checks':checks})
+        if not checks:
+            raise ValueError('Acceptance checks cannot be empty')
+        with self.db() as db:
+            db.execute('BEGIN IMMEDIATE')
+            row = db.execute('SELECT spec,state FROM tasks WHERE id=?',(identity,)).fetchone()
+            if not row:
+                raise ValueError('Unknown task ID')
+            spec = json.loads(row['spec'])
+            if spec.get('checks') or row['state'] in TERMINAL:
+                return False
+            spec['checks'] = checks
+            db.execute('UPDATE tasks SET spec=? WHERE id=?',(json.dumps(spec,ensure_ascii=False),identity))
+            db.execute('INSERT INTO events(task_id,kind,data,created) VALUES(?,?,?,?)',
+                       (identity,'checks_defined',json.dumps({'checks':checks},ensure_ascii=False),time.time()))
+        return True
+
     def get(self,identity):
         with self.db() as db: row=db.execute('SELECT * FROM tasks WHERE id=?',(identity,)).fetchone()
         if not row: raise ValueError('Unknown task ID')
-        result=dict(row);result['spec']=json.loads(result['spec']);result['feedback']=json.loads(result['feedback']);return result
+        result=dict(row);result['spec']=json.loads(result['spec']);result['feedback']=json.loads(result['feedback'])
+        report = self.path.parent/'task-reports'/f'{identity}.md'
+        if report.is_file(): result['report_path']=str(report)
+        return result
 
     def list(self,limit=100,session_id=None):
         query = 'SELECT id FROM tasks'
@@ -97,11 +120,54 @@ class TaskStore:
         with self.db() as db: ids=[r[0] for r in db.execute(query, args)]
         return [self.get(i) for i in ids]
 
+    def unfinished_count(self, session_id):
+        with self.db() as db:
+            return db.execute("SELECT COUNT(*) FROM tasks WHERE session_id=? AND state NOT IN ('succeeded','cancelled')",
+                              (session_id,)).fetchone()[0]
+
     def update(self,identity,state,feedback=None,delay=0,agent_id=None,attempt=None):
         with self.db() as db:
             db.execute('UPDATE tasks SET state=?,feedback=COALESCE(?,feedback),due=?,agent_id=?,attempt=COALESCE(?,attempt),updated=? WHERE id=? AND state NOT IN (\'succeeded\',\'cancelled\')',
                        (state,json.dumps(feedback,ensure_ascii=False) if feedback is not None else None,time.time()+delay,agent_id,attempt,time.time(),identity))
-        self.event(identity,'state',{'state':self.get(identity)['state'],'feedback':feedback})
+        current = self.get(identity)
+        report = None
+        if current['state'] in TERMINAL or current['state'].startswith('waiting_'):
+            try:
+                report = self.write_report(current)
+            except OSError as exc:
+                self.event(identity,'report_error',{'error':type(exc).__name__})
+        self.event(identity,'state',{'state':current['state'],'feedback':feedback, 'report_path':report})
+
+    def write_report(self, task):
+        """Deterministic receipt summary; never copy arbitrary prompts or tool output."""
+        directory = self.path.parent/'task-reports'
+        directory.mkdir(mode=0o700, parents=True, exist_ok=True)
+        target = directory/f"{task['id']}.md"
+        feedback = task['feedback']
+        review = feedback.get('review', {})
+        lines = [f"# Task {task['id']}", '', f"State: {task['state']}",
+                 f"Attempts: {task['attempt']}", f"Verdict: {review.get('verdict', 'inconclusive')}", '',
+                 'Acceptance evidence:', '']
+        for index, check in enumerate(review.get('checks', []), 1):
+            lines.append(f"- Check {index}: {'PASS' if check.get('passed') else 'NOT VERIFIED'}")
+        if not review.get('checks'): lines.append('- No verified acceptance receipts.')
+        reasons = {
+            'stalled': 'Replanning did not improve acceptance evidence. Automatic retries paused.',
+            'attempt_budget': 'Automatic attempt budget exhausted. Automatic retries paused.',
+        }
+        lines += ['', reasons.get(feedback.get('stop_reason'),
+                  'All configured checks passed.' if task['state']=='succeeded' else
+                  'Task is not complete. Inspect recorded feedback and unmet checks.'), '',
+                  f"Evidence: task ledger {self.path.name}, task ID {task['id']}.",
+                  'Use /tasks status with this ID for the goal, feedback and original receipts.',
+                  'Waiting tasks resume only after explicit resume; this report makes no model calls.', '']
+        fd, temporary = tempfile.mkstemp(prefix='.report-', dir=directory)
+        try:
+            with os.fdopen(fd, 'w') as stream: stream.write('\n'.join(lines))
+            os.replace(temporary, target)
+        finally:
+            if os.path.exists(temporary): os.unlink(temporary)
+        return str(target)
 
     def cancel(self,identity):
         self.get(identity);self.update(identity,'cancelled',{'reason':'User cancellation; executed effects are not rolled back'})
@@ -114,10 +180,11 @@ class TaskStore:
         if checks is not None:
             spec={**task['spec'],'checks':checks};validate_spec(spec)
             with self.db() as db: db.execute('UPDATE tasks SET spec=? WHERE id=?',(json.dumps(spec,ensure_ascii=False),identity))
-        feedback=None
+        feedback={k:v for k,v in task['feedback'].items() if k not in ('needs_replan','replans','fingerprint','unchanged_attempts','stop_reason')}
+        feedback['budget_start'] = task['attempt']
         if message is not None:
             if not isinstance(message,str) or not 1<=len(message)<=8000: raise ValueError('Resume message must contain 1..8000 characters')
-            feedback={**task['feedback'],'new_input':message}
+            feedback['new_input']=message
         self.update(identity,'queued',feedback);return self.get(identity)
 
     def meta(self,key,value=None):

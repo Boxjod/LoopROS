@@ -589,3 +589,72 @@ Export with `python3 scripts/build_website.py --output artifacts/website-bilingu
 验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_offline_skills test_offline_skill_terminal test_process_nodes test_process_terminal test_skills test_completion test_resource_foundation -q`，33项通过（11.419秒）。覆盖真实Bash、字面参数、哈希失效、路径逃逸、重复启动、无API调用、审批闭环、包删除后快照停止、中文输入输出PTY和原进程功能。Windows平台入口校验通过，Windows进程／批处理端到端未实测。新文档本地链接与 `git diff --check` 通过。
 
 使用与覆盖边界见 [OFFLINE_SKILLS](OFFLINE_SKILLS.md)。源码下次启动加载新命令；本轮未发布版本或重启Loop、机器人、模型服务。
+
+## 2026-09-07：website 可视化仿真工作台
+
+新增 `website/workbench.html`、`workbench.css`、`workbench.js` 与本地 `terminal/web_workbench.py`，入口 `loop web`。默认 `http://127.0.0.1:8768/workbench.html`，支持 `--state-dir`、`--port`、`--isaac-config`；启动网页服务本身不创建仿真。两个语言首页增加工作台链接，静态导出／发布白名单从 7 项扩为 12 项；本轮未执行公网发布。
+
+验证：
+
+- `MUJOCO_GL=egl PYTHONPATH=tests .venv/bin/python -m unittest test_web_workbench test_simulation_workbench -q`：13 tests passed。包含真实 HTTP、MuJoCo 几何与 PNG、plan、跨站和 Host 拦截、一次审批、文件路径限制、HDF5 下载；无执行器场景的零维 action HDF5 边界已修复并验证。HDF5 改为按帧分块并使用 LZF 压缩，避免默认自动分块给单帧图像分配大量未使用存储。
+- `node --test tests/website.test.cjs`：原双语安装交互 2 tests passed；新 JS 语法检查通过。
+- `.venv/bin/python tests/validate_website_workbench.py` 使用 Playwright + `/usr/bin/google-chrome`，启动隔离临时状态的本地服务，创建 10 个组成部件的房间，添加／移动 cube，创建相机并读取实际 PNG，设置任务、页面审批并下载 HDF5，检查 390px 手机无横向溢出。测试进程退出时回收自己的仿真服务。结果：[browser-result.json](../artifacts/website-workbench/browser-result.json)，[桌面](../artifacts/website-workbench/desktop.png)、[相机](../artifacts/website-workbench/camera.png)、[手机](../artifacts/website-workbench/mobile.png)。浏览器测试需额外安装 playwright；本机已在 .venv 安装，仅为开发验证。
+- `scripts/build_website.py --output /tmp/loop-web-export-visual` 导出成功，导出和发布白名单一致；不包含 example.html、Python API 或数据集。本地 wheel 构建用于检查新入口和静态资源，不作发布包。
+
+边界：此页面右侧为操作面板与回执记录，未接入 AI 聊天。MuJoCo 显示实际几何与姿态但不复制纹理；Isaac 为标注的包围盒布局，真实画面需相机快照。网页 Isaac 操作路径复用已验证工具桥，本轮浏览器端到端只使用 MuJoCo。静态公网页面只能预览及给出本地启动说明，不自动探测或控制本机仿真。预设依次执行，失败保留已完成状态且不自动重放。
+
+本轮验收结束后，隔离测试服务已停止；保留 `http://127.0.0.1:8768/workbench.html` 本地预览服务，使用正常用户 state directory 和已有权限规则，没有自动创建仿真或修改权限。
+
+
+### 2026-09-07：用户内容与未审核工具排除
+
+- 用户要求：用户产生的Skills、用户工具和未审核通用工具不作为本项目push或上传内容。已在AGENTS、USER_HOME与GITHUB_RELEASE明确，并补齐.gitignore。三个维护型仿真SKILL.md模板使用明确发行清单；用户生成包不进入configs默认值。
+- 对21个此前新加入暂存区的候选/设备脚本文件执行git rm --cached，全部保留本地文件。未改动其余已有暂存内容。根目录共21个临时Python脚本、scripts/inspect_jetson_ssh.py以及network_discovery候选整包均排除。工具名单保存在被忽略的本地 toolchain/candidates/README.md，不上传脚本内容。
+- 发行构建从Git已跟踪且未被忽略的工作文件生成临时源码副本，再构建wheel，防止根目录临时.py被打包；仍沿用标准库，无新增依赖。
+- 验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_public_source test_releases -q`，5项通过。实际源码副本289个文件，仅含三个维护模板，不含候选、用户目录或设备临时脚本；`git ls-files -ci --exclude-standard`为空。未运行设备脚本、构建新wheel或执行任何push/发布。既有历史发布内容本轮未远程审计或重写。
+
+
+### 2026-09-07：底部 Task 数量
+
+状态栏新增 `tasks N`，统计当前 Session 未完成持久任务，包含 waiting／retry／queued／running，排除 succeeded／cancelled 与其他 Session；与提示队列 queued 分开。启动、会话切换及既有每秒轮询刷新缓存，用 SQL COUNT 避免每帧加载任务详情。
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_task_navigation test_slash_terminal -q`，5 项通过（7.041 秒），包括统计范围／终态过滤及真实 PTY 底栏显示。`git diff --check` 通过；未启动后台任务或机器人。
+
+
+### 2026-09-07：network_discovery 审核通过
+
+- 用户明确批准 network_discovery。将源码提升为 toolchain/network_discovery.py，专项测试移至 tests/test_network_discovery.py，使用说明移至 docs/NETWORK_DISCOVERY.md，更新项目地图和本地待审清单。
+- 实现字节保持不变，SHA256 为 3047e877b8dd94b657f9e09315de2c37435b0422ab176758ef7a52e9efa6f930。`PYTHONPATH=tests .venv/bin/python -m unittest test_network_discovery -q`：3项通过，覆盖导入无命令、只读参数与环境字段、命令缺失/超时/非零退出。
+- 新正式源码、测试与说明加入暂存范围，并核对发行源码副本包含该模块；其余用户包与未审脚本继续排除。当前正式通用待审候选为0，设备专项临时脚本仍未获发布审核。模块尚未注册模型工具，本轮未运行网络采集、push或发布。
+
+## 2026-09-07：输入框粘贴与媒体折叠标签
+
+新增 `terminal/composer.py`，接入 Terminal 的 bracketed paste、退格、输入处理器、附件和 Session 草稿存储。多行粘贴保留全文，在输入框显示 `[Paste #N · 行数 lines]`；图片／视频分别显示 `[Image #N]`／`[Video #N]`。第一次退格选中、第二次退格删除整个标签；普通文本逐字符删除。删除媒体标签同步移除待发附件，不删除源文件。
+
+发送和排队使用展开文字，媒体携带对应编号说明；队列编辑、失败恢复、退出恢复保留数据关联。新增只在输入开头的粘贴块按普通内容处理，避免粘贴代码被识别为 slash 命令。历史保留展开文字，Ctrl-C 清空标签与附件；已提交的块和已清空内容不持续保留在内部标签表中。
+
+验证：`test_composer` 5 项；`test_interactive` 原 18 项；`test_session_resume`、原操作面板 PTY 及 `test_composer_render` 合计另外 7 项均通过。新增 `test_interactive.InteractionTests.test_folded_code_submission_and_failed_submission_restore` 单独通过，检查缩进／换行、粘贴 slash 不执行以及超长提交失败恢复。共 31 项相关检查。初次新增用例未初始化 fixture 的 aliases，修正测试初始化后该用例通过；不是产品执行失败。
+
+真实 PTY 使用 `tests/fixtures/stream_terminal.py` 的离线中文流式模型替身，覆盖流式期间粘贴 20 行、两次退格、多图编号与删除、100→40 列缩放、保存后真实进程重启恢复。[屏幕记录](../artifacts/composer-chips/pty-screens.json)。图片使用测试生成的小文件，不读取用户系统剪贴板、不调用外部模型、不启动仿真。普通手动多行输入和输入框下方 Actions 面板保留原行为。
+
+
+### 2026-09-07：后台自动调试、验收补全与 OpenPI 路径
+
+- 发行任务策略增加手动 Task 的文件检查、带备份编辑、Python 检查/哈希执行和 Node 工具。去除手动 worker 的 run_python/python_check 硬禁；定时/触发任务仍禁止这些执行与修改工具。仍检查既有 PermissionGate，不自动将 ask/deny 改成 allow。后台服务持续检查其拥有 Node 的权限，不关闭前台仿真窗口。
+- task_feedback 可提出缺失的 checks，格式和工具范围通过后持久化并以实际回执验收，不能覆盖已有条件。缺授权的验收反馈列出 missing_tools，避免相同失败重复提交任务。规则要求在授权范围持续修复、检查现存服务、防止重复客户端，运动必须关联新鲜关节反馈。
+- 验证：task_supervisor/settings/task_scope 共23项通过（6.875秒）；新增实际子进程自动修改与备份测试2项通过（1.834秒）。最终 task_supervisor + task_autonomy 共11项通过（8.103秒），包括第一轮实际 stdout=0失败，第二轮自动 edit_file 生成备份、语法检查、哈希执行 stdout=1 后成功；不能放宽已有验收，定时任务不能获得任意执行。另跑进程权限回收与自动调试回归。没有调用真实模型、SSH或机器人驱动。
+- 本机 ~/.loop/processes/openpi-policy.json 的旧路径修正为 /media/boxjod/File/LoopMaster/loopmaster_robot/openpi_pi05，确认 scripts/serve_rtc_policy.py 和 checkpoints/pi05_block2_lora/block2_lora_80k/14000 均存在；备份 ~/.loop/processes/backups/openpi-policy-1788781278828157487.json，均0600，配置解析通过。没有启动服务。
+- 实机安全尚未交付：未得到每关节力矩阈值/单位/标定与机器人本地停止接口，未实现或验证力矩超限自动停机。提示词规则不等于硬件保护，不能据本轮软件回归宣称机械臂可自主安全运动。现有运行监督器未重启，等待任务未自动恢复；下次监督器启动加载策略。检查了当前项目 STATE 与 ~/.loop 下的任务策略覆盖路径，本次未发现覆盖文件。
+
+### 2026-09-07：终端语义配色、Python高亮和修改摘要
+
+新增 terminal/colors.py 统一工具名／参数／状态／助手标记颜色；terminal/markdown.py 使用标准库 tokenize 为Python围栏代码上色，支持diff增删颜色和流式预览。文件修改回执提供实际增删行数，ToolDisplay与历史回放显示有界diff摘要，控制字符转为可见文本；原始日志保留数据。终端字体仍由用户终端设置。
+
+验证命令：`PYTHONPATH=tests .venv/bin/python -m unittest test_color_output test_color_terminal test_markdown_code test_session_display test_coding_agent test_session_render -q`，26项通过（38.984秒）。真实PTY展示不少于六种前景色，运行实际临时文件修改、Python流式中文输出并同时输入中文草稿；历史重绘、脚本控制字符、包裹代码和回执统计均检查。先前更广的test_terminal_render运行未出现渲染错误，当时唯一失败是旧历史测试按原始ANSI字符串检查角色前缀，已改为保留文字语义检查并单独验证加粗。定点 `git diff --check` 通过。未启动仿真、设备或付费模型请求。
+
+### 2026-09-07：会话Token统计与容量驱动自动压缩
+
+- `terminal/token_budget.py` 统一usage归一化、按编码请求预算、整组压缩和状态栏展示；Chat Completions读取finish_reason之后的usage尾包，Responses读取input/output usage。已完成响应在usage尾包超时/断连时保留正文并标记缺报，不重放请求。编码时不外发内部usage/流式标记。
+- profile增加可选窗口容量、输出预留、压缩阈值、图片预算和stream_usage；每次模型请求前读取当前配置。未知容量只显示未知并沿用本地整理，不能按猜测硬拦截现有工具定义。显式容量扣除输出预留后默认80%开始整理；当前输入/纠正、系统状态和最近工具组保留，仍超预算则明确返回减载提示。
+- 终端显示前台会话累计Token及最新上下文量，`~`估算、`?`未知、`+`缺报。usage、窗口偏好和预算报告随checkpoint保存与resume恢复；新会话独立统计。未汇总子Agent/后台Task与账户账单，未追溯老会话成本。`/compact`是确定性摘录，不额外调用模型，不保证无损语义记忆。
+- 初次集成发现未知容量的保守阈值会误挡较大的工具schema，并挤掉短历史；已改为按固定请求开销保留本地余量，增加回归。PTY发现压缩回执在窄行中拆开关键词，已将“Full session history preserved”放在回执开头。
+- 验证：`LOOP_TASK_AUTOSTART=0 PYTHONPATH=tests .venv/bin/python -m unittest test_token_budget test_context_window test_stream_completion test_session_resume test_providers test_settings test_control test_coding_agent test_slash_terminal -q` 61项通过；随后新增实际/估算显示和未知容量回归，`test_token_budget test_stream_completion test_model_connection test_setup test_slash_terminal` 31项通过（7.174秒）；最后增加尾包超时保护，`test_token_budget test_stream_completion` 14项通过。测试批次有重叠；真实PTY验证中文流式期间输入与状态栏，协议检查使用本地桩，没有付费模型、真机或仿真启动。窗口配置方式及能力边界见 [Session Memory](SESSION_MEMORY.md)。

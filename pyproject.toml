@@ -31,7 +31,7 @@ package-dir = {loop_robot = "."}
 include-package-data = false
 
 [tool.setuptools.package-data]
-loop_robot = ["configs/config.example.json", "configs/config.gpt6.example.json", "configs/workflow_harness.md", "configs/agents.json", "configs/task_runtime.json", "configs/skills/*/SKILL.md", "scripts/install_sim_skills.py", "examples/*.xml", "examples/*.urdf", "configs/mcp.simulation.example.json", "examples/deployments/*.json", "assets/logo.png"]
+loop_robot = ["configs/config.example.json", "configs/config.gpt6.example.json", "configs/workflow_harness.md", "configs/agents.json", "configs/task_runtime.json", "configs/skills/isaac-scene-builder/SKILL.md", "configs/skills/mujoco-scene-builder/SKILL.md", "configs/skills/simulation-learning-data/SKILL.md", "scripts/install_sim_skills.py", "examples/*.xml", "examples/*.urdf", "configs/mcp.simulation.example.json", "examples/deployments/*.json", "assets/logo.png", "website/index.html", "website/zh-CN.html", "website/install.html", "website/workbench.html", "website/*.css", "website/*.js", "website/*.png", "website/three.LICENSE.txt"]
 "loop_robot.toolchain" = ["hardware_targets.json"]
 
 [tool.setuptools.dynamic]

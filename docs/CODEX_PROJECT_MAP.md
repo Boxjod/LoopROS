@@ -2,15 +2,18 @@
 
 | 任务 | 权威文件／符号 | 验证 |
 | --- | --- | --- |
+| 用户Skills／未审工具禁止上传 | [.gitignore](../.gitignore)、[用户目录](USER_HOME.md)、[发行构建](../scripts/build_release.py) | test_public_source；git ls-files -ci --exclude-standard 应为空 |
 | Agent标题选择／消息回执／同伴结果／交互权限 | [运行时](../terminal/agents.py)、[补全](../terminal/completion.py)、[显示](../terminal/command_display.py)、[规范](AGENT_RUNTIME.md) | test_agent_terminal（真实PTY中文流式）、test_agent_interaction、test_agent_ipc、test_agents |
 | 无损压缩／上下文预算／Skill资源／Reader与监管线程 | [上下文视图](../terminal/context_window.py)、[Skills](../terminal/skills.py)、[Agent运行时](../terminal/agents.py)、[改进对照](research/agent-cli-capability-upgrade.md) | test_context_window、test_skills、test_agents、test_agent_ipc、test_slash_terminal、test_steering_render |
 | 厂商 CLI／harness 源码参考 | [调研与克隆记录](research/vendor-open-agent-cli.md)、[本地副本清单](../reference/Agentic/README.md) | Git origin、HEAD、工作区状态与对象完整性；未安装运行 |
 | 拖动缩放终端／极矮窗口草稿／中文面板越界 | [Terminal.display_budget](../terminal/interactive.py)、[规范](TERMINAL.md) | test_resize_render：真实 PTY 多行/队列/候选/流式缩放、光标编辑与宽字符边界 |
+| 终端语义配色／Python高亮／文件修改摘要 | [colors](../terminal/colors.py)、[markdown](../terminal/markdown.py)、[ToolDisplay](../terminal/tool_display.py)、[回执](../terminal/coding.py)、[规范](TERMINAL.md) | test_color_output＋test_color_terminal：真实文件diff、Python分块高亮、控制字符、中文并行输入PTY |
 | /resume 切换上方聊天／/new 空白显示 | [Terminal.redraw_session](../terminal/interactive.py)、[历史渲染](../terminal/session_display.py)、[约定](SESSION_MEMORY.md) | test_session_display＋test_session_render：PTY 双向切换、旧滚动记录清理、中文流式草稿及事件不重复 |
 | Fast 启动提示／服务商档位检测 | [检测说明](research/fast-mode.md)、[启动检查](../terminal/setup.py)、[客户端](../terminal/llm.py)、[欢迎页](../terminal/ui.py) | test_fast_startup＋test_setup_startup＋中文流式 PTY；真实服务商未测，持久化开关未接入 |
 | 源码卸载／旧副本命令清理／只读预览／用户数据保留 | [uninstall](../scripts/uninstall.py)、[说明](INSTALL.md#uninstall-a-source-installation) | test_uninstall：临时目录真实 CLI、重复卸载、命令归属、数据和链接目标保留 |
 | 中英文项目介绍／README Logo | [English](../README.md)、[简体中文](../README.zh-CN.md)、[README Logo](../assets/logo.png) | 本地链接与图片引用核对 |
 | 根目录分类／安装和资源路径 | [目录说明](../README.md#repository-layout)、[打包配置](../pyproject.toml)、[安装脚本](../scripts/install.py) | RUNBOOK 的目录整理验证记录 |
+| 累计Token／窗口容量／自动压缩与usage尾包 | [预算](../terminal/token_budget.py)、[模型循环](../terminal/llm.py)、[持久化](../terminal/session.py)、[说明](SESSION_MEMORY.md) | test_token_budget＋test_stream_completion＋test_slash_terminal：双协议计数、整组压缩、恢复、中文PTY |
 | Python脚本执行／stdout与退出码／执行权限 | [run_python](../terminal/python_runner.py)、[说明](PYTHON_EXECUTION.md) | test_python_runner：权限、哈希、真实输出、退出、取消、限时/限量；非沙箱 |
 | 飞特总线波特率/ID探测、STS3215状态与Host控制原语 | [feetech](../toolchain/feetech.py)、[终端工具](../terminal/feetech.py)、[说明](FEETECH.md) | test_feetech：真实pyserial/PTY、回显坏帧、未知型号、取消、去重、权限；真机待验收 |
 | 多载体清单／主机分配／实例绑定与请求去重 | [Deployment](../core/deployment.py)、[Carriers](../terminal/carriers.py)、[部署说明](DEPLOYMENTS.md) | test_carriers：双 MuJoCo、双 Host 隔离、旧实例拒绝、重复/丢回执、权限、目录外启动 |
@@ -62,7 +65,7 @@
 | Mink FK／IK | [MinkKinematics](../toolchain/kinematics.py) | 可选环境 test_mink_fk_ik |
 | ROS 只读观察 | [ros](../toolchain/ros.py) | 缓冲测试；ROS 通信未跑 |
 | RAM／VRAM 模型池 | [ModelPool](../toolchain/resources.py) | 预算／活动保护／异常测试 |
-| 本机网络信息／待审查通用工具 | [候选说明](../toolchain/candidates/network_discovery/README.md)、[实现](../toolchain/candidates/network_discovery/network_discovery.py) | `python -m unittest discover -s toolchain/candidates/network_discovery -q`；本机只读 ip JSON 回执 |
+| 本机网络信息／已审核通用模块 | [说明](NETWORK_DISCOVERY.md)、[实现](../toolchain/network_discovery.py)、[专项测试](../tests/test_network_discovery.py) | test_network_discovery：只读参数、环境字段、失败隔离、导入无执行；用户2026-09-07审核通过 |
 | 工具链接入方式与边界 | [TOOLCHAIN](TOOLCHAIN.md) | 对照测试记录 |
 | 读取机械臂／Linux、Windows COM、macOS串口／USB证据 | [SerialPort](../toolchain/serial_port.py)、[跨平台发现](../toolchain/serial_discovery.py)、[list_devices](../terminal/control.py)、[设备工具测试](../tests/test_device_inventory.py)、[硬件边界](HARDWARE.md) | test_device_inventory、test_serial、test_serial_discovery：真实Linux枚举/PTY，Windows/macOS替身；型号/电机数/轴数未确认时不猜测 |
 | 硬件适配范围 | [清单](../toolchain/hardware_targets.json)、[约定](HARDWARE.md) | JSON 解析；非硬件测试 |
@@ -91,3 +94,9 @@
 | MuJoCo／Isaac 工具桥、MCP、多相机、ACT 数据与 Gym | [工作台](SIMULATION_WORKBENCH.md)、[服务](../toolchain/simulation.py)、[工具与权限入口](../terminal/simulation.py)、[MCP](../terminal/sim_mcp.py)、[Isaac host](../toolchain/sim_isaac_host.py) | test_simulation_workbench；scripts/validate_simulation_workbench.py：真实双引擎、相机与 HDF5；训练效果未验证 |
 
 | 终端真实重排／三反引号代码块 | [交互渲染](../terminal/interactive.py)、[Markdown](../terminal/markdown.py)、[规范](TERMINAL.md) | test_resize_reflow.ResizeReflowTests（外置 xterm headless）、test_markdown_code、test_slash_terminal |
+
+| website 可视化仿真、相机快照、物体编辑与 HDF5 下载 | [工作台页面](../website/workbench.html)、[交互](../website/workbench.js)、[本地 HTTP 服务](../terminal/web_workbench.py)、[使用说明](../website/README.md) | test_web_workbench：真实 HTTP/MuJoCo/审批/跨站拦截；浏览器完整流程与移动布局；静态导出白名单 |
+
+| 多行粘贴／图片折叠标签、连续退格整体删除、草稿恢复 | [Composer](../terminal/composer.py)、[输入事件](../terminal/interactive.py)、[SessionStore](../terminal/session.py)、[交互规范](TERMINAL.md) | test_composer、test_interactive、test_composer_render：实际 PTY 中文流式、多图、缩放、重启与附件回执 |
+
+| 手动 Task 自动修复／缺失验收补全／文件备份 | [监督器](../terminal/task_supervisor.py)、[任务账本](../core/tasks.py)、[默认策略](../configs/task_runtime.json)、[任务规范](TASK_RUNTIME.md) | test_task_autonomy、test_task_supervisor；本地真实代码执行，未验证实机力矩停止 |

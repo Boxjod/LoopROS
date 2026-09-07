@@ -18,7 +18,8 @@ class SessionDisplayTests(unittest.TestCase):
         rendered = '\n'.join(history_lines(history))
         for text in ('❯ 看这张图片', '[media]', '✻ 检查记录', '\x1b[1m答复\x1b[22m',
                      'Tool › Web Search', 'Error: 执行失败', '1 search', '● 完成答复'):
-            self.assertIn(text, rendered)
+            import re
+            self.assertIn(text, rendered if '\x1b' in text else re.sub(r'\x1b\[[0-9;]*m','',rendered))
         for text in ('SECRET', 'HIDDEN_RAW', '\x1b[2J', '/details None', ' · 0.0s'):
             self.assertNotIn(text, rendered)
         self.assertEqual(history[-1]['content'], '完成答复')

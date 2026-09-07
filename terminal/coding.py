@@ -58,8 +58,12 @@ def atomic_text(app, path, content, expected=None, require_hash=False):
         finally:
             if os.path.exists(temporary): os.unlink(temporary)
         digest=hashlib.sha256(path.read_bytes()).hexdigest()
-        diff=''.join(difflib.unified_diff(old.splitlines(True),content.splitlines(True),fromfile=str(path),tofile=str(path)))
-        return {'path':str(path),'written':True,'sha256':digest,'previous_sha256':previous,'backup':str(backup) if backup else None,'diff':diff[:12000]}
+        before_lines, after_lines = old.splitlines(), content.splitlines()
+        diff='\n'.join(difflib.unified_diff(before_lines,after_lines,fromfile=str(path),tofile=str(path),lineterm=''))
+        changes=difflib.SequenceMatcher(a=before_lines,b=after_lines).get_opcodes()
+        added=sum(j2-j1 for op,i1,i2,j1,j2 in changes if op in ('insert','replace'))
+        removed=sum(i2-i1 for op,i1,i2,j1,j2 in changes if op in ('delete','replace'))
+        return {'path':str(path),'written':True,'sha256':digest,'previous_sha256':previous,'backup':str(backup) if backup else None,'diff':diff[:12000],'diff_truncated':len(diff)>12000,'lines_added':added,'lines_removed':removed}
 
 
 def tool(app,name,args):

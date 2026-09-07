@@ -39,7 +39,7 @@ class SessionStore:
         state['session_id'] = self.session_id
         return state
 
-    def save(self, config, history, queue, draft='', attachments=(), summaries=(), task=None):
+    def save(self, config, history, queue, draft='', attachments=(), summaries=(), task=None, composer=None, token_usage=None, context_report=None, history_message_limit=32):
         if self.provider is not None and self.provider != self.identity(config):
             self.new_session()
         self.provider = self.identity(config)
@@ -47,7 +47,8 @@ class SessionStore:
         from terminal.session_task import SessionTask
         task = SessionTask(task, identity=self.session_id, history=history).snapshot()
         data = {'task': task, 'session_id':self.session_id, 'summaries':list(summaries), 'provider': self.identity(config), 'history': history, 'queue': list(queue),
-                'draft': draft, 'attachments': list(attachments)}
+                'draft': draft, 'attachments': list(attachments), 'composer': composer, 'token_usage': dict(token_usage or {}),
+                'context_report': dict(context_report or {}), 'history_message_limit': history_message_limit}
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO checkpoint VALUES (1, ?)',
                             (json.dumps(data, ensure_ascii=False),))

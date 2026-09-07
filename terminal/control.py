@@ -13,7 +13,7 @@ CONTROL_COMMANDS = {
     "/tools": "List tools and permission rules",
     "/doctor": "Inspect Python and optional modules; no device connections",
     "/config": "[TARGET] Inspect settings; set TARGET JSON changes configuration without exposing keys",
-    "/context": "Show stored history, model window and character budgets",
+    "/context": "Show cumulative tokens, context capacity and compaction budget",
     "/history": "Show in-memory conversation history",
     "/compact": "Reduce the model window; preserve complete session history",
     "/robot": "Inspect the simulation body and joint limits",
@@ -83,7 +83,11 @@ def operator_command(app, command, tail):
                      "mode": app.permissions.snapshot()["mode"]})
     if command == "/context":
         from terminal.context_window import select
-        return dump(select(app.agent.history, app.agent.history_message_limit)[2])
+        return dump({**select(app.agent.history, app.agent.history_message_limit)[2],
+                     **getattr(app.agent, 'context_report', {}),
+                     'context_window': app.client.config.get('context_window'),
+                     'token_usage': getattr(app.agent, 'token_usage', {}),
+                     'usage_scope': 'current session, reported successful model requests; missing usage is not zero'})
     if command == "/history":
         history = []
         for message in app.agent.history:
@@ -95,11 +99,12 @@ def operator_command(app, command, tail):
     if command == "/compact":
         if tail.strip() not in ("", "reset"):
             raise ValueError("Usage: /compact [reset]")
+        app.agent.context_report = {}
         if tail.strip() == "reset":
             app.agent.history_message_limit = 32
-            return "Default model window restored. Full session history preserved."
+            return "Automatic model window restored for the next request. Full session history preserved."
         app.agent.history_message_limit = 8
-        return "Model window reduced to 8 messages plus bounded user excerpts. Full session history preserved; no model request made."
+        return "Full session history preserved. Next request uses up to 8 recent messages plus excerpts and turn records; no model request made."
     if command == "/robot":
         return dump({"body": "sim-arm", "backend": "mujoco", "joints": ["j1", "j2"],
                      "limits_rad": [[-1, 1], [-1, 1]], "real_control": False, "session_state": app.sim_body is not None})

@@ -1,6 +1,6 @@
 # Loop ROS release installation and updates
 
-The initial release number is **0.0.1**, from [_version.py](../_version.py). `pyproject.toml` reads that value dynamically; package and CLI version displays use the same source. Earlier 0.1.0/0.2.0 wheels were unpublished development candidates, not release history.
+The current source version is **0.0.2**, from [_version.py](../_version.py); the initial release number was **0.0.1**. `pyproject.toml` reads that value dynamically; package and CLI version displays use the same source. This source version bump does not establish a published release. Earlier 0.1.0/0.2.0 wheels were unpublished development candidates, not release history.
 
 Release base URL: `https://loopmaster.box2ai.com/LoopROS`, on the authorized server `8.134.90.171`. DNS, certificate dates and verified HTTPS access were checked on 2026-09-07. Publication and client validation receipts are recorded in [DEPLOYMENT](DEPLOYMENT.md); do not infer deployment solely from a local build.
 

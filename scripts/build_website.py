@@ -1,4 +1,4 @@
-"""Export only the public introduction page and its local assets."""
+"""Export the whitelisted public pages and local assets; no runtime data."""
 from pathlib import Path
 import argparse
 import re
@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
 from _version import __version__
 
-WEBSITE_FILES = ('index.html', 'zh-CN.html', 'install.html', 'style.css', 'site.js', 'favicon.png', 'logo.png')
+WEBSITE_FILES = ('index.html', 'zh-CN.html', 'install.html', 'style.css', 'site.js', 'favicon.png', 'logo.png', 'workbench.html', 'workbench.css', 'workbench.js', 'three.module.min.js', 'three.LICENSE.txt')
 
 
 def export_website(output, url, version=__version__):

@@ -90,3 +90,5 @@ loop-switch remove setup-配置ID
 `remove` 参数是列表中的配置 `name`，不是模型 ID；同一个模型可以有多个配置。当前选中的配置不能删除，先用 `/switch master 另一个配置名` 或 `loop-switch use master 另一个配置名` 切换。若使用了自定义状态目录，独立命令也要指定同一个 `--state-dir`。删除配置记录不会删除会话历史或共享的 endpoint 凭据。此操作由用户明确指定记录后执行。
 
 2026-09-07：配置向导自动探测覆盖预设与自定义 URL，完整展示模型列表。公司名称按 A–Z 分组（已识别系列归一到公司，其他使用接口 owned_by，未知在最后），组内按日期降序；优先 released_at/release_date/created，再尝试型号中的完整日期，无日期标 Unknown 并排在后面，同日期按 ID 排序。created 可能是目录创建时间，不保证是发布时间。编号全局连续，越界重新输入，0 取消，探测失败可手填。默认选中列表中的预设型号或首项，需用户确认输入后保存。此列表不代表 API 类型、工具或视觉能力已验证。
+
+2026-09-07：profile可保存 `context_window`、`max_output_tokens`、`compact_threshold`、`image_token_budget`、`stream_usage`，使用既有settings profiles入口编辑；高级编辑保留这些额外字段。改变模型ID时清除旧容量；完整profile切换读取目标容量。详见 [上下文预算](SESSION_MEMORY.md)。

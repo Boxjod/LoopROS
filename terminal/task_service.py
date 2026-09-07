@@ -108,6 +108,7 @@ def main():
         try:
             while not store.meta('stop_requested'):
                 poll_os_events()
+                app.enforce_node_permissions(close_viewer=False)
                 if app.permissions.snapshot()['mode']=='plan':
                     for agent in list(supervisor.running): supervisor.runtime.cancel(agent)
                     supervisor.poll(launch=False)

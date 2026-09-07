@@ -17,6 +17,12 @@ def worker(pipe,definition,config,key,task,schemas):
         pipe.send({'type':'tool','name':'task_feedback','arguments':{'state':'needs_input','reason':'Need motor model','next_step':'Provide motor model'}});pipe.recv()
         pipe.send({'type':'result','result':'Waiting'})
     elif data['goal']=='wait': time.sleep(30)
+    elif data['goal'] in ('define checks','weaken checks'):
+        expected = 0 if data['goal']=='weaken checks' else 1
+        pipe.send({'type':'tool','name':'task_feedback','arguments':{'state':'continue','reason':'Observed interface','next_step':'Verify measurement','checks':[{'tool':'observe','path':'value','equals':expected}]}});pipe.recv()
+        value = 1 if data.get('previous_feedback') and data['goal']=='define checks' else 0
+        pipe.send({'type':'tool','name':'observe','arguments':{'value':value}});pipe.recv()
+        pipe.send({'type':'result','result':'Measurement returned'})
     else:
         previous=data.get('previous_feedback',{})
         value=1 if previous and data['goal']=='improve' else 0
@@ -26,6 +32,17 @@ def worker(pipe,definition,config,key,task,schemas):
 
 
 class TaskSupervisorTests(unittest.TestCase):
+    def test_worker_defines_missing_checks_and_iterates_against_receipts(self):
+        identity = self.store.submit({'goal':'define checks'})['id']
+        first = self.until(identity,{'retry_wait'})
+        self.assertEqual(first['spec']['checks'],[{'tool':'observe','path':'value','equals':1}])
+        self.assertEqual(self.until(identity,{'succeeded'})['attempt'],2)
+
+    def test_worker_cannot_weaken_existing_checks(self):
+        identity = self.add('weaken checks')
+        result = self.until(identity,{'retry_wait'})
+        self.assertEqual(result['spec']['checks'][0]['equals'],1)
+        self.assertEqual(result['feedback']['review']['verdict'],'fail')
     def setUp(self):
         self.temp=tempfile.TemporaryDirectory();self.path=Path(self.temp.name)
         self.store=TaskStore(self.path/'tasks.sqlite')

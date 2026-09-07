@@ -40,8 +40,9 @@ class EpisodeWriter:
         self.shapes = shapes
         for key, arr in arrays.items():
             if key not in self.file:
-                ds = self.file.create_dataset(key, shape=(0,)+arr.shape, maxshape=(None,)+arr.shape,
-                                             chunks=True, dtype=arr.dtype)
+                ds = self.file.create_dataset(key, shape=(0,)+arr.shape, maxshape=(None,)+tuple(n if n else None for n in arr.shape),
+                                             chunks=(1,)+tuple(max(1,n) for n in arr.shape),
+                                             compression='lzf', dtype=arr.dtype)
             ds = self.file[key]
             ds.resize(self.count+1, axis=0); ds[self.count] = arr
         if self.count == 0:

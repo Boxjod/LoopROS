@@ -9,12 +9,12 @@ import subprocess
 import tarfile
 import uuid
 
-FILES = ('index.html', 'zh-CN.html', 'install.html', 'style.css', 'site.js', 'favicon.png', 'logo.png')
+FILES = ('index.html', 'zh-CN.html', 'install.html', 'style.css', 'site.js', 'favicon.png', 'logo.png', 'workbench.html', 'workbench.css', 'workbench.js', 'three.module.min.js', 'three.LICENSE.txt')
 REMOTE = r'''import fcntl, hashlib, json, os, shutil, sys
 from pathlib import Path
 stage, destination = map(Path, sys.argv[1:3])
 manifest = json.loads((stage/'website-manifest.json').read_text())
-files = ('index.html','zh-CN.html','install.html','style.css','site.js','favicon.png','logo.png')
+files = ('index.html','zh-CN.html','install.html','style.css','site.js','favicon.png','logo.png','workbench.html', 'workbench.css', 'workbench.js', 'three.module.min.js', 'three.LICENSE.txt')
 if set(manifest) != set(files): raise SystemExit('Unexpected website files')
 for name, digest in manifest.items():
     if hashlib.sha256((stage/name).read_bytes()).hexdigest()!=digest: raise SystemExit('Upload hash mismatch')

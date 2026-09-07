@@ -4,7 +4,7 @@ import time
 
 
 def shorten(value, limit=100):
-    text = ' '.join(str(value).split())
+    text = ' '.join(''.join(c if c.isprintable() or c.isspace() else '\ufffd' for c in str(value)).split())
     return text if len(text) <= limit else text[:limit - 1] + '…'
 
 
@@ -12,6 +12,7 @@ class ToolDisplay:
     def __init__(self):
         self.name = None
         self.started = None
+        self.preview = []
 
     def call(self, text):
         name, separator, payload = text.partition('(')
@@ -30,6 +31,7 @@ class ToolDisplay:
         return shorten(title) + '(' + shorten(json.dumps(args, ensure_ascii=False), 80) + ')'
 
     def result(self, text, event_id):
+        self.preview = []
         elapsed = f' · {time.monotonic() - self.started:.1f}s' if self.started is not None else ''
         name = self.name
         self.name = self.started = None
@@ -46,6 +48,14 @@ class ToolDisplay:
                                   and r.get('verdict') in ('fail', 'inconclusive')), None)
             if data.get('error'):
                 summary = 'Error: ' + shorten(data.get('message') or data['error'], 150)
+            elif data.get('written') is True and isinstance(data.get('diff'),str):
+                diff=data['diff'].splitlines()
+                added=data.get('lines_added',sum(line.startswith('+') and not line.startswith('+++') for line in diff))
+                removed=data.get('lines_removed',sum(line.startswith('-') and not line.startswith('---') for line in diff))
+                summary='Updated '+shorten(data.get('path','file'),90)+' · +'+str(added)+' −'+str(removed)+' lines'
+                visible=[line for line in diff if not line.startswith(('--- ','+++ '))]
+                self.preview=[''.join(c if c.isprintable() or c=='\t' else '\ufffd' for c in line[:180])+('…' if len(line)>180 else '') for line in visible[:10]]
+                if len(visible)>10 or data.get('diff_truncated'): self.preview.append('… more changes in /details'+(' '+str(event_id) if event_id is not None else ''))
             elif data.get('supported') is False:
                 summary = 'Unsupported: ' + shorten(data.get('reason', 'adapter unavailable'))
             elif name == 'devices':

@@ -101,6 +101,8 @@ MuJoCo窗口：`/viewer`打开最近场景（无场景自动生成默认桌面�
 
 ### Slash 命令补全
 
+底部状态栏的 `tasks N` 表示当前 Session 的未完成持久任务数（包含排队、运行、重试和等待），不含成功、取消或其他会话任务；`queued N` 仍表示待发送提示数量。任务数使用 SQL COUNT，在既有每秒任务轮询时刷新，绘制每帧不读取完整任务记录。
+
 三反引号代码块：回复和历史回放显示 `Code · 语言` 标记及独立背景，保留代码换行、缩进和字面 `**`；代码内不应用粗体转换。流式输出可跨片段识别围栏。仅渲染标准三反引号块，不提供点击执行、自动审批或机器人动作入口。验证：`test_markdown_code`、`test_slash_terminal`。
 
 2026-09-07 窗口缩放：一帧内的布局、输入框横线和底部提示使用同一个终端尺寸快照；横线右侧留一列空白，避免触及终端自动换行边界。连续改变宽度时仍保留中文草稿，缩放不清空会话历史或滚动缓冲。验证入口为 `tests/test_resize_terminal.py` 与 `tests/test_terminal_render.py`。
@@ -154,3 +156,25 @@ MuJoCo窗口：`/viewer`打开最近场景（无场景自动生成默认桌面�
 2026-09-07 多 Agent 操作：/agents [active|all] 使用任务标题、角色和稳定 @编号展示；Actions 面板刷新状态。/spawn、/send、/result、/agent-messages、/stop-agent 支持目标／角色补全，选择角色或消息收件人后保留输入框供填写正文。/agent-messages 显示实际投递阶段，完成结果明确“Agent返回不等于目标验收”。Agent命令在后台线程运行，允许前台执行中提交独立子Agent；读取、发送、取消仍走统一权限。详见 [Agent交互](AGENT_RUNTIME.md)。
 
 Offline executable Skills: `/skills` lists readable titles; `/skills run|inspect|status|logs|stop TITLE` selects a saved package without a model request, with title completion. `/skills save PROFILE NAME TITLE` exports a process profile. Use `loop node` when no chat API is configured; see [OFFLINE_SKILLS](OFFLINE_SKILLS.md).
+
+## 输入框折叠标签（2026-09-07）
+
+终端 bracketed paste 的多行文字／代码折叠为 `[Paste #1 · 20 lines]`，保持原换行和缩进；手动 Alt-Enter／Ctrl-J 换行仍正常展开编辑。图片附件在输入框中显示 `[Image #2]`，视频为 `[Video #3]`。标签按创建顺序编号，删除其他标签不改变剩余编号。标签是一个编辑单元，左右方向键跨越整个标签。
+
+光标紧邻标签右侧时，第一次 Backspace 高亮该标签，第二次 Backspace 删除整块；删除图片／视频标签也从待发送附件移除对应文件。两次之间移动光标或修改文字会取消选中。普通文字仍按字符退格。Ctrl-C 清空当前文字和附件；不删除源文件。
+
+发送／排队时展开完整文字，不发送内部占位字符；每份媒体在模型输入前附带同编号说明。队列取回会重新折叠多行内容，保留媒体编号；退出恢复保存草稿标签及附件关联。输入历史保留展开文字。粘贴代码位于输入开头时，不因代码以 slash 开头就自动执行命令。
+
+实现：[Composer](../terminal/composer.py)、[按键与提交](../terminal/interactive.py)、[会话草稿](../terminal/session.py)。PTY 验证包含中文流式并行粘贴、两次退格、多图标号、缩窄窗口与重启恢复；不会读取真实系统剪贴板，测试使用本地小图片附件。
+
+### 语义配色与修改预览
+
+终端配色由 `terminal/colors.py` 统一：工具名青色加粗、参数暖黄、成功绿、等待／不确定黄、错误红，助手标记紫色；正文保留可读前景色。使用终端自身字体，以加粗和颜色区分语义，不替用户更换字体。颜色仅用于展示，原始对话／工具回执仍保留原文。
+
+Python／py／python3 围栏代码使用标准库 tokenize 识别关键字、字符串、数字、注释、函数名和内置名称，采用常见编辑器配色；diff／patch 围栏增删行使用绿／红。流式不完整代码保留原文，无法识别部分回退普通代码样式，不执行代码。
+
+文件写入回执增加 lines_added、lines_removed 和 diff_truncated。终端显示修改路径与增删行数，展开最多10行diff，每行最多180字符，超出部分提示 `/details`；完整长度仍遵从原有回执限制。旧回执缺少统计时从已有diff估算。历史回放使用同一配色和有界预览；模型／文件携带的终端控制字符不能作为颜色命令执行。
+
+验证：test_color_output、test_color_terminal、test_markdown_code、test_session_display。真实PTY覆盖彩色Python、实际文件修改的diff、中文草稿并行输入及颜色可见性。
+
+2026-09-07：底部状态栏增加当前前台会话累计 `Tokens` 与 `Context` 用量/容量；`~` 为请求估算，`?` 为未知，`+` 表示累计存在缺报。`/context` 查看详细预算，`/compact` 的窗口偏好随会话恢复。统计范围、profile字段及自动压缩边界见 [Session Memory](SESSION_MEMORY.md)。

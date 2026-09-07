@@ -41,3 +41,5 @@
 - 独立 MuJoCo／Isaac 工作台和 MCP 共用 `terminal/simulation.py` 权限入口；Isaac SDK 仅在其 host 中加载，相机采集不推进物理时间。数据 complete 与任务 success 分开，ACT 控制语义按实例核对；见 [Simulation Workbench](docs/SIMULATION_WORKBENCH.md)。
 
 - 已复用的固定启动流程可保存为 `~/.loop/skills/NAME` 下的执行型 Skill（SKILL.md、run.json、scripts），通过 `/skills` 按标题离线选择；执行复用 process Node、权限与资源基础层。导出不推定历史验收，读Skill不执行，Bash／批处理退出不等于设备就绪；见 [离线 Skills](docs/OFFLINE_SKILLS.md)。
+
+- 用户产生的 Skills、可执行 Skill 包、用户工具及未审核通用工具不得进入本项目 commit/push 或发行上传；用户包留在 ~/.loop/skills、~/.loop/tools，本地候选留在被忽略的 toolchain/candidates。暂存区也必须排除，不能只依赖 .gitignore。发行仅保留显式列出的维护型默认模板；候选须用户明确审核通过后才可提升为正式源码。根目录临时设备/轨迹脚本默认本地保留，不上传。

@@ -12,11 +12,13 @@ from terminal.setup import quick_setup
 def edit_profile(store, name, editing=False):
     old = store.get(name) if editing else {"base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
         "model": "qwen-plus", "api_key_env": "DASHSCOPE_API_KEY", "timeout_s": 60, "token_field": "max_tokens"}
-    config = {}
+    config = dict(old)
     for field in ("base_url", "model", "api_key_env", "timeout_s", "token_field", "protocol"):
         default = old.get(field, "openai" if field == "protocol" else "max_tokens")
         value = input("{} [{}]: ".format(field, default)).strip() or str(default)
         config[field] = float(value) if field == "timeout_s" else value
+    if config['model'] != old['model']:
+        config.pop('context_window', None)
     store.save(name, config, replace=editing)
     print("Saved. Set the API key in the named environment variable; keys are not stored in the database.")
 

@@ -6,11 +6,14 @@ import time
 from core.tasks import assess, validate_spec
 from terminal.agents import AgentRuntime, ResourceBusy
 
-FEEDBACK_TOOL={'type':'function','function':{'name':'task_feedback','description':'报告本轮反馈和下一步；不能自行宣布验收成功。缺输入/外部条件时明确等待原因。','parameters':{'type':'object','properties':{'state':{'type':'string','enum':['continue','needs_input']},'reason':{'type':'string'},'next_step':{'type':'string'}},'required':['state','reason','next_step'],'additionalProperties':False}}}
+FEEDBACK_TOOL={'type':'function','function':{'name':'task_feedback','description':'报告本轮反馈和下一步；不能自行宣布验收成功。缺输入/外部条件时明确等待原因。','parameters':{'type':'object','properties':{'state':{'type':'string','enum':['continue','needs_input']},'reason':{'type':'string'},'next_step':{'type':'string'},'checks':{'type':'array','description':'Only propose missing acceptance checks derived from the user goal; never replace existing checks. Must use actual granted tool receipts.','items':{'type':'object'}}},'required':['state','reason','next_step'],'additionalProperties':False}}}
 PROMPT='''你是持久任务的执行子Agent。每轮依据原始目标、明确验收条件和上轮实际反馈修正方案。
 工具成功或文字完成不代表目标成功；只有监督器检查原始工具回执才能判定完成。绝不编造证据。
 先检查上次操作实际结果，不重复有不确定副作用的命令。没有满足全部验收条件就继续观察或换方法。
 工具范围由配置和权限限制；缺少输入/权限/外部条件通过task_feedback报告needs_input及缺失项；否则报告continue和具体下一步。
+没有初始验收条件时，先依据用户目标和实际接口通过 task_feedback.checks 提出可执行检查，不要仅因缺 checks 就退回用户；不能更改已有验收条件。无法从目标确定的安全参数才要求补充。
+普通代码调试在已有授权内使用文件工具检查、修改、语法检查和 run_python 验证；修改走带备份的 edit_file/write_file，执行前读取版本哈希。常驻服务使用 process Node，不用模型轮询保持进程；先检查已有服务再决定启动。
+机器人运动成功需要同一设备的新鲜关节位置变化与目标相关的反馈，不能用进程存在、端口开放、动作已排队或自行写入的 success 字段替代。力矩单位、阈值和本地停止能力必须有经验证配置；没有这些条件不得自动开启真实运动。力矩超限、反馈过期、停止失败或用户取消应停止后续动作，不作为可重试的普通软件错误。
 不能启动更多子Agent、改配置、改权限或自行扩任务范围。最终回答不是成功凭据。'''
 
 
@@ -19,14 +22,19 @@ def load_policy(path,allowed_tools):
     # Accept existing files without re-enabling removed implicit task creation.
     data.pop('auto_handoff', None)
     data.pop('success_profiles', None)
-    expected={'version','max_workers','attempt_timeout_s','retry_initial_s','retry_max_s','stalled_attempts','worker_tools','scheduled_tools','schedules','triggers'}
+    data.setdefault('max_attempts', 8)
+    data.setdefault('max_replans', 1)
+    expected={'max_attempts','max_replans','version','max_workers','attempt_timeout_s','retry_initial_s','retry_max_s','stalled_attempts','worker_tools','scheduled_tools','schedules','triggers'}
     if set(data)!=expected or data['version']!=1: raise ValueError('Invalid task_runtime.json schema')
-    for key,lo,hi in [('max_workers',1,108),('attempt_timeout_s',5,3600),('retry_initial_s',1,3600),('retry_max_s',1,86400),('stalled_attempts',1,20)]:
+    for key,lo,hi in [('max_workers',1,108),('attempt_timeout_s',5,3600),('retry_initial_s',1,3600),('retry_max_s',1,86400),('stalled_attempts',1,20),('max_attempts',1,100),('max_replans',0,10)]:
         if type(data[key]) is not int or not lo<=data[key]<=hi: raise ValueError('Invalid '+key)
     if data['retry_max_s']<data['retry_initial_s']: raise ValueError('retry_max_s must be >= retry_initial_s')
-    forbidden={'tool_read','tool_write','tool_run','python_check','session_task_read','session_task_update','settings_update','settings_read','task_submit','task_resume','task_signal','task_cancel','spawn_agent','send_agent','skill_write','policy_start','carrier_start','carrier_command','carrier_stop','feetech_scan','feetech_read','run_python'}
+    forbidden={'tool_read','tool_write','tool_run','session_task_read','session_task_update','settings_update','settings_read','task_submit','task_resume','task_signal','task_cancel','spawn_agent','send_agent','skill_write','policy_start','carrier_start','carrier_command','carrier_stop','feetech_scan','feetech_read'}
     for key in ('worker_tools','scheduled_tools'):
         if not isinstance(data[key],list) or len(data[key])!=len(set(data[key])) or not set(data[key])<=set(allowed_tools) or set(data[key]) & forbidden: raise ValueError('Invalid tool grants: '+key)
+    manual_only = {'run_python','python_check','write_file','edit_file','node_start','node_command','node_stop'}
+    if set(data['scheduled_tools']) & manual_only:
+        raise ValueError('Scheduled tasks cannot use manual execution tools')
     if not set(data['scheduled_tools'])<=set(data['worker_tools']): raise ValueError('Scheduled grants cannot exceed worker grants')
     for group in ('schedules','triggers'):
         if not isinstance(data[group],list) or len(data[group])>100: raise ValueError('At most 100 '+group)
@@ -58,8 +66,12 @@ class TaskSupervisor:
 
     def tool(self,name,args):
         if name=='task_feedback':
-            if set(args)!={'state','reason','next_step'} or args['state'] not in ('continue','needs_input') or any(not isinstance(args[k],str) or len(args[k])>2000 for k in ('reason','next_step')):
+            if set(args)-{'state','reason','next_step','checks'} or not {'state','reason','next_step'} <= set(args) or args['state'] not in ('continue','needs_input') or any(not isinstance(args[k],str) or len(args[k])>2000 for k in ('reason','next_step')):
                 raise ValueError('Invalid task feedback')
+            if 'checks' in args:
+                validate_spec({'goal':'Acceptance proposal','checks':args['checks']})
+                if not args['checks']:
+                    raise ValueError('Proposed checks cannot be empty')
             return {'worker_feedback':args}
         return self.dispatch(name,args)
 
@@ -98,9 +110,25 @@ class TaskSupervisor:
     def _finish(self,agent):
         identity=self.running.pop(agent);task=self.store.get(identity)
         result=self.runtime.result(agent);receipts=self.round_receipts.pop(agent)
+        if not task['spec'].get('checks') and task['spec'].get('origin') not in ('schedule','trigger'):
+            proposals = [r['result']['worker_feedback']['checks'] for r in receipts
+                         if isinstance(r['result'],dict) and isinstance(r['result'].get('worker_feedback'),dict)
+                         and r['result']['worker_feedback'].get('checks')]
+            if proposals:
+                checks = proposals[-1]
+                allowed = set(self.policy['worker_tools'])
+                if all(check['tool'] in allowed for check in checks):
+                    self.store.define_checks(identity, checks)
+                    task = self.store.get(identity)
+                else:
+                    self.store.event(identity,'check_proposal_rejected',{'reason':'Checks require ungranted tools'})
         review=assess(task['spec'].get('checks',[]),receipts)
         feedback={'review':review,'phase':'replan' if result['role']=='TaskReplanner' else 'execute','worker_state':result['state'],'worker_result':result['result'],
                   'receipts':receipts[-8:],'next_step':'Reobserve result and revise approach against unmet checks'}
+        previous = task['feedback']
+        for key in ('budget_start', 'replans', 'fingerprint', 'unchanged_attempts'):
+            if key in previous:
+                feedback[key] = previous[key]
         self.store.event(identity,'review',feedback)
         # A late result cannot complete a cancelled task, or a crashed/timed-out attempt.
         if task['state']=='cancelled': return
@@ -125,6 +153,7 @@ class TaskSupervisor:
         if result['role']=='TaskReplanner':
             feedback['next_step']='Execute a revised approach using the replanner analysis; verify all original checks again'
             feedback['previous_unmet_checks']=task['feedback'].get('review')
+            feedback['replans'] = previous.get('replans', 0) + 1
             self.store.update(identity,'retry_wait',feedback,delay=self.policy['retry_initial_s']);return
         if not task['spec'].get('checks'):
             feedback['next_step']='Supply explicit success checks; worker prose cannot establish success'
@@ -134,6 +163,9 @@ class TaskSupervisor:
         repeats=previous.get('unchanged_attempts',0)+1 if previous.get('fingerprint')==fingerprint else 1
         feedback.update(fingerprint=fingerprint,unchanged_attempts=repeats)
         if repeats>=self.policy['stalled_attempts']:
+            if feedback.get('replans', 0) >= self.policy.get('max_replans', 1):
+                feedback.update(stop_reason='stalled', next_step='Revised approach produced no new acceptance evidence; resume with new information or a corrected condition')
+                self.store.update(identity,'waiting_input',feedback);return
             feedback['next_step']='Same unmet checks repeated; delegate a new plan before more execution'
             feedback['needs_replan']=True
         delay=min(self.policy['retry_max_s'],self.policy['retry_initial_s']*2**min(task['attempt']-1,16))
@@ -153,11 +185,17 @@ class TaskSupervisor:
         for task in reversed(self.store.list(limit=None)):
             if len(self.running)>=self.policy['max_workers']: break
             if task['state'] not in ('queued','retry_wait') or task['due']>time.time(): continue
+            if task['attempt'] - task['feedback'].get('budget_start', 0) >= self.policy.get('max_attempts', 8):
+                self.store.update(task['id'],'waiting_input',{**task['feedback'], 'stop_reason':'attempt_budget',
+                                  'next_step':'Automatic attempt budget exhausted; inspect report and resume explicitly with a revised approach'})
+                continue
             if task['spec'].get('provider') not in (None,self.provider):
                 self.store.update(task['id'],'waiting_input',{'reason':'Provider/model differs from task binding; restart service with matching configuration'});continue
             role='TaskScheduled' if task['spec'].get('origin') in ('schedule','trigger') else 'TaskWorker'
-            if any(c['tool'] not in self.runtime.definitions[role]['tools'] for c in task['spec'].get('checks',[])):
-                self.store.update(task['id'],'waiting_input',{'reason':'Success check requires a tool not granted by task_runtime.json'});continue
+            missing = sorted({c['tool'] for c in task['spec'].get('checks',[]) if c['tool'] not in self.runtime.definitions[role]['tools']})
+            if missing:
+                self.store.update(task['id'],'waiting_input',{'reason':'Success check requires a tool not granted by task_runtime.json',
+                                  'missing_tools':missing, 'next_step':'Inspect the effective task policy and permissions; do not resubmit an identical blocked task'});continue
             if task['feedback'].get('needs_replan'): role='TaskReplanner'
             prompt=json.dumps({'task_id':task['id'],'goal':task['spec']['goal'],'success_checks':task['spec'].get('checks',[]),
                                'previous_feedback':task['feedback']},ensure_ascii=False)

@@ -1,6 +1,7 @@
 """Render saved model history without recording events or executing tools."""
 from terminal.markdown import BoldText
 from terminal.tool_display import ToolDisplay
+from terminal.colors import paint, tool_call, tool_result
 
 
 def safe_text(value):
@@ -22,14 +23,16 @@ def history_lines(history):
             if message.get('reasoning_content'):
                 yield '✻ ' + safe_text(message['reasoning_content'])
             if content:
-                yield '● ' + BoldText().ansi(content, final=True)
+                yield paint('● ','assistant') + BoldText().ansi(content, final=True)
             for call in message.get('tool_calls', []):
                 function = call.get('function', {})
                 display = ToolDisplay()
-                yield 'Tool › ' + safe_text(display.call(function.get('name', 'tool') +
-                                                        '(' + function.get('arguments', '{}') + ')'))
+                yield tool_call(safe_text(display.call(function.get('name', 'tool') +
+                                                        '(' + function.get('arguments', '{}') + ')')))
                 display.started = None  # Replaying history is not a timed execution.
                 calls[call.get('id')] = display
         elif role == 'tool':
             display = calls.pop(message.get('tool_call_id'), ToolDisplay())
-            yield '  ↳ ' + safe_text(display.result(content, None))
+            yield tool_result(safe_text(display.result(content, None)))
+            for line in display.preview:
+                yield paint('    '+safe_text(line),'added' if line.startswith('+') else 'removed' if line.startswith('-') else 'muted')

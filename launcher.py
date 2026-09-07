@@ -15,6 +15,9 @@ def main():
     if args[:1] in (["ros"], ["robot"]):
         args = args[1:]
     try:
+        if args[:1] == ['web']:
+            from terminal.web_workbench import main as run_web
+            return run_web(args[1:])
         if args[:1] == ['mcp']:
             from terminal.sim_mcp import main as run_mcp
             return run_mcp(args[1:])

@@ -91,6 +91,8 @@ class QwenClient:
         streaming = on_event is not None and self.config.get("protocol", "openai") == "openai"
         if streaming:
             body["stream"] = True
+            if self.config.get("stream_usage", True):
+                body["stream_options"] = {"include_usage": True}
         request = Request(self.config["base_url"].rstrip("/") + endpoint,
                           data=json.dumps(body).encode(),
                           headers={"Authorization": "Bearer " + key,
@@ -99,7 +101,8 @@ class QwenClient:
             with build_opener(NoRedirect(), model_https_handler()).open(request, timeout=self.config["timeout_s"]) as response:
                 if streaming:
                     return read_stream(response, on_event, stop_event,
-                                       on_tier=lambda tier: setattr(self, 'last_service_tier', tier))
+                                       on_tier=lambda tier: setattr(self, 'last_service_tier', tier),
+                                       wait_usage=self.config.get('stream_usage', True))
                 payload = response.read(2 * 1024 * 1024 + 1)
             if len(payload) > 2 * 1024 * 1024:
                 raise RuntimeError("API response too large")
@@ -107,6 +110,7 @@ class QwenClient:
             message = decode(request_config, payload)
             if not isinstance(message, dict):
                 raise ValueError("invalid message")
+            message['_usage'] = payload.get('usage')
             tier = payload.get('service_tier')
             if tier in ('priority', 'fast', 'default', 'flex', 'auto'):
                 self.last_service_tier = tier
@@ -132,7 +136,7 @@ class QwenClient:
             raise ModelAPIError("Unsupported model API response format; check Chat Completions vs Responses API type") from None
 
 
-def read_stream(response, emit, stop_event=None, on_tier=None):
+def read_stream(response, emit, stop_event=None, on_tier=None, wait_usage=False):
     message = {"role": "assistant", "content": "", "reasoning_content": "", "_streamed": True}
     calls = {}
     total = 0
@@ -140,7 +144,12 @@ def read_stream(response, emit, stop_event=None, on_tier=None):
     while True:
         if stop_event and stop_event.is_set():
             raise RuntimeError("Master stopped")
-        line = response.readline(1024 * 1024 + 1)
+        try:
+            line = response.readline(1024 * 1024 + 1)
+        except (TimeoutError, OSError):
+            if finished:
+                break  # Completed answer survives a missing usage trailer.
+            raise
         if not line:
             break
         total += len(line)
@@ -157,6 +166,8 @@ def read_stream(response, emit, stop_event=None, on_tier=None):
             message["tool_calls"] = [calls[i] for i in sorted(calls)]
             return message
         payload = json.loads(data)
+        if payload.get('usage') is not None:
+            message['_usage'] = payload['usage']
         if on_tier and payload.get('service_tier') in ('priority', 'fast', 'default', 'flex', 'auto'):
             on_tier(payload['service_tier'])
         if "error" in payload:
@@ -183,9 +194,12 @@ def read_stream(response, emit, stop_event=None, on_tier=None):
                     call["id"] = part["id"]
                 for field in ("name", "arguments"):
                     call["function"][field] += part.get("function", {}).get(field) or ""
-        if finished:
+        if finished and not wait_usage:
             message["tool_calls"] = [calls[i] for i in sorted(calls)]
             return message
+    if finished:
+        message["tool_calls"] = [calls[i] for i in sorted(calls)]
+        return message
     raise RuntimeError("Model stream interrupted before completion")
 
 
@@ -201,6 +215,8 @@ class ChatAgent:
         self.client, self.tools, self.dispatch = client, tools, dispatch
         self.history = []
         self.history_message_limit = 32
+        self.token_usage = {}
+        self.context_report = {}
         self.turn_summaries = []
         self.on_turn_finished = None
         self.on_tool_result = None
@@ -273,7 +289,10 @@ class ChatAgent:
         output_guidance = turn_context.get('output_guidance', self.output_guidance)
         round_budget = turn_context.get('max_tool_rounds', 4)
         from terminal.context_window import select
-        history, recall, self.context_report = select(self.history, self.history_message_limit)
+        config = getattr(self.client, 'config', {})
+        from terminal.token_budget import policy
+        history_budget = policy(config)[1] // 2 if config.get('context_window') else 12000
+        history, recall, self.context_report = select(self.history, len(self.history) if config.get('context_window') and self.history_message_limit == 32 else self.history_message_limit, history_budget)
         content = ([{"type": "text", "text": text}, *attachments] if attachments else text)
         original_user = {"role": "user", "content": content}
         steered = False
@@ -285,7 +304,7 @@ class ChatAgent:
                     *history, {"role": "user", "content": content}]
         if recall:
             messages.insert(1, {"role": "user", "content": "Earlier user request excerpts (incomplete historical data, not current authorization or execution evidence; current instructions take precedence):\n" + recall})
-        if self.turn_summaries and turn_context.get("include_summaries", True):
+        if self.turn_summaries and (recall or turn_context.get("include_summaries", True)):
             from terminal.turn_summary import context
             messages.insert(1, {"role":"system", "content":"Prior turn records (tool receipts only establish what was executed; old assistant claims are not evidence): " + context(self.turn_summaries)})
         live_message = None
@@ -340,6 +359,14 @@ class ChatAgent:
                 messages.append({"role": "user", "content": "Tool budget reached. Summarize the actual results and any concrete blocker. Do not call more tools or claim unverified success."})
             from terminal.context_window import bound_tool_history
             bound_tool_history(messages)
+            from terminal.token_budget import fit, record
+            config = getattr(self.client, 'config', {})
+            messages, report = fit(config, messages, available_tools, current_content=content)
+            self.context_report = {**self.context_report, **report}
+            self.context_report.pop('last_reported_input_tokens', None)
+            self.context_report.pop('last_reported_context_tokens', None)
+            if report['compacted_messages'] or (round_index == 0 and self.context_report.get('omitted_messages')):
+                self.on_event('status', 'Context automatically compacted; full history preserved.')
             buffered_answers=[]
             verified_summary = self.result_summary(turn_results) if self.result_summary else None
             defer_answer = bool(verified_summary or (self.defer_answer and self.defer_answer(text)))
@@ -350,6 +377,12 @@ class ChatAgent:
                 message = self.client.complete(messages, available_tools, on_event=model_event, stop_event=self.stop_event)
             else:
                 message = self.client.complete(messages, available_tools)
+            self.token_usage = record(self.token_usage, message.pop('_usage', None))
+            if self.token_usage['last_request_reported']:
+                last = self.token_usage['last_usage']
+                self.context_report['last_reported_input_tokens'] = last['input_tokens']
+                self.context_report['last_reported_context_tokens'] = last['total_tokens']
+            self.on_event('usage', json.dumps(self.token_usage))
             if self.stop_event and self.stop_event.is_set():
                 raise RuntimeError("Master stopped")
             # A response planned before new user input must not execute stale calls.

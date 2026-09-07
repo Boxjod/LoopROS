@@ -3,8 +3,8 @@
 
 def encode(config, messages, tools):
     if config.get("protocol", "openai") == "openai":
-        body = {"model": config["model"], "messages": messages,
-                config.get("token_field", "max_tokens"): 4096, "stream": False}
+        body = {"model": config["model"], "messages": [{k: v for k, v in m.items() if not k.startswith("_")} for m in messages],
+                config.get("token_field", "max_tokens"): config.get("max_output_tokens", 4096), "stream": False}
         if tools:
             body["tools"] = tools
         return "/chat/completions", body
@@ -22,7 +22,7 @@ def encode(config, messages, tools):
                            else {"type": "input_image", "image_url": part["image_url"]["url"]}
                            for part in content]
             items.append({"role": message["role"], "content": content})
-    body = {"model": config["model"], "input": items, "max_output_tokens": 4096,
+    body = {"model": config["model"], "input": items, "max_output_tokens": config.get("max_output_tokens", 4096),
             "stream": False, "store": False, "include": ["reasoning.encrypted_content"]}
     if tools:
         body["tools"] = [{"type": "function", **tool["function"], "strict": False} for tool in tools]

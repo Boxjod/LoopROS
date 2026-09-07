@@ -92,3 +92,7 @@ Isaac 技能索引注明部分 robotics-sim 内容来自 isaac-claw。公开库�
 新增参考 [Boxjod/RLBench_ACT](https://github.com/Boxjod/RLBench_ACT)：[数据采集器](https://github.com/Boxjod/RLBench_ACT/blob/master/RLBench/tools/dataset_generator_hdf5.py)、[ACT 数据读取](https://github.com/Boxjod/RLBench_ACT/blob/master/act/utils.py)。借鉴 task/variation、多相机 HDF5 和未来动作分块；Loop 使用明确的动作前观测／下发控制／动作后状态契约，不将下一帧关节位置无条件视为任意引擎的控制动作。当前是格式与工作流接入，不是完整 RLBench 任务库或预训练 ACT 模型兼容认证。
 
 Isaac 相机触发依据本机官方 `standalone_examples/replicator/scene_based_sdg/scene_based_sdg.py` 和 `object_based_sdg/object_based_sdg.py` 的 `rep.orchestrator.step(delta_time=0.0)`，已验证在暂停物理时间时输出实际图像。MCP 使用[官方 Python SDK](https://github.com/modelcontextprotocol/python-sdk) 的 stdio Server，并通过实际 ClientSession 握手测试；不复制社区任意 Python 执行桥或提供自审批工具。源代码参考目录未作修改。
+
+## Website 实施补充（2026-09-07）
+
+按用户后续明确请求，增加 website 可视化操作页；采用左侧场景树、中间三维布局、右侧构建／相机／数据操作面板。实际引擎通过同源本地 HTTP 服务使用原有仿真工具和权限，不把示例布局当作运行证据。当前未接入网页 AI 聊天或公网仿真服务。浏览器使用 [Three.js 官方 API](https://threejs.org/docs/) 与固定 [r160 作者源码](https://github.com/mrdoob/three.js/tree/r160)，MIT 许可证随本地浏览器模块打包，避免运行时 CDN 依赖。实现和验证见 [website README](../../website/README.md)、[RUNBOOK](../RUNBOOK.md)。

@@ -23,3 +23,35 @@ credentials.json
 .pytest_cache/
 /mjmodel.mjb
 reference/
+
+# User-authored packages and unreviewed tools stay local.
+/skills/
+/user_skills/
+/user_tools/
+/toolchain/candidates/
+
+# Root is also the Python package: only maintained modules may be staged.
+/*.py
+!/__init__.py
+!/__main__.py
+!/_version.py
+!/install_support.py
+!/launcher.py
+!/model_switch.py
+!/release_client.py
+!/release_runtime.py
+
+# Local device inspection script, not an approved distribution tool.
+/scripts/inspect_jetson_ssh.py
+
+# Only these maintained default Skill templates belong to the distribution.
+/configs/skills/*
+!/configs/skills/isaac-scene-builder/
+!/configs/skills/mujoco-scene-builder/
+!/configs/skills/simulation-learning-data/
+/configs/skills/isaac-scene-builder/*
+/configs/skills/mujoco-scene-builder/*
+/configs/skills/simulation-learning-data/*
+!/configs/skills/isaac-scene-builder/SKILL.md
+!/configs/skills/mujoco-scene-builder/SKILL.md
+!/configs/skills/simulation-learning-data/SKILL.md

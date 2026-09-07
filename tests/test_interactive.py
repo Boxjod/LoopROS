@@ -190,6 +190,28 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                         await task
                     app.close()
 
+    async def test_folded_code_submission_and_failed_submission_restore(self):
+        with tempfile.TemporaryDirectory() as d, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), Path(d))
+                terminal = Terminal(app)
+                terminal.paused = True
+                terminal.aliases = {}
+                try:
+                    source = '/mode real\n  print("保持缩进")\n'
+                    terminal.input.paste(source)
+                    await terminal.submit()
+                    self.assertEqual(terminal.queue[0][0], source)
+                    self.assertEqual(app.permissions.snapshot()['mode'], 'sim')
+                    terminal.input.paste('x' * 16001 + '\nend')
+                    label = terminal.input.display_text
+                    await terminal.submit()
+                    self.assertEqual(terminal.input.display_text, label)
+                    self.assertEqual(terminal.input.text, 'x' * 16001 + '\nend')
+                finally:
+                    terminal.store.close()
+                    app.close()
+
     async def test_up_retrieves_queued_message_with_attachments(self):
         with tempfile.TemporaryDirectory() as d, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
@@ -208,7 +230,10 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(list(terminal.queue), [('first', [])])
                     pipe.send_text('修改\r')
                     await asyncio.sleep(.25)
-                    self.assertEqual(list(terminal.queue), [('first', []), ('你好修改', files)])
+                    self.assertEqual(terminal.queue[0], ('first', []))
+                    self.assertEqual(terminal.queue[1][0], '你好修改')
+                    self.assertEqual(terminal.queue[1][1][0][1][0]['text'], '[Image #1]')
+                    self.assertEqual(terminal.queue[1][1][0][1][1:], files[0][1])
                     self.assertEqual(terminal.attachments, [])
                     terminal.command_busy = True
                     terminal.paused = False
@@ -252,7 +277,9 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                         await task
                     self.assertEqual(terminal.input.text, '解释视频')
                     await terminal.submit()
-                    self.assertEqual(terminal.queue[0], ('解释视频', [('clip.mp4', parts)]))
+                    self.assertEqual(terminal.queue[0][0], '解释视频')
+                    self.assertEqual(terminal.queue[0][1][0][1][0]['text'], '[Video #1]')
+                    self.assertEqual(terminal.queue[0][1][0][1][1:], parts)
                     self.assertEqual(terminal.attachments, [])
                 finally:
                     release.set()

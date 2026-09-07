@@ -10,6 +10,7 @@ from concurrent.futures import ThreadPoolExecutor
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import run_in_terminal, get_app_session
 from prompt_toolkit.key_binding import KeyBindings
+from prompt_toolkit.keys import Keys
 from prompt_toolkit.filters import Condition, to_filter
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.patch_stdout import patch_stdout
@@ -31,23 +32,14 @@ class CompactPrompt(DynamicContainer):
         container.write_to_screen(screen, mouse_handlers, write_position, parent_style, erase_bg, z_index)
 
 
-class Composer:
-    def __init__(self, buffer):
-        self.buffer = buffer
-
-    @property
-    def text(self):
-        return self.buffer.text
-
-    @text.setter
-    def text(self, value):
-        self.buffer.text = value
+from terminal.composer import Composer, ChipProcessor
 
 
 from terminal.media import attachment, dropped_paths, clipboard_image
 from terminal.ui import welcome
 from terminal.session import SessionStore
 from terminal.markdown import BoldText
+from terminal.colors import paint, tool_call, tool_result
 from terminal.completion import SlashCompleter
 from terminal.command_display import format_command_result
 
@@ -126,8 +118,8 @@ class Terminal:
         def edit_queue(event):
             text, files = self.queue.pop()
             self.attachments = list(files)
-            self.input.text = text
-            self.input.buffer.cursor_position = len(text)
+            self.input.restore(text)
+            self.input.buffer.cursor_position = len(self.input.buffer.text)
             self.checkpoint()
             self.ui.invalidate()
 
@@ -165,8 +157,8 @@ class Terminal:
 
         @kb.add('c-c')
         def cancel(event):
-            if self.input.text:
-                self.input.text = ''
+            if self.input.buffer.text or self.attachments:
+                self.input.clear()
             elif self.pending or (self.queue and not self.paused):
                 self.stop()
                 self.checkpoint()
@@ -200,6 +192,17 @@ class Terminal:
             self.panel_offset += max(1, getattr(self, 'panel_page_size', 1))
             self.ui.invalidate()
 
+        @kb.add(Keys.BracketedPaste)
+        def paste_text(event):
+            self.input.paste(event.data)
+
+        @kb.add('c-h')
+        @kb.add('backspace')
+        def erase_chip(event):
+            if not self.input.backspace():
+                event.current_buffer.delete_before_cursor()
+            event.app.invalidate()
+
         @kb.add('c-v')
         def paste_image(event):
             if not self.command_busy:
@@ -215,7 +218,7 @@ class Terminal:
             completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"], models=lambda: self.model_choices, agents=self.agent_choices, roles=lambda: list(self.app.runtime.definitions)),
             complete_while_typing=Condition(lambda: self.session.default_buffer.text.startswith('/')),
             reserve_space_for_menu=0, complete_style=CompleteStyle.COLUMN, mouse_support=False, erase_when_done=True,
-            style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold'}))
+            style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold', 'chip': 'bg:#273a44 #b9dce8', 'chip-selected': 'bg:#74b7cc #10212b bold'}))
         # PromptSession normally stretches its editable window to absorb spare
         # renderer height. Keep the composer next to the transcript; spare
         # terminal rows belong below it, never between output and input.
@@ -277,7 +280,8 @@ class Terminal:
         # Resolve a lone Esc promptly while retaining Alt-Enter key sequences.
         self.ui.ttimeoutlen = .1
         self.ui.timeoutlen = .3
-        self.input = Composer(self.session.default_buffer)
+        self.input = Composer(self.session.default_buffer, lambda: self.attachments)
+        self.session.input_processors = [ChipProcessor(self.input)]
         self.input.buffer.on_text_changed += self.schedule_completion_refresh
         self.input.buffer.on_cursor_position_changed += self.schedule_completion_refresh
         self.store = SessionStore(app.state_dir / 'conversation.sqlite')
@@ -288,14 +292,19 @@ class Terminal:
         app.session_task = SessionTask(saved.get('task'), identity=self.store.session_id, history=saved.get('history', []))
         app.agent.history = saved.get('history', app.agent.history)
         app.agent.turn_summaries = saved.get('summaries', [])
+        app.agent.token_usage = saved.get('token_usage', {})
+        app.agent.context_report = saved.get('context_report', {})
+        app.agent.history_message_limit = saved.get('history_message_limit', 32)
         self.queue.extend(saved.get('queue', []))
         self.attachments = saved.get('attachments', [])
-        self.draft = saved.get('draft', '')
+        self.input.restore(saved.get('draft', ''), saved.get('composer'))
+        self.draft = self.input.buffer.text
         self.paused = bool(self.queue)
         from core.tasks import TaskStore
         self.task_store=TaskStore(app.state_dir/'tasks.sqlite')
         self.task_cursor=self.task_store.meta('terminal_seen_event:' + app.session_id) or 0
         self.task_poll_at=0
+        self.task_count = self.task_store.unfinished_count(app.session_id)
 
     def agent_choices(self):
         # Do not leak task titles through completion when status reading is denied.
@@ -332,7 +341,7 @@ class Terminal:
         draft = self.input.text
         if draft.strip() in ('/exit', '/quit'):
             draft = ''
-        self.store.save(self.app.client.config, self.app.agent.history, self.queue, draft, self.attachments, self.app.agent.turn_summaries, self.app.session_task.snapshot())
+        self.store.save(self.app.client.config, self.app.agent.history, self.queue, draft, self.attachments, self.app.agent.turn_summaries, self.app.session_task.snapshot(), composer=self.input.snapshot(), token_usage=self.app.agent.token_usage, context_report=self.app.agent.context_report, history_message_limit=self.app.agent.history_message_limit)
         self.bind_task_scope()
 
     def bind_task_scope(self):
@@ -340,6 +349,7 @@ class Terminal:
             self.app.session_id = self.store.session_id
             self.task_cursor = self.task_store.meta('terminal_seen_event:' + self.app.session_id) or 0
             self.task_poll_at = 0
+            self.task_count = self.task_store.unfinished_count(self.app.session_id)
             self.selected_task = None
         with self.app.session_task.lock:
             self.app.session_task.data['session_id'] = self.app.session_id
@@ -370,7 +380,7 @@ class Terminal:
         columns, rows = max(1, size.columns), max(1, size.rows)
         top, bottom, hint = rows >= 3, rows >= 4, rows >= 2
         input_rows = sum(max(1, (get_cwidth(line.expandtabs(4)) + 2) // columns + 1)
-                         for line in self.input.text.split('\n'))
+                         for line in getattr(self.input, 'display_text', self.input.text).split('\n'))
         available = max(0, rows - top - bottom - hint - input_rows)
         stream = bool(self.stream_text) and available > 0
         available -= stream
@@ -379,8 +389,8 @@ class Terminal:
                 'panel': min(8, available - queue)}
 
     def status_text(self):
-        status = '{} | queued {} | attachments {}{}'.format(
-            'Working' if self.pending else 'Ready', len(self.queue), len(self.attachments),
+        status = '{} | tasks {} | queued {} | attachments {}{}'.format(
+            'Working' if self.pending else 'Ready', getattr(self, 'task_count', 0), len(self.queue), len(self.attachments),
             ' | queue paused: /queue resume' if self.paused else ' | Esc stop · Enter send/queue · Ctrl-V image')
         size = self.ui.output.get_size()
         columns = max(1, size.columns)
@@ -405,6 +415,8 @@ class Terminal:
             fragments.extend(self.panel_fragments(available))
         elif not self.input.text and not self.attachments:
             status = self.input_placeholder() + ' | ' + status
+        from terminal.token_budget import status as token_status
+        status = token_status(self.app.agent) + ' | ' + status
         fragments.append(('class:separator', self.clip_hint(status, columns)))
         return fragments
 
@@ -421,6 +433,9 @@ class Terminal:
         return result
 
     def append(self, kind, text):
+        if kind == 'usage':
+            self.ui.invalidate()
+            return
         # Terminal control sequences returned by a model are displayed as text.
         text = ''.join(c if c in '\n\t' or c.isprintable() else '\ufffd' for c in str(text))
         if kind == 'status':
@@ -433,9 +448,12 @@ class Terminal:
             # A streamed preamble before a tool call is not the final answer.
             self.streamed_answer = False
             if kind == 'tool':
-                self.write_line('Tool › ' + self.tool_display.call(text))
+                self.write_line(tool_call(self.tool_display.call(text)))
             else:
-                self.write_line('  ↳ ' + self.tool_display.result(text, event_id))
+                self.write_line(tool_result(self.tool_display.result(text, event_id)))
+                for line in self.tool_display.preview:
+                    role='added' if line.startswith('+') else 'removed' if line.startswith('-') else 'heading' if line.startswith('@@') else 'muted'
+                    self.write_line(paint('    '+line,role))
             if kind == 'result':
                 self.checkpoint()
             self.ui.invalidate()
@@ -471,6 +489,10 @@ class Terminal:
             suffix = ' (queued)' if kind == 'You (queued)' else ''
             if kind in ("Master", "Scheduled"):
                 text = BoldText().ansi(text, final=True)
+            if kind in ('Master','Scheduled'): prefix=paint(prefix,'assistant')
+            elif kind in ('Error','Failed'): prefix=paint(prefix,'error')
+            elif kind in ('Cancelled','Warning'): prefix=paint(prefix,'warning')
+            elif kind not in ('You','You (queued)'): prefix=paint(prefix,'heading')
             rendered = prefix + text + suffix
             if kind in ('You', 'You (queued)'):
                 # Reset each line so the background never leaks into replies or input.
@@ -486,7 +508,7 @@ class Terminal:
 
     def write_stream_line(self, text, line_end=False):
         rendered = self.markdown.ansi(text, line_end=line_end)
-        self.write_line(self.stream_prefix() + rendered if rendered else '')
+        self.write_line(paint(self.stream_prefix(),'muted' if self.stream_kind == 'reasoning_delta' else 'assistant') + rendered if rendered else '')
         if text:
             self.stream_started = True
 
@@ -641,7 +663,7 @@ class Terminal:
             preview = '…' + preview
         fragments = []
         if preview and layout['stream']:
-            fragments.append(('', self.stream_prefix()))
+            fragments.append(('#808080' if self.stream_kind == 'reasoning_delta' else '#af87ff bold', self.stream_prefix()))
             fragments.extend(self.markdown.preview(preview))
             fragments.append(('', '\n'))
         if layout['queue']:
@@ -687,6 +709,7 @@ class Terminal:
         if sum(len(str(parts)) for _, parts in self.attachments + additions) > 24 * 1024 * 1024:
             raise ValueError('Combined encoded attachment limit: 24 MiB')
         self.attachments.extend(additions)
+        self.input.ensure_images()
         self.append('Attached', ', '.join(p for p, _ in additions))
 
     async def run_prompt(self, callback):
@@ -705,6 +728,7 @@ class Terminal:
         except Exception as exc:
             self.append('Error', str(exc))
         finally:
+            self.input.ensure_images()
             self.command_busy = False
             self.ui.invalidate()
 
@@ -713,15 +737,21 @@ class Terminal:
             return
         self.command_busy = True
         original = self.input.text
-        text = original.strip()
-        first_word = text.split()[0] if text else ''
+        original_meta = self.input.snapshot()
+        prefix = self.input.buffer.text.lstrip()
+        while self.input.blocks.get(prefix[:1], {}).get('kind') == 'image':
+            prefix = prefix[1:].lstrip()
+        literal_paste = self.input.blocks.get(prefix[:1], {}).get('kind') == 'paste'
+        text = original if literal_paste else original.strip()
+        first_word = text.split()[0] if text and not literal_paste else ''
         # New keystrokes during asynchronous media conversion belong to the next
         # draft. Never reset that draft when this submission finishes.
-        self.input.buffer.reset(append_to_history=True)
+        submitted_files = self.input.numbered_files()
+        self.input.reset(history=True)
         try:
             if not text and not self.attachments:
                 return
-            if not text.startswith('/'):
+            if literal_paste or not text.startswith('/'):
                 self.action_panel = None
                 self.selected_task = None
             if text in ('/quit', '/exit'):
@@ -761,6 +791,9 @@ class Terminal:
                     goal = text[len('/new'):].strip()
                     if goal:
                         self.app.session_task.update({'goal': goal, 'state': 'active'})
+                    self.app.agent.token_usage={}
+                    self.app.agent.context_report={}
+                    self.app.agent.history_message_limit=32
                     self.app.agent.history=[]
                     self.app.agent.turn_summaries=[]
                     await self.redraw_session()
@@ -775,7 +808,7 @@ class Terminal:
                             lines.append('  '+display(row['last_summary'][0]))
                     self.show_panel('/resume', '\n'.join(lines))
                     self.input.text='/resume '
-                    self.input.buffer.cursor_position=len(self.input.text)
+                    self.input.buffer.cursor_position=len(self.input.buffer.text)
                     if self.ui.is_running:
                         self.input.buffer.start_completion(select_first=False)
                 elif parts[0]=='/history':
@@ -799,10 +832,13 @@ class Terminal:
                     self.app.session_task = SessionTask(data.get('task'), identity=self.store.session_id, history=data.get('history', []))
                     self.app.agent.history=data.get('history',[])
                     self.app.agent.turn_summaries=data.get('summaries',[])
+                    self.app.agent.token_usage=data.get('token_usage',{})
+                    self.app.agent.context_report=data.get('context_report',{})
+                    self.app.agent.history_message_limit=data.get('history_message_limit',32)
                     self.queue.extend(data.get('queue',[]))
                     self.attachments=data.get('attachments',[])
-                    self.input.text=data.get('draft','')
-                    self.input.buffer.cursor_position=len(self.input.text)
+                    self.input.restore(data.get('draft',''), data.get('composer'))
+                    self.input.buffer.cursor_position=len(self.input.buffer.text)
                     self.paused=bool(self.queue)
                     title=self.store.title(self.app.client.config)
                     await self.redraw_session()
@@ -828,7 +864,7 @@ class Terminal:
                 # Validate all before changing the composer; failed input is retained.
                 additions = [(p, await asyncio.to_thread(attachment, p)) for p in paths]
                 self.add_attachments(additions)
-            elif text.startswith('/') or text in self.aliases:
+            elif (not literal_paste and text.startswith('/')) or text in self.aliases:
                 command = self.aliases.get(text, text)
                 if self.pending and command.split()[0] not in ('/node', '/tasks', '/agents', '/spawn', '/send', '/result', '/agent-messages', '/stop-agent', '/help', '/stop', '/permissions', '/requests', '/mode', '/plan'):
                     raise ValueError('Wait for the active turn before using this command')
@@ -841,7 +877,7 @@ class Terminal:
                                              format_command_result('/agents', data)))
                     if not self.input.text:
                         self.input.text = command + ' '
-                        self.input.buffer.cursor_position = len(self.input.text)
+                        self.input.buffer.cursor_position = len(self.input.buffer.text)
                         if self.ui.is_running:
                             self.input.buffer.start_completion(select_first=False)
                     return
@@ -857,7 +893,7 @@ class Terminal:
                     self.show_panel('/model', 'Choose a model · company A–Z, newest catalog date first. Catalog listing does not verify tool support.' if self.model_choices else 'No models listed. Enter /model MODEL_ID manually.')
                     if not self.input.text:
                         self.input.text = '/model '
-                        self.input.buffer.cursor_position = len(self.input.text)
+                        self.input.buffer.cursor_position = len(self.input.buffer.text)
                         if self.ui.is_running:
                             self.input.buffer.start_completion(select_first=False)
                     return
@@ -878,13 +914,13 @@ class Terminal:
                     self.render_task_panel()
                 if command in ('/permissions', '/mode'):
                     self.input.text=command + ' '
-                    self.input.buffer.cursor_position=len(self.input.text)
+                    self.input.buffer.cursor_position=len(self.input.buffer.text)
                     if self.ui.is_running:
                         self.input.buffer.start_completion(select_first=False)
                 if command.split()[0] in ('/switch', '/key', '/expert-key'):
                     self.model_choices = []
                 if command in ('/help', '/shortcuts'):
-                    self.append('Editor', 'Type / to find commands · Tab/↑/↓ choose · Enter runs selected command · Esc dismisses · Arrows/Home/End edit · Enter send/queue · Alt-Enter newline · Ctrl-C clear/stop/exit · Esc stop · Ctrl-V or /paste clipboard image · drop media paths then Enter to attach · /attach PATH · /detach · /queue [clear|resume] · /resume [TITLE] · /history [TITLE] · /new · /details [ID] expands a tool result. Scroll using your terminal.')
+                    self.append('Editor', 'Type / to find commands · Tab/↑/↓ choose · Enter runs selected command · Esc dismisses · Arrows/Home/End edit · Enter send/queue · Alt-Enter newline · Ctrl-C clear/stop/exit · Esc stop · Backspace twice removes a paste/image chip · Ctrl-V or /paste clipboard image · drop media paths then Enter to attach · /attach PATH · /detach · /queue [clear|resume] · /resume [TITLE] · /history [TITLE] · /new · /details [ID] expands a tool result. Scroll using your terminal.')
             elif self.app.node_focus != 'master':
                 from terminal.nodes import focused_reply
                 focus = self.app.node_focus
@@ -893,18 +929,24 @@ class Terminal:
             else:
                 if len(text) > 16000 or len(self.queue) >= 20:
                     raise ValueError('Limit: 16000 characters per message, 20 queued messages')
-                auto_attached = self.attachments[:]
+                if len(self.attachments)>4:
+                    raise ValueError('Attach 1–4 files per message')
+                auto_attached = submitted_files
                 self.queue.append((text or 'Describe the attached media.', auto_attached))
                 self.attachments.clear()
                 self.continuations = 0
                 self.append('You (queued)' if self.pending or self.paused else 'You', text or '[media]')
+            self.input.prune()
             self.checkpoint()
         except Exception as exc:
-            current = self.input.text
-            self.input.text = original + ('\n' if original and current else '') + current
-            self.input.buffer.cursor_position = len(self.input.text)
+            current_meta = self.input.snapshot()
+            self.input.restore(original, original_meta)
+            if current_meta['raw']:
+                self.input.buffer.insert_text(('\n' if original else '') + current_meta['raw'])
+            self.input.buffer.cursor_position = len(self.input.buffer.text)
             self.append('Error', str(exc))
         finally:
+            self.input.ensure_images()
             self.command_busy = False
             self.ui.invalidate()
 
@@ -929,6 +971,7 @@ class Terminal:
         while True:
             self.poll_viewer()
             if time.monotonic()>=self.task_poll_at:
+                self.task_count = self.task_store.unfinished_count(self.app.session_id)
                 for feedback in self.task_store.notifications(self.task_cursor, session_id=self.app.session_id):
                     details=feedback.get('feedback') or {}
                     reason=details.get('reason') or details.get('review',{}).get('reason','')
@@ -1036,7 +1079,7 @@ class Terminal:
         self.app.agent.streaming = True
         def display_event(kind, text):
             self.append(kind, text)
-            if kind == 'Steering':
+            if kind in ('Steering', 'usage'):
                 self.checkpoint()
         self.app.agent.on_event = lambda kind, text: loop.call_soon_threadsafe(display_event, kind, text)
         self.app.agent.take_steering = lambda budget: asyncio.run_coroutine_threadsafe(self.take_queued_steering(budget), loop).result()

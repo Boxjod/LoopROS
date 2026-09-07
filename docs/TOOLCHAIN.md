@@ -88,11 +88,11 @@ ModelPool 本身是单线程协作式管理，无 OS 硬限制；预算是声明
 
 依赖版本见 [scripts/requirements-sim.txt](../scripts/requirements-sim.txt)，测试与命令见 [RUNBOOK](RUNBOOK.md)。没有真机操作、模型权重下载、训练、ROS 网络接入或上游全流程执行。
 
-## 待审查的通用工具
+## 通用工具与审核状态
 
 LeRobot 等第三方训练库的源码、独立环境与训练项目建议放在项目外，本项目只维护调用适配器；具体建议及尚未实现的边界见 [训练库布局](research/training-library-layout.md)。
 
-候选目录：[network_discovery](../toolchain/candidates/network_discovery/README.md)。由项目根脚本迁入，读取 Linux 本机网卡、路由、邻居缓存和 ROS 环境变量；独立目录包含源码、说明与测试，可单独上传审查。尚未注册为正式 Agent 工具，导入不执行采集；具体设备/网段脚本不纳入这一通用候选。使用与已验证边界见目录 README。
+已审核通用模块：[network_discovery](NETWORK_DISCOVERY.md)，源码位于 `toolchain/network_discovery.py`，2026-09-07 用户明确审核通过。读取 Linux 本机网卡、路由、邻居缓存和 ROS 环境变量；只含标准库，导入不执行。专项测试位于 `tests/test_network_discovery.py`，随现有 toolchain 包进入发行范围。当前未注册为模型工具；设备专项脚本仍禁止上传。
 
 ## 独立仿真与学习数据工作台
 
