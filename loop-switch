@@ -1,0 +1,14 @@
+#!/usr/bin/env python3
+"""Source checkout model configuration entry."""
+import os
+from pathlib import Path
+import sys
+
+root = Path(__file__).resolve().parent
+python = root / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
+if python.exists() and Path(sys.prefix) != root / ".venv":
+    os.execv(str(python), [str(python), str(root / "loop-switch"), *sys.argv[1:]])
+from model_switch import main
+
+if __name__ == "__main__":
+    raise SystemExit(main())

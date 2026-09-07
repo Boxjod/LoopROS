@@ -1,0 +1,19 @@
+<mujoco model="loop_ros_two_joint">
+  <option timestep="0.002" gravity="0 0 0" integrator="implicitfast"/>
+  <worldbody>
+    <body name="link1">
+      <joint name="j1" type="hinge" axis="0 0 1" range="-1 1" limited="true"/>
+      <geom type="capsule" fromto="0 0 0 0.2 0 0" size="0.02" mass="0.2"/>
+      <body name="link2" pos="0.2 0 0">
+        <joint name="j2" type="hinge" axis="0 0 1" range="-1 1" limited="true"/>
+        <geom type="capsule" fromto="0 0 0 0.2 0 0" size="0.02" mass="0.2"/>
+        <site name="tip" pos="0.2 0 0"/>
+      </body>
+    </body>
+  </worldbody>
+  <compiler angle="radian"/>
+  <actuator>
+    <position name="a1" joint="j1" kp="20" kv="2" ctrlrange="-1 1"/>
+    <position name="a2" joint="j2" kp="20" kv="2" ctrlrange="-1 1"/>
+  </actuator>
+</mujoco>

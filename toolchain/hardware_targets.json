@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "status": "planned_not_drivers",
+  "families": [
+    {"name": "hiwonder", "label": "幻尔", "model": null},
+    {"name": "feetech", "label": "飞特", "model": null},
+    {"name": "dynamixel", "label": "ROBOTIS DYNAMIXEL", "model": null},
+    {"name": "ubtech", "label": "优必选", "model": null},
+    {"name": "damiao", "label": "达妙", "model": null},
+    {"name": "robstride", "label": "灵足", "model": null},
+    {"name": "unitree", "label": "宇树", "model": null},
+    {"name": "dc_driver", "label": "直流电机驱动板", "model": null},
+    {"name": "bldc_driver", "label": "无刷电机驱动板", "model": null}
+  ],
+  "required_before_activation": [
+    "model", "firmware", "protocol", "electrical_interface", "feedback_semantics",
+    "joint_mapping", "calibration", "limits", "watchdog", "validated_stop_behavior"
+  ]
+}

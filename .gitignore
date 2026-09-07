@@ -1,0 +1,20 @@
+__pycache__/
+*.pyc
+artifacts/
+.venv/
+MUJOCO_LOG.TXT
+config.local.json
+.env
+build/
+dist/
+*.egg-info/
+
+# Local state and release preparation inputs
+.env.*
+!.env.example
+.loop/
+*.sqlite
+*.sqlite-*
+credentials.json
+*.pem
+*.key

@@ -1,0 +1,10 @@
+{
+  "version": 1,
+  "deployment_id": "robot-lab",
+  "hosts": ["bench-a", "bench-b"],
+  "carriers": [
+    {"id": "arm-left", "host": "bench-a", "label": "Left simulated arm", "adapter": "sim_arm", "config": {}},
+    {"id": "arm-right", "host": "bench-a", "label": "Right simulated arm", "adapter": "sim_arm", "config": {}},
+    {"id": "arm-remote", "host": "bench-b", "label": "Second host simulated arm", "adapter": "sim_arm", "config": {}}
+  ]
+}

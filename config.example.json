@@ -1,0 +1,22 @@
+{
+  "llm": {
+    "base_url": "https://dashscope.aliyuncs.com/compatible-mode/v1",
+    "model": "qwen-plus",
+    "api_key_env": "DASHSCOPE_API_KEY",
+    "timeout_s": 60
+  },
+  "expert": {},
+  "scene": {
+    "backend": "mujoco"
+  },
+  "services": {
+    "pi05": {
+      "argv": [],
+      "cwd": null
+    },
+    "act": {
+      "argv": [],
+      "cwd": null
+    }
+  }
+}

@@ -1,0 +1,74 @@
+# Loop Switch：轻量模型切换器
+
+默认入口现为 URL＋隐藏 Key 简化向导；旧菜单使用 `loop-switch --advanced`。无 Key 启动 loop 会自动打开同一向导，见 [QUICK_SETUP](QUICK_SETUP.md)。
+
+2026-09-05。参考 [CC Switch](https://github.com/farion1231/cc-switch) 的提供商配置管理与选择模式，实现项目内的小型终端程序，不复制其桌面端、多应用接管、代理或 OAuth 功能。
+
+## 独立程序
+
+在 LoopROS 项目目录执行：
+
+```bash
+./loop-switch
+```
+
+编号菜单支持列表、新增、编辑、切换当前模型、删除非活动配置。仅依赖 Python 标准库，无需启动模型或安装 GUI。
+
+也支持命令模式：
+
+```bash
+./loop-switch list
+./loop-switch add my-provider
+./loop-switch edit my-provider
+./loop-switch pick master
+./loop-switch use master my-provider
+./loop-switch use expert default-expert
+./loop-switch remove my-provider
+```
+
+add/edit 会逐项询问 base_url、model、api_key_env、timeout_s、token_field；回车采用显示的默认值。api_key_env 填环境变量名，**不是 Key 原值**。目前模型列表来自已保存配置，不自动从提供商发现模型。
+
+可明确发起单次连接测试：
+
+```bash
+./loop-switch check my-provider
+```
+
+check 使用指定环境变量发送简短请求，可能计费；切换、列表和启动菜单本身不请求 API。测试返回有效消息不等于工具调用、视觉或场景能力已验证。该命令不读取另一运行终端中隐藏输入的 Key。
+
+## Master 终端内切换
+
+```text
+/switch
+/switch expert
+/switch list
+/switch master my-provider
+/switch expert default-expert
+/switch reload
+```
+
+无配置名时显示编号选择器；显式名称可脚本化。选中后持久化并更新运行时客户端，清空 Master 对话上下文。Master 忙碌期间不允许切换，任何子 Agent 仍运行时也拒绝切换，不把同一任务中途改到另一模型。
+
+独立程序修改选择后，已运行终端不会悄悄热切换；待任务结束使用 `/switch reload`，或重启终端。本版没有后台文件监控。
+
+`/model 新模型名` 保留为仅当前会话的快速改名，不持久化、也不改变提供商地址。需要可复用配置时使用 switch。所有角色和复杂任务使用同一当前模型；旧 master/expert 槽位名是兼容别名；现有角色的工具授权不受切换影响。
+
+## 配置与凭据规范
+
+配置存于 `artifacts/terminal/providers.sqlite`；可用 `--state-dir` 指定其他位置。两个程序需使用同一个 state-dir 才共享选择。SQLite 事务保存变更，正在使用的配置不可删除。删除非活动配置不会删除模型、API账号或权重；没有内置撤销，需重新添加。
+
+首次初始化从原有配置导入 default-master（默认Qwen）和 default-expert（默认GPT-6 Astra），保留原来的服务管理配置。之后 providers.sqlite 是 API 提供商及选择的权威来源，优先于 config.local.json／--config 的 llm/expert 字段；这些文件仍负责首次种子配置与其他模块配置。不会覆盖已存在的配置档案。
+
+Key 来源优先级为会话隐藏输入、环境变量、用户显式保存的凭据；数据库和列表不保存／回显 Key。`/key save`、`/expert-key save` 支持 endpoint＋变量名绑定的本地明文保存，独立 check 也可读取。会话缓存退出即丢失；不支持系统钥匙串或加密持久化。见 [USER_HOME](USER_HOME.md)。
+
+配置协议限定已有的 OpenAI-compatible Chat Completions；不是声明任意 Claude／Gemini 原生 API 都兼容。base_url 须含主机名，无用户名、密码、query、fragment；远程仅 HTTPS，HTTP 仅允许 loopback。token_field 可选 max_tokens／max_completion_tokens，按后端要求填写。现有模型能力和账号权限仍需实际验证。
+
+不修改 `~/.codex`、`~/.claude` 或旧 LoopMaster 仓库，不安装反向代理、不接管 OAuth。该程序切换的是 API 服务／模型配置，不是 pi0.5／ACT 权重和 GPU 驻留；后者仍由 /policy 与资源工具链负责。
+
+## 验证
+
+45项完整环境测试通过，新增配置持久化、重复名称、独立槽位、活动删除保护、非法凭据URL、编号选择、上下文清空、Key跨地址隔离及活动子任务阻断测试；独立 list 与终端 /switch list 均已运行。未执行真实付费API检查。project-maintenance 同步项目入口、规范与运行地图。
+
+2026-09-05：取消模型能力分级。旧数据库以 master 当前选择为准合并活动槽位，保留原配置供手动选择；通过任一旧槽位切换均更新统一选择。会话 Key 共用同一客户端，切换地址仍隔离凭据。
+
+交互菜单显示：`/switch` 先输出带编号的配置名称、模型、地址与当前选择，再提示输入编号；空 Enter 取消。终端临时接管菜单时绕过异步 stdout 缓冲，确保选项在等待 `input()` 前可见，返回后恢复原输入编辑器。`/switch setup` 与 `/key` 共用这条交互命令输出路径。

@@ -1,0 +1,72 @@
+{
+  "version": 1,
+  "max_workers": 2,
+  "attempt_timeout_s": 180,
+  "retry_initial_s": 5,
+  "retry_max_s": 300,
+  "stalled_attempts": 3,
+  "worker_tools": [
+    "run_sim",
+    "simulator_status",
+    "model_library",
+    "mujoco_docs",
+    "robot_docs",
+    "robot_toolchains",
+    "robot_diagnose",
+    "motor_torque",
+    "pid_trial",
+    "robot_model_analysis",
+    "web_search",
+    "web_fetch",
+    "devices",
+    "generate_scene",
+    "compose_scene",
+    "load_model",
+    "simulator_control"
+  ],
+  "scheduled_tools": [
+    "robot_docs",
+    "robot_toolchains",
+    "robot_diagnose",
+    "motor_torque",
+    "mujoco_docs",
+    "web_search",
+    "web_fetch",
+    "devices",
+    "simulator_status"
+  ],
+  "schedules": [
+    {
+      "name": "toolchain_inventory_example",
+      "enabled": false,
+      "every_s": 3600,
+      "task": {
+        "goal": "只读核对本地机器人工具链，不连接设备或打开仿真窗口",
+        "checks": [
+          {
+            "tool": "robot_toolchains",
+            "path": "integration.motor_write_drivers",
+            "equals": "not_implemented"
+          }
+        ]
+      }
+    }
+  ],
+  "triggers": [
+    {
+      "name": "device_event_example",
+      "enabled": false,
+      "event": "serial.appeared",
+      "task": {
+        "goal": "只读核对本地机器人工具链，不连接设备或打开仿真窗口",
+        "checks": [
+          {
+            "tool": "robot_toolchains",
+            "path": "integration.motor_write_drivers",
+            "equals": "not_implemented"
+          }
+        ]
+      }
+    }
+  ]
+}
