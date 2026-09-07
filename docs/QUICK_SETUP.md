@@ -34,7 +34,7 @@ For custom platforms without a known model, setup attempts `GET /models` at the 
 
 Official model ID: `gpt-6-astra`. A custom gateway may expose a different alias; enter the ID actually provided by that gateway. In `loop-switch`, paste the base URL, enter the hidden key, select `a`, choose `openai-responses` and enter the model ID. Custom endpoints retain Chat Completions as their compatibility default until explicitly changed. Do not append `/responses` to the base URL.
 
-A complete key-free example is [config.gpt6.example.json](../config.gpt6.example.json). For a fresh state directory it can be passed with `loop --config /path/to/config.gpt6.example.json`; supply `OPENAI_API_KEY` through the environment. Existing selected profiles take priority: use `loop-switch` to change an existing installation. Never place a key in a configuration example.
+A complete key-free example is [config.gpt6.example.json](../configs/config.gpt6.example.json). For a fresh state directory it can be passed with `loop --config /path/to/config.gpt6.example.json`; supply `OPENAI_API_KEY` through the environment. Existing selected profiles take priority: use `loop-switch` to change an existing installation. Never place a key in a configuration example.
 
 The OpenAI preset selects Responses; if a custom gateway supports only Chat Completions, explicitly choose `openai` and verify its token-field requirements. Loop does not send credentials to a fallback endpoint. All roles share the selected model.
 

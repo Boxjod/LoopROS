@@ -80,7 +80,7 @@
 
 2026-09-05 消息块排版：取消逐行 `Master ›`，助手正文每块仅首次显示 `●`，后续正文／列表缩进、空行保持空白；输入使用 `❯`，工具显示 `● name(arguments)`、结果使用 `↳`。沿用完整行写入机制。含中文多行列表、连续排队和24×6／40×12／80×24 PTY屏幕验证的完整79项测试通过，命令为 `PYTHONPATH=/tmp/looper-terminal-validation .venv/bin/python -m unittest discover -s tests -q`。
 
-2026-09-05 品牌统一为 **Loop ROS**：目录／Python 包 `loop_robot`，发行包 `loop-robot`。`.venv/bin/python install.py` 已安装 `loop`、`loop-switch`，修复此前指向旧目录的用户命令链接，保留 `looper`／`looper-switch` 别名。未迁移或删除凭据、会话、任务及日志。
+2026-09-05 品牌统一为 **Loop ROS**：目录／Python 包 `loop_robot`，发行包 `loop-robot`。`.venv/bin/python scripts/install.py` 已安装 `loop`、`loop-switch`，修复此前指向旧目录的用户命令链接，保留 `looper`／`looper-switch` 别名。未迁移或删除凭据、会话、任务及日志。
 
 项目外 `/tmp` 已验证 `loop --version`、`loop robot --version`、`looper --version` 均返回 `Loop ROS 0.1.0`；`loop robot --once /commands` 正常。隔离配置的真实 PTY 验证 `loop robot` 进入 Loop Switch 向导并取消退出。完整命令 `PYTHONPATH=/tmp/looper-terminal-validation .venv/bin/python -m unittest discover -s tests -q`：**79 项通过，无跳过**，包含中文流式输入渲染和新名称／配置兼容测试。文档链接检查通过，无付费 API 或真机调用。
 
@@ -96,7 +96,7 @@
 
 ## Installed terminal — 2026-09-05
 
-From the project directory, `.venv/bin/python install.py` installed editable `loop-robot==0.1.0` and user-level `loop` / `loop-switch` links. Existing configuration and runtime data were preserved.
+From the project directory, `.venv/bin/python scripts/install.py` installed editable `loop-robot==0.1.0` and user-level `loop` / `loop-switch` links. Existing configuration and runtime data were preserved.
 
 Verified from `/tmp`: `loop --version` returns `Loop ROS 0.1.0`; `loop --help` and `loop-switch list` succeed. Interactive PTY startup displays the English welcome screen, active model names and current directory; `/exit` exits cleanly. The PTY test used an isolated `--state-dir` and did not run existing timers. No live API or hardware calls were made.
 
@@ -120,7 +120,7 @@ From the project directory, `.venv/bin/python -m unittest discover -s tests -v`:
 
 ```bash
 python3 -m unittest discover -s tests -v
-python3 run_demo.py
+python3 examples/run_demo.py
 ```
 
 成功信号：测试全部 OK；demo 输出 verdict=pass、max_joint_error_rad 约 0.1，退出码 0。demo 第一次 review 为 fail、第二次为 pass。
@@ -137,11 +137,11 @@ python3 -c 'from core.store import EventStore; s=EventStore("artifacts/demo.sqli
 
 ## 可选物理工具链（2026-09-05）
 
-项目 `.venv` 使用 Python 3.13，已安装并验证 MuJoCo 3.12.0／Mink 1.3.0。安装版本见 `requirements-sim.txt`，不改系统 Python 与旧仓库环境。
+项目 `.venv` 使用 Python 3.13，已安装并验证 MuJoCo 3.12.0／Mink 1.3.0。安装版本见 `scripts/requirements-sim.txt`，不改系统 Python 与旧仓库环境。
 
 ```bash
 .venv/bin/python -m unittest discover -s tests -v
-.venv/bin/python run_sim.py
+.venv/bin/python examples/run_sim.py
 ```
 
 成功信号：19 项测试全部通过，包括 MuJoCo 动力学／reset／过期动作和 Mink FK／IK；物理 demo verdict=pass，关节误差约 1e-5 rad。demo 使用内存 SQLite，不持久化物理记录；默认数值 demo 仍写 artifacts。
@@ -273,3 +273,17 @@ From LoopROS, `.venv/bin/python -m pip wheel . --no-deps --wheel-dir artifacts/r
 `DISPLAY= LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest discover -s tests -q` ran 297 tests. Seven stale fixture/expectation failures were corrected; `DISPLAY= LOOP_TASK_AUTOSTART=0 PYTHONPATH=tests .venv/bin/python -m unittest test_composition test_serial test_home test_terminal test_viewer_motion -q` passed all 29 tests in those modules afterward. The other 268 tests were unchanged and had passed. Full-run SQLite ResourceWarning remains recorded; see `artifacts/coding-cleanup/validation.json` and logs. Live model semantics remain unverified.
 
 Rebuilt local 0.1.0 candidate has 94 wheel entries, excludes removed interceptors, and passes extracted-wheel startup outside the project. Checksums and inventory remain at `artifacts/release-candidate/`. No real GUI or hardware motion was performed.
+
+
+## 根目录分类整理（2026-09-07）
+
+配置默认值/示例移至 `configs/`，Logo 移至 `assets/`，演示及原有 `mjmodel.mjb` 移至 `examples/`，安装脚本和仿真依赖清单移至 `scripts/`，Changelog 移至 `docs/`。根目录仍映射为 `loop_robot` 包；现有命令入口、用户配置覆盖与状态目录保持原路径。构建旧缓存保存在 `artifacts/layout-check/previous-build/`，新增根目录 MuJoCo 输出及 pytest 缓存忽略规则。
+
+从项目根目录验证：
+
+- `.venv/bin/python scripts/install.py --check`、`sh scripts/install.sh --check` 通过；项目外绝对路径调用也通过。系统 `python3` 为 3.8，按预期被安装检查拒绝，验证使用项目 Python 3.13。PowerShell 仅静态核对，未运行 Windows 实测。
+- `.venv/bin/python examples/run_demo.py --output artifacts/layout-check/demo.sqlite` 返回 `verdict: pass`；没有启动或重启 MuJoCo。
+- `PYTHONPATH=tests .venv/bin/python -m unittest test_platform_support test_branding test_terminal test_agents test_coding_agent test_task_supervisor test_releases test_home`：55 项通过。最初从 stdin 运行的组合测试因 multiprocessing spawn 无法读取 `<stdin>` 失败，改用正式 unittest 模块入口后通过。
+- `node --test tests/website.test.cjs`：1 项通过；网页 Logo 与 Windows 源码安装路径已更新。
+- `.venv/bin/python -m pip wheel --no-deps --wheel-dir artifacts/layout-check/wheels .` 成功。无隔离构建因本地缺少 setuptools 未通过，标准隔离构建成功；解包核对新资源齐全、无旧根路径资源和私有状态文件，并从临时目录验证配置/Agent/任务配置读取及 `python -m loop_robot --version`。
+- 修改的本地文档链接核对：新路径存在；原先指向项目外 `../../projects/reports/` 的缺失报告链接仍未修复。`git diff --check` 通过。

@@ -1,7 +1,8 @@
 # Run from a downloaded source checkout; no administrator privileges required.
 $ErrorActionPreference = 'Stop'
 $installer = Join-Path $PSScriptRoot 'install.py'
-$existingPython = Join-Path $PSScriptRoot '.venv\Scripts\python.exe'
+$sourceRoot = Split-Path -Parent $PSScriptRoot
+$existingPython = Join-Path $sourceRoot '.venv\Scripts\python.exe'
 if ($env:LOOP_PYTHON) {
     & $env:LOOP_PYTHON $installer @args
 } elseif (Test-Path $existingPython) {

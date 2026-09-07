@@ -12,10 +12,10 @@ After obtaining the source folder, run inside it:
 
 | System | One command |
 | --- | --- |
-| Linux / macOS | `sh ./install.sh` |
-| Linux / macOS, terminal only | `sh ./install.sh --terminal-only` |
-| Windows 10/11, PowerShell | `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1` |
-| Windows 10/11, terminal only | `powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1 --terminal-only` |
+| Linux / macOS | `sh ./scripts/install.sh` |
+| Linux / macOS, terminal only | `sh ./scripts/install.sh --terminal-only` |
+| Windows 10/11, PowerShell | `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1` |
+| Windows 10/11, terminal only | `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 --terminal-only` |
 | Windows 7/8 or incompatible older OS | SSH to an already installed compatible host; not native installation |
 
 Compatible Python 3.10+ with pip/venv must already be installed. Scripts do not replace system Python or request administrator access. `LOOP_PYTHON` can select an explicit interpreter path. Existing project venv takes precedence otherwise. Add `--check` to inspect prerequisites without installing. PowerShell Bypass affects only that new process, not permanent policy; inspect the local script first. No public download host has been configured, so no executable curl/irm URL is advertised.
@@ -32,7 +32,7 @@ loop
 loop ros
 ```
 
-Reinstall from the project directory with `.venv/bin/python install.py`.
+Reinstall from the project directory with `.venv/bin/python scripts/install.py`.
 
 ## Linux
 
@@ -40,23 +40,23 @@ Ubuntu 22.04/24.04/25.04 with a compatible interpreter:
 
 ```sh
 python3 --version
-python3 install.py --check
-python3 install.py
+python3 scripts/install.py --check
+python3 scripts/install.py
 export PATH="$HOME/.local/bin:$PATH"
 loop
 ```
 
-Default installation includes MuJoCo/NumPy. For only the API terminal use `python3 install.py --terminal-only`. Add the PATH export to your shell startup file for persistence; the installer does not edit it. If Ubuntu's packaged Python lacks venv, use `sudo apt install python3-venv` with working repositories. This package does not provide venv for separately managed interpreters.
+Default installation includes MuJoCo/NumPy. For only the API terminal use `python3 scripts/install.py --terminal-only`. Add the PATH export to your shell startup file for persistence; the installer does not edit it. If Ubuntu's packaged Python lacks venv, use `sudo apt install python3-venv` with working repositories. This package does not provide venv for separately managed interpreters.
 
-Ubuntu 16.04/18.04/20.04 stock Python is below 3.10. Do not replace `/usr/bin/python3`. Use a compatible private Python: `/absolute/path/to/python3 install.py --terminal-only`. Verify TLS, libc and wheel compatibility on that machine. If no compatible interpreter is available, use SSH below. Local Ubuntu 20.04 was tested with private Python 3.13, not stock Python 3.8.
+Ubuntu 16.04/18.04/20.04 stock Python is below 3.10. Do not replace `/usr/bin/python3`. Use a compatible private Python: `/absolute/path/to/python3 scripts/install.py --terminal-only`. Verify TLS, libc and wheel compatibility on that machine. If no compatible interpreter is available, use SSH below. Local Ubuntu 20.04 was tested with private Python 3.13, not stock Python 3.8.
 
 ## Windows 10/11 — native validation pending
 
 Install an OS-compatible official Python, for example 3.12 with its launcher. In PowerShell inside the source directory:
 
 ```powershell
-py -3.12 install.py --check
-py -3.12 install.py --terminal-only
+py -3.12 scripts/install.py --check
+py -3.12 scripts/install.py --terminal-only
 ```
 
 Open a new terminal and run `loop`. The installer adds user-level launchers to `%USERPROFILE%\.local\bin` and the user PATH, not the machine PATH. Restart the parent terminal application or sign out/in if PATH is stale. Direct fallback:
@@ -72,8 +72,8 @@ Rerun without `--terminal-only` for simulation, subject to compatible wheels/gra
 Use an OS/CPU-compatible Python 3.10+ distribution, matching Intel or Apple Silicon. Do not replace Apple's system Python:
 
 ```sh
-python3 install.py --check
-python3 install.py --terminal-only
+python3 scripts/install.py --check
+python3 scripts/install.py --terminal-only
 export PATH="$HOME/.local/bin:$PATH"
 loop
 ```
@@ -98,7 +98,7 @@ Configuration uses `~/.loop` (Windows: `%USERPROFILE%\.loop`). If only `.looper`
 
 This editable install requires keeping the source and .venv in place. Source changes load on restart. Unrelated command collisions are refused. Existing state stays in `artifacts/terminal`; use `--state-dir PATH` or `LOOP_STATE_DIR` for isolation. Two terminals cannot share the same state directory.
 
-In a manually managed venv, `python -m pip install -e .` installs the terminal; `python -m pip install -e '.[sim]'` adds simulation. Unlike install.py, these commands do not create user PATH launchers.
+In a manually managed venv, `python -m pip install -e .` installs the terminal; `python -m pip install -e '.[sim]'` adds simulation. Unlike scripts/install.py, these commands do not create user PATH launchers.
 
 ## Checks
 
@@ -109,7 +109,7 @@ loop --once /doctor
 loop-switch list
 ```
 
-No API key is needed for these checks. `install.py --check` checks interpreter prerequisites only, not binary dependencies, graphics or hardware. `/help` lists actions; `/viewer` opens local simulation; `/after 60 /status` schedules a check while the terminal stays running; `/exit` exits.
+No API key is needed for these checks. `scripts/install.py --check` checks interpreter prerequisites only, not binary dependencies, graphics or hardware. `/help` lists actions; `/viewer` opens local simulation; `/after 60 /status` schedules a check while the terminal stays running; `/exit` exits.
 
 Real hardware motion remains disabled. `/stop` is not a physical emergency stop. Timers are not OS background services. Linux clipboard-image integration needs wl-paste/xclip; other platforms can use `/attach`. See [validation records](RUNBOOK.md).
 

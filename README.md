@@ -11,11 +11,11 @@ Version **0.1.0**, local release preparation; no public GitHub release has been 
 Requires Python 3.10+. From a source checkout:
 
 ```sh
-python3 install.py --terminal-only
+python3 scripts/install.py --terminal-only
 loop
 ```
 
-For the optional MuJoCo environment, use `python3 install.py`. First launch without a key opens `loop-switch`; select a provider or enter your own API base URL and hidden key. Existing profiles are retained.
+For the optional MuJoCo environment, use `python3 scripts/install.py`. First launch without a key opens `loop-switch`; select a provider or enter your own API base URL and hidden key. Existing profiles are retained.
 
 **Recommended: GPT-6 Astra through your custom API or OpenAI Responses API.** Use the exact model ID exposed by your endpoint. See [GPT-6 and custom API setup](docs/QUICK_SETUP.md); configuring a model does not verify account access or tool support. Other compatible providers remain supported.
 
@@ -50,6 +50,17 @@ User ↔ Terminal / Master ↔ Model API
 
 `core/` contains standard-library contracts, persistence and runtimes. `terminal/` connects conversation, permissions and tools. `toolchain/` supplies domain implementations and optional dependencies. Task supervision, child-Agent processes and persistent Nodes have different lifecycles.
 
+## Repository layout
+
+- `core/`, `terminal/`, `toolchain/`: Python implementation.
+- `configs/`: packaged defaults and key-free configuration examples.
+- `examples/`: demos and sample models; `assets/`: brand images.
+- `scripts/`: source installers, release builder and simulation requirements.
+- `docs/`: project documentation and changelog; `tests/`: verification.
+- `website/`: introduction page; `artifacts/`: ignored local runtime output.
+
+The root also serves as the `loop_robot` package, so its Python modules and `loop` / `loop-switch` source launchers remain here.
+
 ## Documentation
 
 - [Project map](docs/CODEX_PROJECT_MAP.md) · [Operations and verification](docs/RUNBOOK.md)
@@ -57,7 +68,7 @@ User ↔ Terminal / Master ↔ Model API
 - [Persistent tasks](docs/TASK_RUNTIME.md) · [Nodes](docs/NODES.md) · [Carriers](docs/DEPLOYMENTS.md)
 - [Coding and Skills](docs/CODING_AGENT.md) · [Memory and learning](docs/LEARNING.md)
 - [MuJoCo control](docs/MUJOCO_CONTROL.md) · [Robotics](docs/ROBOTICS_AGENT.md) · [Feetech](docs/FEETECH.md)
-- [Release preparation](docs/GITHUB_RELEASE.md) · [Changelog](CHANGELOG.md)
+- [Release preparation](docs/GITHUB_RELEASE.md) · [Changelog](docs/CHANGELOG.md)
 
 Use `/commands` for the current command catalog. `/resume` selects a saved session; `/queue resume` resumes queued input. `loop-switch` manages model profiles without changing global Codex or Claude settings.
 
@@ -66,7 +77,7 @@ Use `/commands` for the current command catalog. `/resume` selects a saved sessi
 ```sh
 python3 -m pip install -e '.[test]'
 python3 -m unittest discover -s tests -v
-python3 run_demo.py
+python3 examples/run_demo.py
 ```
 
 Optional dependencies and display availability affect simulation tests. The deterministic demo writes local evidence under `artifacts/`; it does not use an LLM or control hardware. See the runbook for verified commands and limitations.

@@ -39,7 +39,7 @@ cd /home/boxjod/Workspace/box2net/LoopROS
 
 终端输入 `/key`，隐藏输入 Key，仅存在当前进程；也支持预先配置 `DASHSCOPE_API_KEY`，或通过 `/key save` 显式保存到用户目录的凭据文件。不要把 Key 粘贴到聊天或项目配置；全局目录与安全约定见 [USER_HOME](USER_HOME.md)。默认 `qwen-plus`、北京 DashScope OpenAI-compatible endpoint；地区必须匹配 Key，国际或 Coding Plan 用户修改 base_url／model，不能直接混用服务套餐。[Qwen 官方兼容 API](https://www.alibabacloud.com/help/en/model-studio/compatibility-of-openai-with-dashscope)
 
-`config.example.json` 是默认配置；可用被 Git 忽略的 `config.local.json` 覆盖，或 `--config 路径`。该文件由可信用户维护，不能让聊天模型改写。HTTP 仅允许 loopback，其他地址需 HTTPS；拒绝带凭据 URL 和重定向转发认证头。
+`configs/config.example.json` 是默认配置；可用被 Git 忽略的 `config.local.json` 覆盖，或 `--config 路径`。该文件由可信用户维护，不能让聊天模型改写。HTTP 仅允许 loopback，其他地址需 HTTPS；拒绝带凭据 URL 和重定向转发认证头。
 
 新增 Loop Switch 后：上述 llm/expert 配置作为首次导入种子，此后 providers.sqlite 的配置与槽位选择优先。用 `./loop-switch` 或 `/switch` 管理，外部修改后 `/switch reload` 生效；详细规则见 [MODEL_SWITCH](MODEL_SWITCH.md)。
 

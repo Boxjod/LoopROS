@@ -7,7 +7,7 @@ import tempfile
 import unittest
 from unittest.mock import Mock, patch
 
-from install import windows_launcher
+from scripts.install import windows_launcher
 from terminal.platform_support import InputPoller, lock_terminal, venv_python
 
 

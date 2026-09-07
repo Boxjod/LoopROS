@@ -40,7 +40,7 @@ class AgentTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         config = load_config()
         clients = {key: QwenClient(config[key]) for key in ("llm", "expert")}
-        definitions = AgentRuntime.load_definitions(ROOT / "agents.json", {"run_sim", "generate_scene"})
+        definitions = AgentRuntime.load_definitions(ROOT / "configs/agents.json", {"run_sim", "generate_scene"})
         self.called = []
         def dispatch(name, args):
             self.called.append(name)

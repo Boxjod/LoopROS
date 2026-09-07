@@ -37,7 +37,7 @@ Master 的工具：spawn_agent、agents_status、agent_result、send_agent、can
 
 ## 扩展方式
 
-`agents.json` 是本项目可信的声明式扩展入口，每个角色具有 provider、tools、prompt；provider 限 llm/expert，子任务可授予的执行工具上限当前为 run_sim/generate_scene。新增角色在下次启动加载。配置不能包含可执行 Python，不能注册 shell、设备控制或递归 spawn。
+`configs/agents.json` 是本项目可信的声明式扩展入口，每个角色具有 provider、tools、prompt；provider 限 llm/expert，子任务可授予的执行工具上限当前为 run_sim/generate_scene。新增角色在下次启动加载。配置不能包含可执行 Python，不能注册 shell、设备控制或递归 spawn。
 
 例如新增一个场景角色可使用 provider=llm、tools=["generate_scene"] 和场景职责 prompt。这只是既有工具的组合，不增加驱动或仿真能力。新增真正工具需修改宿主注册表与 broker 权限，并补行为测试；运行时不会下载／执行未知扩展。
 

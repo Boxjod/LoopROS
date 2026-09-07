@@ -165,7 +165,7 @@ class App:
         self.client = QwenClient(config["llm"])
         self.expert = self.client  # Legacy role/tool alias; one model and credential source.
         config["expert"] = self.client.config
-        definitions = AgentRuntime.load_definitions(ROOT / "agents.json", {"run_sim", "generate_scene"})
+        definitions = AgentRuntime.load_definitions(ROOT / "configs/agents.json", {"run_sim", "generate_scene"})
         self.runtime = AgentRuntime(definitions, {"llm": self.client, "expert": self.expert},
                                     TOOLS + AGENT_TOOLS, self.tool, state_dir / "agents.jsonl")
         self.stop_event = threading.Event()

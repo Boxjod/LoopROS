@@ -1,6 +1,10 @@
 """Headless physics -> existing Agent Loop -> numerical Review smoke demo."""
 from pathlib import Path
+import sys
 import json
+
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
 
 from core.contracts import TaskSpec, record
 from core.loop import Loop
@@ -10,7 +14,7 @@ from toolchain.mujoco_sim import MujocoBody
 
 
 def main():
-    body = MujocoBody(Path(__file__).parent / "examples/two_joint.xml",
+    body = MujocoBody(Path(__file__).parent / "two_joint.xml",
                       {"j1": "a1", "j2": "a2"})
     store = EventStore(":memory:")
     try:

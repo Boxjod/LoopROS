@@ -16,4 +16,4 @@ The source preview targets the user-confirmed server at `https://8.134.90.171/Lo
 
 Validation: `node --check website/site.js`; `node --test tests/website.test.cjs`; real local headless Chrome desktop screenshot inspected. Native PowerShell installation and macOS remain unverified.
 
-Logo: the existing `../logo.png` uses the same infinity-robot design as [LoopMaster](https://loopmaster.ai/). The navigation renders it at 56px wide with its original aspect ratio. `favicon.png` is the original 128×128 icon downloaded from https://loopmaster.ai/favicon.png on 2026-09-05 using Chrome; the release builder includes it. The original project logo and terminal mark are preserved.
+Logo: the existing `../assets/logo.png` uses the same infinity-robot design as [LoopMaster](https://loopmaster.ai/). The navigation renders it at 56px wide with its original aspect ratio. `favicon.png` is the original 128×128 icon downloaded from https://loopmaster.ai/favicon.png on 2026-09-05 using Chrome; the release builder includes it. The original project logo and terminal mark are preserved.

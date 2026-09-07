@@ -5,6 +5,9 @@ import os
 import platform
 import subprocess
 import sys
+ROOT = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(ROOT))
+
 from terminal.platform_support import venv_python
 
 
@@ -27,7 +30,7 @@ def main():
     if args.check:
         print("Interpreter prerequisites met; this does not certify hardware, graphics or binary dependencies.")
         return
-    root = Path(__file__).resolve().parent
+    root = ROOT
     environment = root / ".venv"
     python = venv_python(environment)
     target_dir = Path.home() / ".local/bin"

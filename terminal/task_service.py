@@ -13,7 +13,7 @@ from terminal.task_supervisor import load_policy
 def policy_path(state):
     from terminal.config import ROOT
     local=Path(state)/'task_runtime.json'
-    return local if local.exists() else ROOT/'task_runtime.json'
+    return local if local.exists() else ROOT/'configs/task_runtime.json'
 
 
 def status(state):

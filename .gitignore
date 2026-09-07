@@ -18,3 +18,7 @@ dist/
 credentials.json
 *.pem
 *.key
+
+# Generated test and MuJoCo files
+.pytest_cache/
+/mjmodel.mjb

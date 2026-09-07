@@ -86,4 +86,4 @@ pool.close()
 
 接口依据本地源码及 [MuJoCo Python API](https://mujoco.readthedocs.io/en/stable/python.html)、[Mink 官方示例](https://github.com/kevinzakka/mink/blob/main/examples/docs/tasks_and_limits.py)、[ROS 2 rclpy 生命周期](https://docs.ros.org/en/iron/p/rclpy/api/init_shutdown.html)核对。仅依赖这些基础 API，不宣称已实现所有最新特性。
 
-依赖版本见 [requirements-sim.txt](../requirements-sim.txt)，测试与命令见 [RUNBOOK](RUNBOOK.md)。没有真机操作、模型权重下载、训练、ROS 网络接入或上游全流程执行。
+依赖版本见 [scripts/requirements-sim.txt](../scripts/requirements-sim.txt)，测试与命令见 [RUNBOOK](RUNBOOK.md)。没有真机操作、模型权重下载、训练、ROS 网络接入或上游全流程执行。

@@ -2,6 +2,8 @@
 
 入口：[项目地图](docs/CODEX_PROJECT_MAP.md)、[运行记录](docs/RUNBOOK.md)。
 
+配置默认值与示例放 `configs/`，品牌资源放 `assets/`，演示与模型放 `examples/`，安装/发布脚本放 `scripts/`，文档与变更记录放 `docs/`。根目录仍是 `loop_robot` 包目录，保留包模块和命令入口；用户本地配置与运行状态路径不变。
+
 - 默认是通用 coding agent。保留文件读写、代码执行、模型工具循环、session多轮记忆与恢复、Skills、经验和权限。机器人是按需工具能力，不用机器人关键词或具体句式拦截自然语言请求。
 - `load_toolset` 按本轮需要加载 robotics、tasks 或 agents；每轮重置。工具组加载不执行动作，不附带整套机器人提示词或窗口/串口状态。实际状态由对应工具查询；普通对话不自动转成持久任务。
 - 通用提示词只写目标、用户范围、工具、证据、权限和反馈；领域参数与约束在工具schema/实现中维护，不追加一次性问法补丁。细节见 [Coding Agent](docs/CODING_AGENT.md)。

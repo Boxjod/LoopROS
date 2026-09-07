@@ -28,5 +28,5 @@ package-dir = {loop_robot = "."}
 include-package-data = false
 
 [tool.setuptools.package-data]
-loop_robot = ["config.example.json", "config.gpt6.example.json", "agents.json", "task_runtime.json", "examples/*.xml", "examples/deployments/*.json", "logo.png"]
+loop_robot = ["configs/config.example.json", "configs/config.gpt6.example.json", "configs/agents.json", "configs/task_runtime.json", "examples/*.xml", "examples/deployments/*.json", "assets/logo.png"]
 "loop_robot.toolchain" = ["hardware_targets.json"]

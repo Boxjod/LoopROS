@@ -65,7 +65,7 @@ class CodingAgentTests(unittest.TestCase):
         self.assertNotIn('simulator_status',{t['function']['name'] for t in context['tools']})
         self.assertIn('workspace_root',context['live_context']())
     def test_exact_image_request_reaches_current_model_with_pixels(self):
-        image=ROOT/'logo.png';seen=[]
+        image=ROOT/'assets/logo.png';seen=[]
         def complete(messages,tools):
             seen.append(messages);return {'content':'Logo analysis fixture'}
         with patch.object(self.app.client,'complete',side_effect=complete):
@@ -78,7 +78,7 @@ class CodingAgentTests(unittest.TestCase):
         self.assertTrue(any(p.get('type')=='input_image' for m in body['input'] if isinstance(m.get('content'),list) for p in m['content']))
     def test_multiple_paths_spaces_missing_and_url_refs(self):
         path=self.app.workspace_root/'a file.txt';path.write_text('local evidence')
-        image=ROOT/'logo.png'
+        image=ROOT/'assets/logo.png'
         text=f'分析 "{path}" 和 "{image}" 并参考 https://example.com/info'
         refs=extract(text,self.app.workspace_root)
         self.assertEqual(len(refs),3)
@@ -94,7 +94,7 @@ class CodingAgentTests(unittest.TestCase):
             nonlocal round_no
             round_no+=1
             if round_no==1:
-                return {'tool_calls':[{'id':'a','function':{'name':'write_file','arguments':json.dumps({'path':'demo.txt','content':'old'})}}, {'id':'b','function':{'name':'read_image','arguments':json.dumps({'path':str(ROOT/'logo.png')})}}]}
+                return {'tool_calls':[{'id':'a','function':{'name':'write_file','arguments':json.dumps({'path':'demo.txt','content':'old'})}}, {'id':'b','function':{'name':'read_image','arguments':json.dumps({'path':str(ROOT/'assets/logo.png')})}}]}
             if round_no==2:
                 self.assertEqual([m['role'] for m in messages[-3:]],['tool','tool','user'])
                 self.assertTrue(any(p['type']=='image_url' for p in messages[-1]['content']))
@@ -122,7 +122,7 @@ class CodingAgentTests(unittest.TestCase):
 
     def test_url_image_and_no_coding_handoff(self):
         from terminal.references import read_url
-        with patch('terminal.web.request',return_value={'body_bytes':(ROOT/'logo.png').read_bytes(),'content_type':'image/png','url':'https://example.com/logo.png'}):
+        with patch('terminal.web.request',return_value={'body_bytes':(ROOT/'assets/logo.png').read_bytes(),'content_type':'image/png','url':'https://example.com/logo.png'}):
             result=read_url('https://example.com/logo.png')
         self.assertTrue(result['image_loaded'])
         self.assertTrue(result['_media'][0]['image_url']['url'].startswith('data:image/png;base64,'))

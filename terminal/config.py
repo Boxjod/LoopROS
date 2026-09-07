@@ -36,7 +36,7 @@ def validate_provider(provider):
 
 def load_config(path=None):
     initialize()
-    config = json.loads((ROOT / "config.example.json").read_text())
+    config = json.loads((ROOT / "configs/config.example.json").read_text())
     path = Path(path) if path else ROOT / "config.local.json"
     for source in (loop_home() / "config.json", path):
         if not source.exists():

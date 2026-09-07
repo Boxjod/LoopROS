@@ -99,7 +99,7 @@ class TaskSupervisorTests(unittest.TestCase):
 
     def test_invalid_policy_and_failed_receipt(self):
         from terminal.app import TOOLS
-        policy=load_policy(ROOT/'task_runtime.json',{t['function']['name'] for t in TOOLS})
+        policy=load_policy(ROOT/'configs/task_runtime.json',{t['function']['name'] for t in TOOLS})
         self.assertEqual(policy['max_workers'],2)
         checks=[{'tool':'observe','path':'value','equals':True}]
         self.assertEqual(assess(checks,[{'tool':'observe','result':{'value':1}}])['verdict'],'fail')

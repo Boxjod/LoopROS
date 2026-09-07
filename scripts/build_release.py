@@ -53,14 +53,14 @@ curl --fail --silent --show-error --proto '=https' --proto-redir '=https' --loca
     for name in ("index.html", "style.css", "site.js", "favicon.png"):
         shutil.copy2(ROOT / "website" / name, output / name)
     # Relative parent paths would escape a deployment subdirectory.
-    index = (output / "index.html").read_text().replace("../logo.png", "logo.png").replace("../docs/", "docs/")
+    index = (output / "index.html").read_text().replace("../assets/logo.png", "logo.png").replace("../docs/", "docs/")
     index = index.replace("https://8.134.90.171/LoopROS", url).replace(
         "Download pending: HTTPS for 8.134.90.171 is not configured yet. This command is not available to run yet.",
         "Linux/macOS: copy the command above to download and install Loop ROS.")
     (output / "index.html").write_text(index)
     public_js = (output / "site.js").read_text().replace("https://8.134.90.171/LoopROS", url)
     (output / "site.js").write_text(public_js)
-    shutil.copy2(ROOT / "logo.png", output / "logo.png")
+    shutil.copy2(ROOT / "assets/logo.png", output / "logo.png")
     (output / "docs").mkdir()
     for name in ("INSTALL.md", "PLATFORMS.md", "USER_HOME.md", "QUICK_SETUP.md", "RELEASES.md"):
         shutil.copy2(ROOT / "docs" / name, output / "docs" / name)

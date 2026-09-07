@@ -24,7 +24,7 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(config["services"]["act"]["argv"], [])
 
     def test_qwen_transport(self):
-        client = QwenClient(json.loads((ROOT / "config.example.json").read_text())["llm"])
+        client = QwenClient(json.loads((ROOT / "configs/config.example.json").read_text())["llm"])
         client.key = "test-only"
         response = io.BytesIO(json.dumps({"choices": [{"message": {"role": "assistant", "content": "你好"}}]}).encode())
         with patch("terminal.llm.build_opener") as opener:
