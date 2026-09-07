@@ -1,0 +1,13 @@
+{
+  "version": 2,
+  "python": "/usr/bin/python3",
+  "launch": {
+    "argv": ["ros2", "launch", "slam_toolbox", "online_async_launch.py", "use_sim_time:=false"],
+    "cwd": "/tmp"
+  },
+  "topics": [
+    {"name": "scan", "topic": "/scan", "kind": "scan", "max_age_s": 1},
+    {"name": "odom", "topic": "/odom", "kind": "odom", "max_age_s": 1},
+    {"name": "map", "topic": "/map", "kind": "map", "max_age_s": 30, "qos": "latched"}
+  ]
+}

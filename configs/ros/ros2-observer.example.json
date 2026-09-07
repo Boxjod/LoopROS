@@ -1,0 +1,15 @@
+{
+  "version": 2,
+  "python": "/usr/bin/python3",
+  "topics": [
+    {"name": "joints", "topic": "/joint_states", "kind": "joints", "max_age_s": 1},
+    {"name": "force", "topic": "/wrench", "kind": "force", "required": false},
+    {"name": "imu", "topic": "/imu/data", "kind": "imu", "required": false},
+    {"name": "scan", "topic": "/scan", "kind": "scan", "required": false},
+    {"name": "camera", "topic": "/camera/image_raw", "kind": "image", "required": false},
+    {"name": "points", "topic": "/points", "kind": "points", "required": false},
+    {"name": "odom", "topic": "/odom", "kind": "odom", "required": false},
+    {"name": "map", "topic": "/map", "kind": "map", "max_age_s": 30, "required": false},
+    {"name": "tactile", "topic": "/tactile", "kind": "tactile", "required": false}
+  ]
+}

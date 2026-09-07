@@ -1,0 +1,9 @@
+{
+  "version": 1,
+  "python": "/usr/bin/python3",
+  "env": {"ROS_MASTER_URI": "http://127.0.0.1:11311"},
+  "topics": [
+    {"name": "joints", "topic": "/joint_states", "kind": "joints", "max_age_s": 1},
+    {"name": "map", "topic": "/map", "kind": "map", "max_age_s": 30, "required": false}
+  ]
+}

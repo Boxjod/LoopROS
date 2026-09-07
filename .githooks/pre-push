@@ -1,0 +1,11 @@
+#!/bin/sh
+set -eu
+loop_root=$(git rev-parse --show-toplevel)
+if [ -x "$loop_root/.venv/bin/python" ]; then
+    loop_python="$loop_root/.venv/bin/python"
+elif [ -x "$loop_root/.venv/Scripts/python.exe" ]; then
+    loop_python="$loop_root/.venv/Scripts/python.exe"
+else
+    loop_python=python3
+fi
+exec "$loop_python" "$loop_root/scripts/check_public_source.py" --pre-push
