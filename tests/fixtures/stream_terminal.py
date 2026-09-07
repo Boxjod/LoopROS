@@ -19,6 +19,22 @@ terminal = Terminal(app)
 
 
 def reply(text, *args):
+    if text == '任务会话':
+        terminal.task_store.submit({'goal': '检查机械臂 Host 中文任务', 'session_id': app.session_id})
+        return '任务已记录。'
+    if text in ('折叠', '折叠滚动'):
+        app.workspace_root=Path(sys.argv[1]).parent
+        (app.workspace_root/'group_sample.py').write_text('value = 42\n')
+        for index in range(6):
+            app.agent.on_event('tool','read_file({"path":"group_sample.py"})')
+            app.agent.on_event('result',json.dumps(app.tool('read_file',{'path':'group_sample.py'})))
+            time.sleep(.1)
+        if text == '折叠滚动':
+            deadline = time.monotonic() + 12
+            while time.monotonic() < deadline and not app.stop_event.is_set() and not (app.workspace_root / 'release-scroll').exists():
+                time.sleep(.05)
+        app.agent.on_event('answer_delta','读取完成，可以展开调用。')
+        return '读取完成，可以展开调用。'
     if text == '配色':
         app.workspace_root = Path(sys.argv[1]).parent
         path = app.workspace_root / 'color_sample.py'

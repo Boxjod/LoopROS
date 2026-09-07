@@ -142,6 +142,7 @@ User ↔ Terminal / Master ↔ Model API
 - `scripts/`: source installers, release builder and simulation requirements.
 - `docs/`: project documentation and changelog; `tests/`: verification.
 - `website/`: introduction page; `artifacts/`: ignored local runtime output.
+- `user_projects/`: local generated scripts and records, grouped by project and confirmed robot model; excluded from Git and releases. See [storage rules](docs/GENERATED_CODE.md).
 
 The root also serves as the `loop_robot` package, so its Python modules and `loop` / `loop-switch` source launchers remain here.
 

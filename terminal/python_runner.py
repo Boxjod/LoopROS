@@ -13,7 +13,7 @@ import uuid
 from terminal.files import schema
 
 TOOLS = [schema('run_python',
-    'Actually run an existing workspace .py file with this Loop Python, without a shell. Read the file first and provide its sha256. Returns stdout, stderr, exit code and cancellation/timeout evidence. Runs with host user privileges, not a sandbox. Prefer feetech_scan/read for servo diagnostics.',
+    'Actually run an existing workspace .py file with this Loop Python, without a shell. Use the current inspected sha256. Syntax is checked locally before launch; a separate python_check call is unnecessary for normal execution. Returns stdout, stderr, exit code and cancellation/timeout evidence. Page stdout_path/stderr_path with read_file for long output instead of rerunning. Runs with host user privileges, not a sandbox. Prefer feetech_scan/read for servo diagnostics.',
     {'path':{'type':'string'}, 'expected_sha256':{'type':'string'},
      'arguments':{'type':'array','items':{'type':'string'}}, 'timeout_s':{'type':'integer'}},
     ['path','expected_sha256'])]
@@ -29,9 +29,14 @@ def run(app, args, _trusted_path=None):
     path=_trusted_path if _trusted_path is not None else resolve(app,args.get('path',''),write=True)
     if path.suffix!='.py' or not path.is_file() or path.stat().st_size>1024*1024:
         raise ValueError('An existing workspace .py file of at most 1 MiB is required')
-    digest=hashlib.sha256(path.read_bytes()).hexdigest()
+    source=path.read_bytes()
+    digest=hashlib.sha256(source).hexdigest()
     if args.get('expected_sha256')!=digest:
         raise ValueError('Read the script and supply its current sha256 before execution')
+    try:
+        compile(source, str(path), 'exec')
+    except SyntaxError as exc:
+        raise ValueError('Python syntax check failed at line {}: {}'.format(exc.lineno, exc.msg)) from None
     argv=args.get('arguments',[]);timeout=args.get('timeout_s',30)
     if not isinstance(argv,list) or len(argv)>64 or any(not isinstance(s,str) or len(s)>4096 or '\x00' in s for s in argv):
         raise ValueError('arguments must be at most 64 strings, each at most 4096 characters')
@@ -66,13 +71,22 @@ def run(app, args, _trusted_path=None):
                         except ProcessLookupError:pass
                     elif process.poll() is None:process.kill()
                     process.wait()
+            output_sizes = {'stdout':os.fstat(output.fileno()).st_size, 'stderr':os.fstat(errors.fileno()).st_size}
             output.seek(0);errors.seek(0)
-            stdout=output.read(65537);stderr=errors.read(65537)
-    result={'executed':True,'python':sys.executable,'path':str(path),'sha256':digest,
+            stdout=output.read(1024*1024);stderr=errors.read(1024*1024)
+    result={'executed':True,'syntax_valid':True,'python':sys.executable,'path':str(path),'sha256':digest,
             'returncode':process.returncode,'stdout':stdout[:65536].decode('utf-8','replace'),
             'stderr':stderr[:65536].decode('utf-8','replace'),'truncated':len(stdout)>65536 or len(stderr)>65536,
             'elapsed_s':round(time.monotonic()-started,3),'stop_reason':reason,
             'task_success':'not_evaluated'}
+    # Text sidecars let the model page long output without rerunning the program
+    # or repeatedly reading a single JSON-escaped stdout line.
+    for channel, raw in (('stdout', stdout), ('stderr', stderr)):
+        output_path = folder/(identifier+'.'+channel+'.txt')
+        with os.fdopen(os.open(output_path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600), 'w', encoding='utf-8') as stream:
+            stream.write(raw.decode('utf-8', 'replace'))
+        result[channel+'_path'] = str(output_path)
+        result[channel+'_file_truncated'] = output_sizes[channel] > len(raw)
     report=folder/(identifier+'.json')
     report.write_text(json.dumps(result,ensure_ascii=False,indent=2));report.chmod(0o600)
     store=EventStore(folder/'evidence.sqlite')

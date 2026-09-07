@@ -30,6 +30,7 @@ def history_lines(history):
                 yield tool_call(safe_text(display.call(function.get('name', 'tool') +
                                                         '(' + function.get('arguments', '{}') + ')')))
                 display.started = None  # Replaying history is not a timed execution.
+                display.clock = ""
                 calls[call.get('id')] = display
         elif role == 'tool':
             display = calls.pop(message.get('tool_call_id'), ToolDisplay())

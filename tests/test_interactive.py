@@ -376,7 +376,8 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     self.assertEqual(store.load(other), {})
                     store.close()
                     restored = Terminal(app)
-                    self.assertEqual(restored.app.agent.history[-1]['content'], 'blue')
+                    self.assertEqual(restored.app.agent.history, [])
+                    self.assertTrue(restored.store.list_sessions(app.client.config, query='blue'))
                     restored.store.close()
                 finally:
                     if not task.done():
@@ -410,7 +411,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                         terminal.append('answer_delta', '第一行\n第二')
                         terminal.append('answer_delta', '行')
                         terminal.flush_stream()
-                        self.assertTrue(captured.getvalue().endswith('● 第一行\n  第二行\n'))
+                        self.assertTrue(re.sub(r'\x1b\[[0-9;]*m', '', captured.getvalue()).endswith('● 第一行\n  第二行\n'))
                         self.assertEqual(terminal.stream_text, '')
                         self.assertEqual(terminal.input.text, '草稿abc')
                         captured.seek(0)
@@ -420,10 +421,12 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                         terminal.flush_stream()
                         terminal.append('tool', 'status({})')
                         terminal.append('result', '{"ready": true}')
-                        self.assertTrue(captured.getvalue().startswith(
-                                         '● 可用能力：\n\n  - 状态查询\n  - 仿真控制\n\n  完成。\n'
-                                         'Tool › status({})\n  ↳ Returned data'))
-                        self.assertRegex(captured.getvalue(), r'/details \d+\n$')
+                        terminal.flush_tools()
+                        rendered = re.sub(r'\x1b\[[0-9;]*m', '', captured.getvalue())
+                        self.assertTrue(rendered.startswith(
+                                         '● 可用能力：\n\n  - 状态查询\n  - 仿真控制\n\n  完成。\n'), repr(rendered))
+                        self.assertRegex(rendered, r'Tool › status\(\{\}\) · \d{2}:\d{2}:\d{2}\n  ↳ Returned data')
+                        self.assertRegex(rendered, r'/details \d+\n$')
                         self.assertNotIn('{"ready": true}', captured.getvalue())
 
                 finally:
@@ -431,6 +434,64 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     app.close()
 
 class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_restart_resets_display_without_discarding_usage_or_history(self):
+        from terminal.token_budget import status
+        from terminal.session import SessionStore
+        with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), directory)
+                history = [{'role': 'user', 'content': '保留历史'}]
+                store = SessionStore(Path(directory) / 'conversation.sqlite')
+                store.save(app.client.config, history, [], token_usage={
+                    'total_tokens': 2324038, 'unreported_requests': 2})
+                old_id = store.session_id
+                store.close()
+                terminal = Terminal(app)
+                try:
+                    self.assertEqual(app.agent.history, [])
+                    self.assertNotEqual(terminal.store.session_id, old_id)
+                    terminal.input.text = '/resume ' + old_id
+                    await terminal.submit()
+                    self.assertEqual(app.agent.history, history)
+                    self.assertIn('Session Tokens 0 |', status(app.agent))
+                    app.agent.token_usage['total_tokens'] += 42
+                    self.assertIn('Session Tokens 42 |', status(app.agent))
+                    app.agent.token_usage['unreported_requests'] += 1
+                    self.assertIn('Session Tokens 42+ |', status(app.agent))
+                    terminal.checkpoint()
+                    self.assertEqual(terminal.store.load(app.client.config)['token_usage']['total_tokens'], 2324080)
+                finally:
+                    terminal.store.close()
+                    app.close()
+
+    async def test_tokens_follow_current_session_on_new_and_resume(self):
+        from unittest.mock import AsyncMock
+        from terminal.token_budget import status
+        with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), directory)
+                terminal = Terminal(app)
+                try:
+                    app.agent.token_usage = {'total_tokens': 2226780}
+                    terminal.checkpoint()
+                    first = terminal.store.session_id
+                    with patch.object(terminal, 'redraw_session', new_callable=AsyncMock):
+                        terminal.input.text = '/new'
+                        await terminal.submit()
+                        self.assertNotEqual(terminal.store.session_id, first)
+                        self.assertIn('Session Tokens 0 |', status(app.agent))
+                        second = terminal.store.session_id
+                        app.agent.token_usage = {'total_tokens': 123}
+                        terminal.input.text = '/resume ' + first
+                        await terminal.submit()
+                        self.assertIn('Session Tokens 2,226,780 |', status(app.agent))
+                        terminal.input.text = '/resume ' + second
+                        await terminal.submit()
+                        self.assertIn('Session Tokens 123 |', status(app.agent))
+                finally:
+                    terminal.store.close()
+                    app.close()
+
     async def test_menu_selection_restores_context_and_continues_chat(self):
         with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
@@ -475,6 +536,37 @@ class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
                         terminal.ui.exit()
                         await task
                     app.close()
+
+    async def test_each_restart_gets_new_session_without_inheriting_draft_or_queue(self):
+        from terminal.session import SessionStore
+        with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                config = load_config()
+                store = SessionStore(Path(directory)/'conversation.sqlite')
+                history = [{'role':'user', 'content':'原会话内容'}]
+                store.save(config['llm'], history, [('不要自动执行', [])], draft='保留旧草稿',
+                           attachments=[{'path':'old.png'}], token_usage={'total_tokens':123})
+                original = store.session_id
+                store.close()
+                identities = {original}
+                for _ in range(2):
+                    app = App(load_config(), directory)
+                    terminal = Terminal(app)
+                    try:
+                        self.assertNotIn(terminal.store.session_id, identities)
+                        identities.add(terminal.store.session_id)
+                        self.assertEqual(app.agent.history, [])
+                        self.assertFalse(terminal.queue)
+                        self.assertFalse(terminal.attachments)
+                        self.assertEqual(terminal.input.text, '')
+                        self.assertEqual(app.agent.token_usage.get('total_tokens', 0), 0)
+                        terminal.checkpoint()
+                        old = terminal.store.read_session(app.client.config, original)
+                        self.assertEqual(old['history'], history)
+                        self.assertEqual(old['draft'], '保留旧草稿')
+                        self.assertEqual(old['queue'][0][0], '不要自动执行')
+                    finally:
+                        terminal.store.close(); app.close()
 
     async def test_resume_browses_without_running_queue_and_restores_history(self):
         from terminal.interactive import Terminal

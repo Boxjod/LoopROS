@@ -5,6 +5,8 @@ def encode(config, messages, tools):
     if config.get("protocol", "openai") == "openai":
         body = {"model": config["model"], "messages": [{k: v for k, v in m.items() if not k.startswith("_")} for m in messages],
                 config.get("token_field", "max_tokens"): config.get("max_output_tokens", 4096), "stream": False}
+        if config.get('reasoning_effort') is not None:
+            body['reasoning_effort'] = config['reasoning_effort']
         if tools:
             body["tools"] = tools
         return "/chat/completions", body
@@ -24,6 +26,8 @@ def encode(config, messages, tools):
             items.append({"role": message["role"], "content": content})
     body = {"model": config["model"], "input": items, "max_output_tokens": config.get("max_output_tokens", 4096),
             "stream": False, "store": False, "include": ["reasoning.encrypted_content"]}
+    if config.get('reasoning_effort') is not None:
+        body['reasoning'] = {'effort': config['reasoning_effort']}
     if tools:
         body["tools"] = [{"type": "function", **tool["function"], "strict": False} for tool in tools]
     return "/responses", body

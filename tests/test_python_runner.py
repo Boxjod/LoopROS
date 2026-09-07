@@ -6,6 +6,28 @@ from terminal.app import App
 from terminal.config import load_config
 
 class PythonRunnerTests(unittest.TestCase):
+    def test_large_output_can_be_paged_without_reexecuting(self):
+        import json
+        from terminal.context_window import tool_text
+        with tempfile.TemporaryDirectory() as d:
+            app=App(load_config(),Path(d)/'state');app.workspace_root=Path(d)
+            try:
+                app.permissions.set_rule('run_python','allow')
+                path=Path(d)/'large.py'
+                path.write_text('for i in range(2000): print(str(i) + ":" + "x" * 50)\nprint("FINAL_EVIDENCE")\n')
+                result=app.tool('run_python',{'path':str(path),'expected_sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
+                preview=tool_text(result)
+                self.assertLessEqual(len(preview),12000)
+                receipt=json.loads(preview)
+                self.assertEqual(receipt['returncode'],0)
+                self.assertTrue(receipt['stdout_preview_truncated'])
+                output=Path(receipt['stdout_path'])
+                self.assertEqual(output.stat().st_mode & 0o777,0o600)
+                tail=app.tool('read_file',{'path':str(output),'offset':2001,'limit':1})
+                self.assertIn('FINAL_EVIDENCE',tail['content'])
+                self.assertNotIn('FINAL_EVIDENCE',result['stdout'])
+            finally:app.close()
+
     def test_permission_hash_stdout_stderr_and_failure(self):
         with tempfile.TemporaryDirectory() as d:
             app=App(load_config(),Path(d)/'state');app.workspace_root=Path(d)
@@ -22,6 +44,18 @@ class PythonRunnerTests(unittest.TestCase):
                 with self.assertRaises(ValueError):app.tool('run_python',args)
                 app.permissions.set_mode('plan')
                 with self.assertRaises(PermissionError):app.tool('run_python',args)
+            finally:app.close()
+
+    def test_syntax_is_checked_before_process_launch(self):
+        from unittest.mock import patch
+        with tempfile.TemporaryDirectory() as folder:
+            app=App(load_config(),Path(folder)/'state');app.workspace_root=Path(folder)
+            try:
+                app.permissions.set_rule('run_python','allow')
+                path=Path(folder)/'bad.py';path.write_text('def broken(:')
+                with patch('terminal.python_runner.subprocess.Popen', side_effect=AssertionError('Must not launch')):
+                    with self.assertRaisesRegex(ValueError, 'syntax check failed'):
+                        app.tool('run_python',{'path':str(path),'expected_sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
             finally:app.close()
 
     def test_timeout_output_limit_cancel_and_arguments_not_shell(self):

@@ -47,6 +47,19 @@ def tool_text(result, limit=12000):
     text = json.dumps(result, ensure_ascii=False)
     if len(text) <= limit:
         return text
+    if isinstance(result, dict) and result.get('stdout_path'):
+        compact = dict(result)
+        # Preserve exit/safety status and real output locations, not just an
+        # arbitrary JSON prefix which may hide both the error and next read path.
+        for key in ('stdout', 'stderr'):
+            value = compact.get(key, '')
+            if isinstance(value, str) and len(value) > max(256, limit//4):
+                compact[key] = value[:max(256, limit//4)]
+                compact[key+'_preview_truncated'] = True
+        compact['output_notice'] = 'Output preview only. Read stdout_path/stderr_path with offset/limit for the needed lines; do not rerun the command to retrieve existing output.'
+        encoded = json.dumps(compact, ensure_ascii=False)
+        if len(encoded) <= limit:
+            return encoded
     # Keep JSON parseable and make loss visible; full receipt remains in events.
     return json.dumps({'truncated': True, 'original_characters': len(text),
         'notice': 'Partial tool output. Read a narrower range; full receipt is retained in tool events.',

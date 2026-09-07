@@ -30,6 +30,7 @@ from terminal.files import FILE_TOOLS, FILE_NAMES, tool as files_tool
 
 HELP = """Loop ROS commands
 /help, /shortcuts         Show help
+/tools [GROUP]           Expand a compact tool-call group (interactive terminal)
 /details [ID]            Expand a tool result (interactive terminal)
 /resume [TITLE]             Browse/select saved conversations
 /history [TITLE]            View conversation and per-turn summaries
@@ -142,7 +143,7 @@ TOOLS += SIM_TOOLS
 
 
 class App:
-    def __init__(self, config, state_dir, confirm=None, background=False):
+    def __init__(self, config, state_dir, confirm=None, background=False, runtime_dir=None):
         from toolchain.serial_port import SerialPort
         self.serial = SerialPort()
         self.config = config
@@ -151,6 +152,9 @@ class App:
         state_dir = Path(state_dir)
         state_dir.mkdir(parents=True, exist_ok=True)
         self.state_dir = state_dir
+        self.runtime_dir = Path(runtime_dir) if runtime_dir is not None else state_dir
+        self.runtime_dir.mkdir(parents=True, exist_ok=True)
+        self.concurrent_terminal = self.runtime_dir.resolve() != state_dir.resolve()
         self.deployment = load_bound(state_dir)
         if self.deployment:
             from toolchain.node_workers import definitions
@@ -164,9 +168,9 @@ class App:
             config[section] = self.providers.get(self.providers.selected()[slot])
         self.key_cache = {}
         self.evidence_path = state_dir / "episodes.sqlite"
-        self.scene_dir = state_dir / "scenes"
+        self.scene_dir = self.runtime_dir / "scenes"
         from terminal.viewer import SimulatorViewer
-        self.viewer = SimulatorViewer(ROOT, state_dir / "viewer")
+        self.viewer = SimulatorViewer(ROOT, self.runtime_dir / "viewer")
         self.latest_scene = None
         self.last_scene_request = None
         self.scene_generation_error = None
@@ -174,15 +178,15 @@ class App:
         from core.resources import ResourceManager
         from toolchain.admission import HostMonitor
         self.resources = ResourceManager(state_dir / "resource_leases.sqlite", config.get("resources", {}), HostMonitor())
-        self.services = PolicyServices(config["services"], state_dir / "services", resources=self.resources)
-        self.scheduler = Scheduler(state_dir / "jobs.sqlite", recover=not background)
+        self.services = PolicyServices(config["services"], self.runtime_dir / "services", resources=self.resources)
+        self.scheduler = Scheduler(self.runtime_dir / "jobs.sqlite", recover=not background)
         self.client = QwenClient(config["llm"])
         self.expert = self.client  # Legacy role/tool alias; one model and credential source.
         config["expert"] = self.client.config
         definitions = AgentRuntime.load_definitions(user_config_file("agents.json"), ALLOWED_AGENT_TOOLS)
         admission = self.resources
         self.runtime = AgentRuntime(definitions, {"llm": self.client, "expert": self.expert},
-                                    TOOLS + AGENT_TOOLS, self.tool, state_dir / "agents.jsonl",
+                                    TOOLS + AGENT_TOOLS, self.tool, self.runtime_dir / "agents.jsonl",
                                     max_workers=admission.policy["max_workers"], admission=admission)
         # Submission already passed the permission gate; preserve that approval
         # while rechecking current mode and deny rules at delayed launch.
@@ -216,13 +220,16 @@ class App:
         )
         from core.nodes import NodeRuntime
         from toolchain.node_workers import definitions
-        self.nodes = NodeRuntime(definitions(), state_dir / "nodes", admission=self.resources)
+        from terminal.instances import claim_node_resource
+        self.nodes = NodeRuntime(definitions(), self.runtime_dir / "nodes", admission=self.resources,
+                                 resource_claim=lambda resource: claim_node_resource(state_dir, resource))
         self.node_focus = "master"
         self.carriers = Carriers(self, self.deployment)
         self.confirm = confirm or (lambda message: input(message + " [y/N] ").strip().lower() == "y")
 
     def prepare_input(self, text, attachments):
         from terminal.references import prepare
+        self.local_read_cache = {}
         self.session_task.begin(text)
         self.active_toolsets.clear()  # Specialist schemas last for one turn only.
         return prepare(self, text, attachments)
@@ -251,6 +258,10 @@ class App:
                 self.nodes.stop(node['name'])
 
     def tool(self, name, args):
+        from terminal.read_cache import call
+        return call(self,name,args,self._tool)
+
+    def _tool(self, name, args):
         if name == 'resource_status':
             if args != {}: raise ValueError('No arguments expected')
             self.permissions.check(name, args)
@@ -525,14 +536,14 @@ class App:
         return {}
 
     def restore_scene_state(self):
-        path=self.state_dir/'scene_state.json'
+        path=self.runtime_dir/'scene_state.json'
         if not path.exists(): return
         state=json.loads(path.read_text())
         self.last_scene_request=state.get('last_request')
         self.scene_generation_error=state.get('error')
         scene=Path(state['scene']) if state.get('scene') else None
         if scene and not scene.is_absolute():
-            scene=self.state_dir/scene
+            scene=self.runtime_dir/scene
         if scene and scene.resolve().is_relative_to(self.scene_dir.resolve()) and scene.exists():
             from toolchain.model_assets import snapshot
             _,_,digest=snapshot(scene)
@@ -541,8 +552,8 @@ class App:
     def save_scene_state(self):
         from toolchain.model_assets import snapshot
         digest=snapshot(self.latest_scene)[2] if self.latest_scene else None
-        path=self.state_dir/'scene_state.json';temp=path.with_suffix('.tmp')
-        scene=str(self.latest_scene.resolve().relative_to(self.state_dir.resolve())) if self.latest_scene else None
+        path=self.runtime_dir/'scene_state.json';temp=path.with_suffix('.tmp')
+        scene=str(self.latest_scene.resolve().relative_to(self.runtime_dir.resolve())) if self.latest_scene else None
         temp.write_text(json.dumps({'scene':scene,'scene_sha256':digest,
                                    'last_request':self.last_scene_request,'error':self.scene_generation_error},ensure_ascii=False))
         temp.replace(path)
@@ -895,18 +906,21 @@ def main(argv=None):
     if args.state_dir is None:
         args.state_dir = DEFAULT_STATE_DIR if deployment is None else DEFAULT_STATE_DIR / 'deployments' / deployment.deployment_id / deployment.host_id
     args.state_dir.mkdir(parents=True, exist_ok=True)
-    with (args.state_dir / "terminal.lock").open("a+b") as lock:
-        try:
-            lock_terminal(lock)
-        except BlockingIOError:
-            parser.error("Another terminal is using this state directory")
+    from terminal.instances import TerminalInstance
+    with TerminalInstance(args.state_dir) as instance:
         if deployment:
             from terminal.carriers import bind
             try:
-                bind(args.state_dir, deployment)
+                with (args.state_dir / 'deployment.lock').open('a+b') as binding_lock:
+                    lock_terminal(binding_lock)
+                    existing = load_bound(args.state_dir)
+                    if instance.others_active() and (existing is None or existing.host_id != deployment.host_id
+                                                    or existing.manifest != deployment.manifest):
+                        raise ValueError('Close other terminals before changing deployment bindings')
+                    bind(args.state_dir, deployment)
             except (OSError, ValueError) as exc:
                 parser.error(str(exc))
-        app = App(load_config(args.config), args.state_dir)
+        app = App(load_config(args.config), args.state_dir, runtime_dir=instance.runtime_dir)
         try:
             if args.once is not None:
                 # A noninteractive call must never authorize process startup by itself.

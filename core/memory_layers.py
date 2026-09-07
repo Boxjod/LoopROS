@@ -5,6 +5,21 @@ import time
 from core.experience import terms
 
 
+def memory_provenance(kind, payload):
+    """Source and evidence are separate axes; neither grants execution authority."""
+    evidence = payload.get('evidence', '')
+    role = ('user' if evidence in ('user_statement_not_verified', 'user_feedback_signal_not_execution_evidence')
+            else 'tool' if evidence == 'historical_tool_observation_not_current_state'
+            else 'runtime' if kind in ('summary', 'procedure', 'last_success') else 'unknown')
+    declared = payload.get('source_role')
+    review = 'source_checked' if role != 'unknown' else 'review_required'
+    if declared and declared != role:
+        role, review = 'unknown', 'review_required'
+    if role in ('user', 'tool') and not declared:
+        review = 'review_required'
+    return {'source_role':role, 'review_status':review, 'authority':'historical_data_only'}
+
+
 class MemoryLayers:
     def __init__(self, store):
         self.store = store
@@ -45,7 +60,9 @@ class MemoryLayers:
             row = db.execute('SELECT * FROM memory_items WHERE scope=? AND id=?', (scope, identity)).fetchone()
         if not row:
             raise ValueError('Memory not found in this scope')
-        return {k: json.loads(row[k]) if k in ('payload', 'sources') else row[k] for k in row.keys() if k != 'scope'}
+        item = {k: json.loads(row[k]) if k in ('payload', 'sources') else row[k] for k in row.keys() if k != 'scope'}
+        item['provenance'] = memory_provenance(item['kind'], item['payload'])
+        return item
 
     def search(self, scope, query, limit=6):
         tokens = sorted(terms(query))[:40]
@@ -56,7 +73,7 @@ class MemoryLayers:
                 JOIN memory_items m ON m.scope=t.scope AND m.id=t.id
                 WHERE t.scope=? AND t.term IN (''' + ','.join('?' for _ in tokens) + ''')
                 GROUP BY m.id ORDER BY
-                CASE WHEN m.kind='last_success' THEN 2 WHEN json_extract(m.payload,'$.category') IN ('connection_profile','preference') OR m.kind='procedure' THEN 1 ELSE 0 END DESC,
+                CASE WHEN json_extract(m.payload,'$.category')='correction' THEN 3 WHEN m.kind='last_success' THEN 2 WHEN json_extract(m.payload,'$.category') IN ('connection_profile','preference') OR m.kind='procedure' THEN 1 ELSE 0 END DESC,
                 score DESC,m.updated DESC LIMIT 24''', [scope, *tokens]).fetchall()
         matches = [dict(self.read(scope, row['id']), score=row['score']) for row in rows]
         # Reserve room for durable connection habits as well as task summaries.

@@ -142,6 +142,7 @@ loop update --rollback
 - `scripts/`：源码安装器、发布构建脚本和仿真依赖清单。
 - `docs/`：项目文档和更新记录；`tests/`：验证。
 - `website/`：介绍网页；`artifacts/`：不纳入版本控制的本地运行产物。
+- `user_projects/`：按项目和已确认机器人型号分类的本地生成脚本与记录，不进入 Git 或发行；见[存放规则](docs/GENERATED_CODE.md)。
 
 根目录同时作为 `loop_robot` Python 包目录，因此保留包模块及 `loop`、`loop-switch` 源码启动入口。
 

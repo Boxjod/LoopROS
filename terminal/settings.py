@@ -51,6 +51,10 @@ def read(app, target=None):
     if value is not None:
         no_secrets(value)
     result = {'path': str(path), 'value': value}
+    if target == 'task_runtime':
+        result['manual_task_tools'] = 'Full registered Session tool catalog; worker_tools is retained for legacy configuration and replanner selection, not a manual execution allowlist.'
+        result['permissions'] = 'All execution still uses the shared PermissionGate. Scheduled tasks retain scheduled_tools restrictions.'
+        result['effective_after'] = 'Supervisor restart; an already running supervisor may still use its previously loaded tools.'
     if target == 'config':
         result['effective'] = app.config
     return result

@@ -36,7 +36,7 @@ class ResizeRenderTests(unittest.TestCase):
         terminal.action_panel = ('中文标题🙂' * 10, '面板内容' * 10)
         terminal.panel_offset = 0
         for fragments in (terminal.prompt_text(), terminal.panel_fragments(3)):
-            for line in ''.join(text for _, text in fragments).split('\n'):
+            for line in ''.join(fragment[1] for fragment in fragments).split('\n'):
                 self.assertLessEqual(get_cwidth(line), 18, line)
 
     def test_repeated_resize_preserves_editor_and_panels(self):

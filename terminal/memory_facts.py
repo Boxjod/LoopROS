@@ -7,10 +7,32 @@ from core.experience import terms
 
 def extract(text, receipts=()):
     memories = []
+    # Feedback is an advisory signal, never success evidence or authority.
+    # Ignore fenced examples and quoted/tool transcript lines for this heuristic.
+    direct = re.sub(r'```[\s\S]*?```', '', text[:16000])
+    # A pasted conversation is evidence to inspect, not a new preference source.
+    # Conservatively skip automatic extraction; the original history is retained.
+    if re.search(r'(?m)^\s*(?:Tools? [›▸]|❯|●|assistant:|Assistant:|助手[：:])', direct):
+        direct = ''
+    direct = '\n'.join(line for line in direct.splitlines()
+                       if not line.lstrip().startswith(('>', '“', '"')))
+    direct = re.sub(r'“[^”]*”|"[^"\n]*"', '', direct)
+    for sentence in re.split(r'[\n。！？!?]', direct):
+        sentence = sentence.strip()
+        if not sentence or sentence.startswith(('>', 'Tool ›', '“', '"')):
+            continue
+        if not re.search(r'我说过|说了几次|别再|不要再|又在|太浪费|太慢|烦死|搞什么|到底会不会|蠢|妈的|他妈|\bstupid\b|\bstop repeating\b', sentence, re.I):
+            continue
+        actionable = re.sub(r'他妈的?|妈的|蠢货?|\bstupid\b', '[不满表达]', sentence, flags=re.I)
+        memories.append({'kind':'user_feedback', 'category':'correction', 'priority':'high',
+                         'text':actionable[:600], 'tags':sorted(terms(sentence))[:20] + ['纠正','correction'],
+                         'evidence':'user_feedback_signal_not_execution_evidence'})
+        if len(memories) >= 2:
+            break
     entities = sorted({t for t in terms(text[:16000]) if re.fullmatch(r'[a-z][a-z0-9_-]{2,}', t)})[:12]
     # Preserve user-supplied context, including hypothetical/negative wording.
     # An address in a request is a hint, not a successful connection.
-    for sentence in re.split(r'[\n。！？]', text[:16000]):
+    for sentence in re.split(r'[\n。！？]', direct):
         addresses = []
         for value in re.findall(r'(?<![\w.])(?:\d{1,3}\.){3}\d{1,3}(?![\w.])', sentence):
             try:
@@ -29,7 +51,7 @@ def extract(text, receipts=()):
                          'category': 'connection_profile' if re.search(r'免密|用户名|passwordless|username', sentence, re.I) or ssh else 'preference' if explicit and not connection else 'observation',
                          'text': sentence.strip()[:600], 'tags': sorted(set(tags)),
                          'evidence': 'user_statement_not_verified'})
-        if len(memories) == 4:
+        if len(memories) >= 4:
             break
     # Only explicitly structured connection fields; never mine free-form logs,
     # code, file bodies or assistant prose for supposedly verified facts.
@@ -50,4 +72,7 @@ def extract(text, receipts=()):
         if len(memories) >= 6:
             break
     # Deduplicate within a turn. Across turns sources/timestamps remain intact.
+    for memory in memories:
+        memory['source_role'] = 'tool' if memory['kind']=='connection_observation' else 'user'
+        memory['review_status'] = 'source_checked_not_fact_verified'
     return list({json.dumps(m, sort_keys=True, ensure_ascii=False): m for m in memories}.values())

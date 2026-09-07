@@ -60,3 +60,14 @@ Deployment-enabled sessions additionally scope experience by deployment ID, host
 连接观察约定：工具结果为 `connection` 对象，或 tool_run 的 `output.connection`；必须有 device、host、transport、布尔 connected，可附 username、port、method。connected 必须由实际认证连接检查产生。前台 task 完成或后台 succeeded 且实际回执重新通过 `connection.connected == true`（tool_run 使用 `output.connection.connected`）的对应验收，才更新成功基准。请同时使用精确 tool arguments 约束目标。无关验收、端口开放、退出码 0、助手说成功均不算连接成功。旧 scripts/inspect_jetson_ssh.py 的自由文本输出没有自动回填为成功证据；新的自编连接工具需按此结构返回结果。
 
 实现：[连接记忆](../terminal/connection_memory.py)、[索引与成功基准](../core/memory_layers.py)。这是执行→观察→判断→用户选择回退→再验证→更新运行时记忆的闭环；复用前述三次实际成功的流程固化机制，不声称自动训练模型权重。
+
+
+## 来源分层与内容审核（2026-09-07）
+
+来源与事实可信度分开标记，不使用一个总分混同“听谁的”和“是否属实”。用户陈述/纠正标为 user，表达目标与偏好但不证明客观状态；结构化观察标为 tool，只证明回执范围内的历史观察；助手生成的 learning_note 即便引用真实 source IDs，仍是 assistant / advisory_not_verified。运行时 task 摘要不等于用户授权；已验收流程与成功连接沿用既有回执校验。所有历史记忆均为 historical_data_only，当前明确要求与当前证据优先。
+
+写入审核复用凭据脱敏和有限本地提取，排除代码围栏、引文及带终端/助手标记的粘贴对话。此类混合文本不自动提取长期偏好，完整 Session 历史仍保留。长期细节缺少来源标记或来源与证据类型冲突时，不进入 retain；相同文本的用户陈述和工具观察按类型分别保存，避免相互覆盖。
+
+召回再次检查来源。旧的无标记/冲突详情为 review_required，不自动注入上下文，仍可通过 experience_read/search 查看原记录及审核标记；不直接重写或删除历史。source_checked 只表示来源结构检查通过，绝非事实核实。当前规则不具备任意自然语言语义审计能力，也不能保证识别所有伪装引用；未知内容应读取原始来源核实，不能凭重复或助手总结提升可信度。
+
+模型保留独立判断：按当前事实检查用户前提与历史习惯的适用性，有证据时简短纠错并提出方案；不机械服从记忆，不以“偏好”替代推理或限制范围内的主动性。测试见 test_memory_layers、test_learning、test_connection_memory。

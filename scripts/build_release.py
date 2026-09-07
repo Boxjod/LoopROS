@@ -28,7 +28,7 @@ def public_source(root, destination):
     excluded = set(ignored.stdout.decode().split('\0'))
     destination.mkdir(parents=True)
     for name in names:
-        if name in excluded:
+        if name in excluded or Path(name).parts[0] == 'user_projects':
             continue
         source = root / name
         if source.is_symlink():
@@ -64,7 +64,7 @@ def main():
         with zipfile.ZipFile(wheel) as archive:
             for name in archive.namelist():
                 parts = Path(name).parts
-                if any(p in ('artifacts', '.loop', '.looper', '.venv', '__pycache__', 'candidates', 'user_skills', 'user_tools') for p in parts) or any(
+                if any(p in ('artifacts', '.loop', '.looper', '.venv', '__pycache__', 'candidates', 'user_skills', 'user_tools', 'user_projects') for p in parts) or any(
                     p in name for p in ('credentials.json', 'config.local.json', '.sqlite', 'DEPLOYMENT.md')):
                     raise ValueError('Private/runtime file found in wheel: ' + name)
                 if not name.startswith(('loop_robot/', 'loop_ros-' + __version__ + '.dist-info/')):

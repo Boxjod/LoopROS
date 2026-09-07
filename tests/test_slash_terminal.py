@@ -62,6 +62,8 @@ class SlashTerminalTests(unittest.TestCase):
                 send('model-b',.3)
                 send('/fast',.3)
                 self.assertIn('priority', '\n'.join(screen.display))
+                send('/reasoning high',.4)
+                self.assertIn('requested reasoning effort: high', '\n'.join(screen.display))
                 send('中',.15)
                 os.write(master,'文2'.encode())
                 shown = send(duration=.4)

@@ -5,6 +5,7 @@ from pathlib import Path
 import sys
 
 CONTROL_COMMANDS = {
+    "/reasoning": "[default|none|minimal|low|medium|high|xhigh|max] Inspect or persist requested reasoning effort",
     "/permissions": "[default|plan|cautious|yolo] Profiles; [allow|ask|deny action] Edit a rule",
     "/requests": "Inspect pending approvals and exact arguments",
     "/approve": "ID Approve once; /approve reject ID to reject",
@@ -24,7 +25,7 @@ CONTROL_COMMANDS = {
     "/stop": "Stop simulation and cancel subagents; NOT a hardware E-stop",
     "/commands": "Count and list all slash commands",
 }
-BASE_COMMANDS = "/skills /after /agents /agent-messages /cancel /clear /complex /every /exit /expert-key /fast /help /jobs /key /model /policy /quit /result /scene /send /shortcuts /sim /spawn /status /stop-agent /switch /viewer /node /models /model-load".split()
+BASE_COMMANDS = "/tools /skills /after /agents /agent-messages /cancel /clear /complex /every /exit /expert-key /fast /help /jobs /key /model /policy /quit /result /scene /send /shortcuts /sim /spawn /status /stop-agent /switch /viewer /node /models /model-load".split()
 
 
 def operator_command(app, command, tail):
@@ -81,6 +82,20 @@ def operator_command(app, command, tail):
     if command == "/config":
         return dump({"master": app.client.config, "expert": app.expert.config,
                      "mode": app.permissions.snapshot()["mode"]})
+    if command == '/reasoning':
+        from terminal.config import REASONING_EFFORTS
+        effort = tail.strip()
+        if effort and effort != 'status':
+            if effort not in ('default', *REASONING_EFFORTS):
+                raise ValueError('Choose default or ' + ', '.join(REASONING_EFFORTS))
+            from terminal.settings import update
+            config = dict(app.client.config)
+            if effort == 'default': config.pop('reasoning_effort', None)
+            else: config['reasoning_effort'] = effort
+            update(app, 'profiles', {'operation':'save', 'name':app.providers.selected()['master'], 'config':config, 'replace':True})
+        return dump({'requested_reasoning_effort':app.client.config.get('reasoning_effort','provider default'),
+                     'choices':['default', *REASONING_EFFORTS],
+                     'notice':'Supported levels depend on this model and endpoint; requested value is not proof of provider support.'})
     if command == "/context":
         from terminal.context_window import select
         return dump({**select(app.agent.history, app.agent.history_message_limit)[2],

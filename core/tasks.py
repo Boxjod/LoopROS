@@ -177,6 +177,8 @@ class TaskStore:
         task=self.get(identity)
         if task['state'] in TERMINAL: raise ValueError('Completed/cancelled tasks cannot be resumed')
         if task['state']=='running': raise ValueError('Task already running')
+        if not task['spec'].get('checks') and not checks and not message:
+            raise ValueError('Missing acceptance checks: supply checks or concrete new information before resuming; requeueing alone cannot resolve this blocker')
         if checks is not None:
             spec={**task['spec'],'checks':checks};validate_spec(spec)
             with self.db() as db: db.execute('UPDATE tasks SET spec=? WHERE id=?',(json.dumps(spec,ensure_ascii=False),identity))

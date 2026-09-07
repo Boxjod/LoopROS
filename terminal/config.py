@@ -16,11 +16,16 @@ def user_config_file(name):
     return path if path.exists() else ROOT / "configs" / name
 
 
+REASONING_EFFORTS = ('none', 'minimal', 'low', 'medium', 'high', 'xhigh', 'max')
+
+
 def validate_provider(provider):
     import re
     required = {"base_url", "model", "api_key_env", "timeout_s"}
-    if not isinstance(provider, dict) or not required <= set(provider) or set(provider) - required - {"token_field", "protocol", "vision_model", "context_window", "max_output_tokens", "compact_threshold", "stream_usage", "image_token_budget"}:
+    if not isinstance(provider, dict) or not required <= set(provider) or set(provider) - required - {"token_field", "protocol", "vision_model", "context_window", "max_output_tokens", "compact_threshold", "stream_usage", "image_token_budget", "reasoning_effort"}:
         raise ValueError("provider fields: base_url/model/api_key_env/timeout_s/token_field; do not store API keys")
+    if 'reasoning_effort' in provider and provider['reasoning_effort'] not in REASONING_EFFORTS:
+        raise ValueError('Invalid reasoning_effort')
     if "vision_model" in provider and (not isinstance(provider["vision_model"], str) or not provider["vision_model"].strip() or len(provider["vision_model"]) > 2048):
         raise ValueError("vision_model must be a nonempty model ID")
     for field in ("base_url", "model", "api_key_env"):

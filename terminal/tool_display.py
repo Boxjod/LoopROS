@@ -1,6 +1,8 @@
 """Compact tool presentation. Raw events remain in the local transcript."""
 import json
 import time
+from datetime import datetime
+import math
 
 
 def shorten(value, limit=100):
@@ -13,8 +15,14 @@ class ToolDisplay:
         self.name = None
         self.started = None
         self.preview = []
+        self.clock = ""
+        self.call_text = ""
+        self.elapsed = 0.0
+        self.local_tokens = 0
 
     def call(self, text):
+        self.clock = datetime.now().strftime("%H:%M:%S")
+        self.call_text = text
         name, separator, payload = text.partition('(')
         self.name = name if separator else None
         self.started = time.monotonic()
@@ -32,7 +40,13 @@ class ToolDisplay:
 
     def result(self, text, event_id):
         self.preview = []
-        elapsed = f' · {time.monotonic() - self.started:.1f}s' if self.started is not None else ''
+        self.elapsed = time.monotonic() - self.started if self.started is not None else 0.0
+        elapsed = f' · {self.elapsed:.1f}s' if self.started is not None else ''
+        def estimate(value):
+            return math.ceil(sum(1 if ord(c)<128 else 4 for c in value)/4)
+        self.local_tokens = estimate(self.call_text)+estimate(text)
+        elapsed += ' · ~'+str(self.local_tokens)+' local tokens'
+        if self.clock: elapsed = ' · '+self.clock+elapsed
         name = self.name
         self.name = self.started = None
         try:
@@ -48,6 +62,8 @@ class ToolDisplay:
                                   and r.get('verdict') in ('fail', 'inconclusive')), None)
             if data.get('error'):
                 summary = 'Error: ' + shorten(data.get('message') or data['error'], 150)
+            elif data.get('_reused'):
+                summary = 'Reused unchanged local result: '+shorten(data.get('path') or data.get('name') or name)
             elif data.get('written') is True and isinstance(data.get('diff'),str):
                 diff=data['diff'].splitlines()
                 added=data.get('lines_added',sum(line.startswith('+') and not line.startswith('+++') for line in diff))

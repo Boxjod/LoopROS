@@ -92,3 +92,12 @@ loop-switch remove setup-配置ID
 2026-09-07：配置向导自动探测覆盖预设与自定义 URL，完整展示模型列表。公司名称按 A–Z 分组（已识别系列归一到公司，其他使用接口 owned_by，未知在最后），组内按日期降序；优先 released_at/release_date/created，再尝试型号中的完整日期，无日期标 Unknown 并排在后面，同日期按 ID 排序。created 可能是目录创建时间，不保证是发布时间。编号全局连续，越界重新输入，0 取消，探测失败可手填。默认选中列表中的预设型号或首项，需用户确认输入后保存。此列表不代表 API 类型、工具或视觉能力已验证。
 
 2026-09-07：profile可保存 `context_window`、`max_output_tokens`、`compact_threshold`、`image_token_budget`、`stream_usage`，使用既有settings profiles入口编辑；高级编辑保留这些额外字段。改变模型ID时清除旧容量；完整profile切换读取目标容量。详见 [上下文预算](SESSION_MEMORY.md)。
+
+
+### Reasoning effort（2026-09-07）
+
+`/reasoning` 查看请求的思考强度；`/reasoning medium`、`/reasoning high` 等持久保存到当前 profile；`/reasoning default` 删除该覆盖，交由供应商默认处理。命令补全提供 default、none、minimal、low、medium、high、xhigh、max。并非每个模型都支持全部档位，不支持时保留接口错误，不偷偷改模型或参数重发。修改沿用 profile 的活动任务保护，不更换 endpoint 或密钥。
+
+配置字段为 `reasoning_effort`。Chat Completions 编码为顶层 reasoning_effort；Responses 编码为 reasoning.effort。未配置时完全省略。显示的是 requested 值，不证明中转接口确实采用了该强度。`/fast` 是服务等级，reasoning 是思考投入，两者不同；思考文本的显示也不是强度选择。
+
+[官方 Reasoning 说明](https://developers.openai.com/api/docs/guides/reasoning)指出档位按模型而异，更高档位可能增加 token 与等待时间。本次测试验证配置持久化和两个协议的请求体，没有使用用户模型进行收费兼容性探测。

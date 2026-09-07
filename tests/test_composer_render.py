@@ -64,7 +64,7 @@ class ComposerRenderTests(unittest.TestCase):
                     saved=json.loads(db.execute('select data from checkpoint where id=1').fetchone()[0])
                 self.assertEqual(len(saved['attachments']),1)
                 self.assertTrue(saved['composer']['blocks'])
-                # Restart the actual terminal with its saved chip + media payload.
+                # Restart fresh, then explicitly restore the saved chip + media payload.
                 os.close(master)
                 master,slave=pty.openpty()
                 fcntl.ioctl(slave,termios.TIOCSWINSZ,struct.pack('HHHH',12,40,0,0))
@@ -72,6 +72,9 @@ class ComposerRenderTests(unittest.TestCase):
                     cwd=Path(__file__).resolve().parents[1],stdin=slave,stdout=slave,stderr=slave,
                     env=dict(os.environ,TERM='xterm-256color',LOOP_HOME=d+'/home'))
                 os.close(slave);screen.reset();drain(.8)
+                self.assertNotIn('[Image #2]',shown())
+                os.write(master, ('/resume '+saved['session_id']).encode());drain(.3)
+                os.write(master, b'\r');drain(.8)
                 self.assertIn('[Image #2]',shown());evidence['restored']=screen.display[:]
                 os.write(master,b'\x03/exit\r');drain(.5);self.assertEqual(process.wait(timeout=5),0)
                 output=Path(__file__).resolve().parents[1]/'artifacts/composer-chips'

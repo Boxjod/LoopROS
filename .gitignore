@@ -24,6 +24,9 @@ credentials.json
 /mjmodel.mjb
 reference/
 
+# User projects: generated scripts, device records and data never ship.
+/user_projects/
+
 # User-authored packages and unreviewed tools stay local.
 /skills/
 /user_skills/
@@ -55,3 +58,9 @@ reference/
 !/configs/skills/isaac-scene-builder/SKILL.md
 !/configs/skills/mujoco-scene-builder/SKILL.md
 !/configs/skills/simulation-learning-data/SKILL.md
+
+# Root documentation is an entry point, not storage for user operation reports.
+/*.md
+!/AGENTS.md
+!/README.md
+!/README.zh-CN.md

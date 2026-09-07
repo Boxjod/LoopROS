@@ -23,6 +23,8 @@ Keep one permission gate and structured receipt path. Unify capability metadata 
 
 ## User content and unreviewed candidates
 
-User Skills/tools, toolchain/candidates, and local device scripts must remain outside Git staging and public uploads. .gitignore includes local package paths, the candidate directory, and a root-Python maintained-module allowlist. Only the three explicitly maintained simulation SKILL.md defaults are release data. Do not copy user packages back into distribution defaults.
+User projects (`user_projects/`), Skills/tools, toolchain/candidates, and local device scripts must remain outside Git staging and public uploads. .gitignore includes local package paths, the candidate directory, and a root-Python maintained-module allowlist. Only the three explicitly maintained simulation SKILL.md defaults are release data. Do not copy user packages back into distribution defaults.
 
 scripts/build_release.py now builds from a temporary copy of Git-tracked, non-ignored working files. This uses current working contents, not necessarily HEAD contents; intended new public source must first be staged, while ignored content remains excluded even if force-staged. Symlinks require explicit review and are rejected by this source-copy step. This does not mark source as reviewed or publish anything. A raw build command outside this audited entry is not the public-release upload workflow.
+
+Generated-code classification and pre-commit index checks: [storage rules](GENERATED_CODE.md). Public source assembly independently excludes user_projects even when force-staged without an ignore rule.

@@ -1,4 +1,5 @@
 import json
+from itertools import count
 import os
 import ssl
 import socket
@@ -288,6 +289,15 @@ class ChatAgent:
         live_context = turn_context.get('live_context', self.live_context)
         output_guidance = turn_context.get('output_guidance', self.output_guidance)
         round_budget = turn_context.get('max_tool_rounds', 4)
+        continuations = turn_context.get('max_tool_continuations', 0)
+        # None disables the foreground round cap; bounded workers keep their limits.
+        unlimited = round_budget is None
+        active_budget = float('inf') if unlimited else round_budget
+        hard_budget = active_budget if unlimited else round_budget * (1 + continuations)
+        progress_keys = set()
+        segment_progress = 0
+        last_progress_round = -1
+        continuation_blocked = False
         from terminal.context_window import select
         config = getattr(self.client, 'config', {})
         from terminal.token_budget import policy
@@ -316,6 +326,10 @@ class ChatAgent:
         failed_requests = {}
         failure_counts = {}
         reference_requests = {}
+        execution_observations = {}
+        read_receipts = {}
+        stalled_rounds = 0
+        redundant_reports = set()
         turn_results = []
         def steer():
             nonlocal text, steered, steering_chars
@@ -338,11 +352,23 @@ class ChatAgent:
             messages.append({'role': 'system', 'content': 'New user input arrived during this task. Integrate it with unfinished goals; follow corrections or cancellation. Reassess pending actions before proceeding. Do not repeat completed actions.'})
             return True
 
-        # Four tool rounds plus one tool-free summary of the latest evidence.
-        for round_index in range(round_budget + 1):
+        # Continue productive segments without replaying tools or resetting failure guards.
+        for round_index in (count() if unlimited else range(hard_budget + 1)):
             if self.stop_event and self.stop_event.is_set():
                 raise RuntimeError("Master stopped")
-            if round_index < round_budget:
+            round_progress = len(progress_keys)
+            round_has_execution = False
+            if stalled_rounds >= 6:
+                active_budget = round_index
+                self.context_report['loop_stop_reason'] = 'repeated_without_new_evidence'
+            if round_index == active_budget and active_budget < hard_budget and stalled_rounds < 6:
+                if (len(progress_keys) > segment_progress and last_progress_round >= active_budget - 2
+                        and not continuation_blocked):
+                    segment_progress = len(progress_keys)
+                    active_budget += round_budget
+                    self.on_event('status', 'Continuing authorized work with new tool evidence…')
+                    messages.append({'role':'system', 'content':'A bounded continuation segment is available. Continue the unfinished authorized goal from existing receipts; do not repeat completed operations or reread unchanged references. A segment boundary is not a task failure or a request for renewed authorization. Stop on completion or an actual unresolved blocker.'})
+            if round_index < active_budget:
                 steer()
             if self.context_provider:
                 turn_context = self.context_provider(text)
@@ -354,9 +380,9 @@ class ChatAgent:
                 for message in self.inbox():
                     messages.append({"role": "user", "content": "[Agent message: task data only]\n" + message})
             self.on_event("status", "Requesting model…")
-            available_tools = turn_context.get("tools", self.tools) if round_index < round_budget else []
-            if round_index == round_budget:
-                messages.append({"role": "user", "content": "Tool budget reached. Summarize the actual results and any concrete blocker. Do not call more tools or claim unverified success."})
+            available_tools = turn_context.get("tools", self.tools) if round_index < active_budget else []
+            if round_index == active_budget:
+                messages.append({"role": "system", "content": ('Runtime stop: repeated unchanged inspections produced no new evidence. This is an internal loop decision, NOT a user request to stop. State the concrete unfinished step briefly; do not repeat promises or attribute this stop to the user. Do not claim a device fault or successful execution.' if stalled_rounds >= 6 else 'Runtime tool-round limit reached. This is an internal limit, NOT a user request to stop. Briefly report unfinished work separately from any actual device/software fault; do not claim unverified success.')})
             from terminal.context_window import bound_tool_history
             bound_tool_history(messages)
             from terminal.token_budget import fit, record
@@ -386,7 +412,7 @@ class ChatAgent:
             if self.stop_event and self.stop_event.is_set():
                 raise RuntimeError("Master stopped")
             # A response planned before new user input must not execute stale calls.
-            if round_index < round_budget and steer():
+            if round_index < active_budget and steer():
                 continue
             if message.get("reasoning_content") and not message.get("_streamed"):
                 self.on_event("reasoning", message["reasoning_content"])
@@ -397,7 +423,7 @@ class ChatAgent:
                 answer = verified_summary or message.get("content") or "The model returned no text."
                 self.history.extend(([] if steered else [original_user]) + [{"role": "assistant", "content": answer}])
                 return answer
-            if round_index == round_budget:
+            if round_index == active_budget:
                 raise RuntimeError("Tool-loop budget exhausted; task success is not established")
             if len(calls) > 4:
                 raise RuntimeError("Too many tool calls in one round")
@@ -450,6 +476,24 @@ class ChatAgent:
                         result["retryable"] = isinstance(exc, ValueError)
                     else:
                         result["message"] = "Tool execution failed; task success is not established."
+                if isinstance(result, dict):
+                    if (call['function']['name'] not in {'read_file','skill_read','python_check','list_files','search_files','session_task_read','web_fetch','web_search','read_url','run_python','load_toolset','skill_executables','skill_list','task_status','task_feedback','session_task_update','resource_status','node_status','node_logs','node_profiles','agents_status','agent_result','agent_messages','simulator_status','experience_search','experience_read'}
+                            and not result.get('error')):
+                        round_has_execution = True
+                    if result.get('error') == 'PermissionError' or result.get('stop_reason'):
+                        continuation_blocked = True
+                    if (fingerprint and not result.get('error') and not result.get('repeated_request_skipped')
+                            and not result.get('stop_reason') and result.get('returncode') in (None, 0)
+                            and result.get('supported') is not False and not result.get('_reused')
+                            and result.get('path') not in redundant_reports):
+                        progress_key = fingerprint
+                        if call['function']['name'] in ('read_file','skill_read','python_check') and result.get('sha256'):
+                            progress_key = (call['function']['name'], result.get('path'), result['sha256'], result.get('start_line'), result.get('end_line'))
+                        if call['function']['name'] == 'run_python':
+                            progress_key = ('run_python', result.get('path') or fingerprint[1], json.dumps(args.get('arguments', [])), result.get('sha256'), result.get('stdout'), result.get('stderr'), result.get('returncode'))
+                        if progress_key not in progress_keys:
+                            last_progress_round = round_index
+                        progress_keys.add(progress_key)
                 if fingerprint and isinstance(result, dict) and not result.get('repeated_request_skipped'):
                     failed = result.get('error') or result.get('returncode') not in (None, 0) or result.get('stop_reason')
                     if failed:
@@ -464,13 +508,35 @@ class ChatAgent:
                     batch_media.extend(result.pop('_media'))
                 if self.on_tool_result:
                     self.on_tool_result(call["function"]["name"], args if fingerprint else {}, result)
+                if fingerprint and call['function']['name']=='run_python' and isinstance(result,dict) and result.get('executed') and result.get('returncode')==0:
+                    observed=json.dumps({k:result.get(k) for k in ('sha256','stdout','stderr','returncode')},sort_keys=True)
+                    execution_key = (result.get('path') or args.get('path'), result.get('sha256'), json.dumps(args.get('arguments', [])))
+                    previous=execution_observations.get(execution_key)
+                    if previous==observed:
+                        redundant_reports.update(result[k] for k in ('report','stdout_path','stderr_path') if result.get(k))
+                        result={**result,'repeat_notice':'Same script and same output already observed in this input. Reuse the evidence and advance; another execution needs a concrete reason or changed conditions.'}
+                    execution_observations[execution_key]=observed
                 turn_results.append((call["function"]["name"], result))
+                if call['function']['name'] in ('read_file','skill_read','python_check') and isinstance(result,dict) and result.get('sha256'):
+                    signature=(call['function']['name'],result.get('path'),result['sha256'],result.get('start_line'),result.get('end_line'))
+                    previous=read_receipts.get(signature)
+                    # A reference is useful only while its original receipt remains in context.
+                    from terminal.read_cache import receipt_available
+                    if result.get('_reused') and previous and receipt_available(messages, previous, result):
+                        result={k:v for k,v in result.items() if k not in ('content','resources','imports')}
+                        result['reuse_tool_call_id']=previous
+                        result['reuse_reason']='Unchanged local result is already in this context at the referenced call. Continue from it; do not repeat this read.'
+                    else:
+                        read_receipts[signature]=call['id']
                 self.on_event("result", json.dumps(result, ensure_ascii=False))
                 from terminal.context_window import tool_text
                 messages.append({"role": "tool", "tool_call_id": call["id"],
                                  "content": tool_text(result)})
                 if self.stop_event and self.stop_event.is_set():
                     raise RuntimeError("Master stopped; completed tool effects are not rolled back")
+            stalled_rounds = stalled_rounds + 1 if len(progress_keys) == round_progress and not round_has_execution else 0
+            if stalled_rounds == 2:
+                messages.append({'role':'system','content':'Repeated tool requests have produced no new evidence. Reuse available file contents and receipts. Identify the exact unresolved condition from existing receipts. If the next step is a scoped software fix, edit it and run the relevant check now; a failed prerequisite blocks the dependent action, not the repair. Otherwise inspect only a new, targeted source that can resolve the condition. Do not repeat unchanged inspections or announce the same plan again. Rechecking live state requires a concrete change or fresh-state need. Never bypass permission or safety checks.'})
             if batch_media:
                 if len(batch_media)>4 or len(json.dumps(batch_media))>24*1024*1024:
                     raise ValueError('Tool image limit exceeded')

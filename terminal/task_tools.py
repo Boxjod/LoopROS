@@ -32,6 +32,12 @@ def dispatch(app,name,args):
         if set(args)-{'goal','checks'}: raise ValueError('task_submit accepts goal and checks')
         spec={**args,'session_id':app.session_id,'origin':'manual','provider':[app.client.config['base_url'].rstrip('/'),app.client.config['model'],app.client.config.get('protocol','openai')]}
         result=store.submit(spec)
+        from terminal.session import SessionStore
+        conversations = SessionStore(app.state_dir/'conversation.sqlite')
+        try:
+            result['chat_session_id'] = conversations.ensure_task_session(app.client.config, result)
+        finally:
+            conversations.close()
     elif name=='task_resume':
         if set(args)-{'task_id','checks','message'} or 'task_id' not in args: raise ValueError('task_id required')
         result=store.resume(args['task_id'],args.get('checks'),args.get('message'))

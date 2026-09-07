@@ -48,6 +48,7 @@ class TaskNavigationTests(unittest.TestCase):
             task['session_id'] = 'current'
         terminal.ui = Mock()
         terminal.store = Mock()
+        terminal.store.task_link.return_value = None
         terminal.store.title.return_value = 'Current conversation'
         terminal.task_store = Mock()
         terminal.task_store.list.return_value = tasks
@@ -64,6 +65,7 @@ class TaskNavigationTests(unittest.TestCase):
         terminal = self.terminal([{'id': 'one', 'state': 'running', 'spec': {'goal': 'Task'}, 'feedback': {}}])
         for back in (-1, 1):
             terminal.select_task(1)
+            self.assertEqual(terminal.task_commands(), [('Enter session', 'enter_session'), ('Close session', 'close_session')])
             self.assertEqual(terminal.selected_task, 'one')
             terminal.select_task(back)
             self.assertIsNone(terminal.selected_task)

@@ -1,5 +1,27 @@
 # 已验证操作
 
+2026-09-07 启动统一新建 Session：首个窗口和附加窗口每次启动／重启均生成并保存新会话，不自动载入历史、草稿、附件、队列或旧累计用量。历史通过 /resume 显式恢复，恢复队列仍暂停；旧 checkpoint-only 记录在打开库时先归档，避免新会话第一次保存覆盖唯一历史。新会话在菜单使用前持久化，避免恢复命令补全后才出现同名空白会话而产生歧义。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_interactive test_session_resume test_multi_terminal test_multi_terminal_render test_session_render test_composer_render -q` 38 项通过，日志 artifacts/terminal/validation/fresh-session-startup.log。覆盖连续两次重启 ID 独立、旧历史／草稿／队列保留、旧检查点归档、显式恢复用量与历史、双终端中文流式输入、任务面板以及真实 PTY 重启不自动带入图片、手动恢复图片。旧自动恢复测试改为显式 /resume；任务面板测试等待 Esc 完整处理，保留原操作验收。`git diff --check` 通过；没有操作用户设备、服务或现有窗口。
+
+2026-09-07 多个 Loop 终端共用状态目录：CLI 的整目录拒绝改为 TerminalInstance 运行槽；首槽保留原路径，其余为 terminals/<槽号>。共享 profile、权限、历史、任务、学习与资源租约；额外终端从新会话开始，当前会话用 OS 锁保护，恢复占用会话保留原窗口。获取锁后重读最新会话，工具回执按 session_id 关联，旧记录保留。定时器、Node、viewer／场景和前台日志按槽隔离，非仿真 Node 所有权锁随进程回收释放，不另造资源预算账本。部署绑定变更检查其他活动终端。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_multi_terminal test_multi_terminal_render test_session_resume test_tool_groups test_nodes.NodeRuntimeTests -q` 19 项通过；真实 CLI 第三个窗口复用相同 state-dir、两个真实 PTY 中文流式／并行草稿、同会话占用拒绝、关一个窗口后另一个继续及恢复、子进程崩溃解锁、跨运行槽 Node 重复资源拒绝／停止和启动失败后释放均通过。PTY 首次验证因键入与 Enter 同包遇到界面时序未提交，改为分开键入与提交；再次验证发现测试未清除错误后按产品行为保留的 slash 草稿，修正后通过，没有改动相关输入行为。
+
+`PYTHONPATH=tests .venv/bin/python -m unittest test_terminal test_interactive test_session_render test_platform_support test_carriers.DeploymentTests -q` 43 项通过，日志：artifacts/terminal/validation/multi-terminal-regression.log。共 62 项相关测试通过。初始扩大回归发现一条既有工具循环测试把末条提示当 JSON 回执；改为选最后一条 role=tool 消息，仍断言重复调用被跳过且执行仅一次，单项及整组复验通过。没有变更模型循环实现。`git diff --check` 通过，已确认用户的 loop 命令加载本工作区 terminal/app.py。
+
+本轮没有操作用户设备或现有服务；并发验证使用临时状态目录、离线模型替身与无硬件 Node，未打开 MuJoCo 窗口。Windows/macOS 原生并发未实测。旧版本终端需正常退出后重开，使所有窗口加载新的占用保护；混用旧进程不作为已验证并发。内部状态路径约定见 [终端说明](TERMINAL.md#多终端共享状态目录2026-09-07)。
+
+2026-09-07 用户生成代码归类：根目录 33 个本地脚本和 1 份操作记录移到被忽略的 `user_projects/`，按项目与源码已明确的机器人型号分类；34 份内容逐一 SHA256 完全一致，旧回执和会话数据库不移动。根目录只剩 8 个正式 Python 包／安装／更新模块。迁移清单、旧新路径及任务索引留在本地目录，已从 Git 暂存移除用户操作记录，其他暂存改动保留。
+
+模型上下文／默认工作流与文件 schema 指明分类位置；文件工具阻止在 Loop ROS 自身包根新建临时脚本，现有模块编辑和普通项目源码写入仍可用。根目录源码搜索跳过用户目录，显式选择项目可检索。`user_projects` 同时被 Git 忽略与发行源树独立排除，wheel 检查拒绝该目录；根 Markdown 使用维护入口白名单。详见 [存放规则](GENERATED_CODE.md)。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_coding_agent test_public_source test_tool_continuation test_python_runner -q` 28 项通过；覆盖生成路径、现有源码编辑、普通项目根写入、定向检索、强行暂存且无忽略规则的发行过滤及实际 Git 索引检查。33 个迁移脚本 AST 解析、34 个文件哈希、本地索引链接、实际源码发行快照过滤和 `git diff --check` 通过。迁移前未发现直接运行这些脚本的进程；未执行用户脚本、SSH、控制或仿真。运行中的旧 Loop 需正常退出后重开以加载文件工具／上下文新规则。
+
+2026-09-07 取消前台工具总轮次上限：默认上下文使用 `max_tool_rounds=None`，ChatAgent 持续循环至模型答复、取消或异常，不再触发 24／72 轮预算收尾。保留显式有限调用者与后台 Worker 预算、权限门禁和重复失败处理。已运行的 Loop 进程需退出后重新启动加载；未执行轨迹或连接设备。
+
+验证：`.venv/bin/python -m unittest discover -s tests -p 'test_tool_continuation.py'` 8 项通过，含 80 次工具调用后正常答复及第 75 次调用取消；同命令分别运行 `test_tool_groups.py`、`test_stream_completion.py`、`test_steering.py` 各 4 项通过，共 20 项。模型与工具使用替身，无真实模型费用。`git diff --check` 通过。
+
 2026-09-07 执行中队列介入：前台新消息由 UI 线程在模型返回/工具完成边界并入当前 ChatAgent，保留原目标和实际回执，跳过旧响应中尚未执行的工具；不强制中断执行中的工具。消费后追加用户历史并保存检查点，本轮经验包含补充要求。暂停/编辑/清空/附件和文本预算保持受控，定时任务及 slash 执行不混入。
 
 验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_steering test_interactive test_coding_agent -q` 36 项通过；`PYTHONPATH=tests .venv/bin/python -m unittest test_steering test_steering_render test_terminal_render.TerminalRenderTests.test_chinese_stream_queue_and_editing -q` 6 项通过，无跳过（其中 4 项已包含在前一组）。真实 PTY 验证中文连接请求期间补充启动 host，队列先显示再由当前回合消费、草稿保持，模型/工具均替身且没有实际 SSH/服务启动。首版 PTY 替身使用未注册工具被正常拒绝，修正为已注册的 list_files 替身后通过。
@@ -658,3 +680,141 @@ Export with `python3 scripts/build_website.py --output artifacts/website-bilingu
 - 终端显示前台会话累计Token及最新上下文量，`~`估算、`?`未知、`+`缺报。usage、窗口偏好和预算报告随checkpoint保存与resume恢复；新会话独立统计。未汇总子Agent/后台Task与账户账单，未追溯老会话成本。`/compact`是确定性摘录，不额外调用模型，不保证无损语义记忆。
 - 初次集成发现未知容量的保守阈值会误挡较大的工具schema，并挤掉短历史；已改为按固定请求开销保留本地余量，增加回归。PTY发现压缩回执在窄行中拆开关键词，已将“Full session history preserved”放在回执开头。
 - 验证：`LOOP_TASK_AUTOSTART=0 PYTHONPATH=tests .venv/bin/python -m unittest test_token_budget test_context_window test_stream_completion test_session_resume test_providers test_settings test_control test_coding_agent test_slash_terminal -q` 61项通过；随后新增实际/估算显示和未知容量回归，`test_token_budget test_stream_completion test_model_connection test_setup test_slash_terminal` 31项通过（7.174秒）；最后增加尾包超时保护，`test_token_budget test_stream_completion` 14项通过。测试批次有重叠；真实PTY验证中文流式期间输入与状态栏，协议检查使用本地桩，没有付费模型、真机或仿真启动。窗口配置方式及能力边界见 [Session Memory](SESSION_MEMORY.md)。
+
+
+### 2026-09-07：自动调试预算与确定性报告
+
+- 修复重新规划丢失停滞计数的问题；默认最多 8 次 Worker 尝试、1 次重新规划。无新证据或预算耗尽时等待，轮询不继续消耗模型；明确 resume 才开启新预算周期，累计尝试记录保留。
+- 成功、取消和等待自动生成状态目录 task-reports/ID.md，状态查询返回 report_path。报告由程序汇总验收结果和账本入口，不复制任意工具输出、不额外请求模型。
+- 验证：`LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_task_supervisor tests.test_task_autonomy tests.test_task_scope tests.test_settings -q`，28 项通过；涵盖真实子进程代码修复、停滞跨规划、模型调用前故障预算、等待不重试、恢复预算、报告权限和验收证据。
+- 本次没有重启正在使用的监督器、连接设备或执行真机动作。运行中的进程需重新加载源码及策略；物理力矩保护仍需单独硬件验收。
+
+
+### 2026-09-07：三次重新规划与系统 token 方案
+
+- 依据用户要求，默认 max_replans 从 1 改为 3，max_attempts 从 8 改为 9，使三次重新规划各有一次执行验证机会；保留显式用户配置。
+- 重新规划可在原来源授权内使用 read_file/search_files/web_search/web_fetch；定时来源单独使用 TaskScheduledReplanner，不能继承手动工具授权。根据具体缺口检索，不强制每轮联网。
+- 验证：`LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_task_supervisor tests.test_task_autonomy tests.test_token_budget tests.test_task_scope -q`，30 项通过，无用户模型费用、无设备操作。
+- [全系统 token 方案](research/token-accounting-and-efficiency.md) 核查当前前台统计、后台汇总缺口、请求级计量与费用公式、缓存读写、预算预留、三层记忆、搜索与 Node 分工，区分现有能力、已修改内容和待实现设计。没有重启运行中的监督器或宣称整个全局计费系统已上线。
+
+
+### 2026-09-07：用途模型分层与渐进检索设计
+
+核查 titles.py 的首末请求本地标题、agents/config 的单 llm 入口及 files.py 的行分页接口。在 [Token 方案](research/token-accounting-and-efficiency.md) 补充用途路由、轻量异步标题、强模型故障分析和名称→索引→片段检索。默认 workflow harness 增加渐进检索规则。没有将多角色描述为已上线多模型，也没有调用用户模型生成标题；用户自定义配置保持不变。
+
+验证：unittest discover -s tests -p test_workflow_harness.py -q，6 项通过；报告本地链接与 diff 空白检查通过。首次按模块调用因测试辅助模块导入路径失败，改用项目测试发现入口后通过。
+
+
+### 2026-09-07：启动请求不因分段工具预算提前交回用户
+
+前台增加有界续接：每段 24 个工具轮次，最多续接两段；仅近期有未重复有效回执且没有权限/停止阻碍时继续，保留同轮历史与失败去重。后台不叠加续接。默认 harness 明确启动需执行入口并验收，PAUSED/SHADOW 本身不构成启动阻碍；接管和运动按原授权及保护条件处理。
+
+验证：test_tool_continuation＋test_token_budget 共 16 项通过；unittest discover 的 test_workflow_harness 共 6 项通过。模拟检查→启动→验证跨段完成，停滞、权限/安全停止及取消不会额外续接。此前 task_supervisor 回归也通过。本轮未连接或启动 Jetson；运行中的 CLI 需重启加载源码，未强制中断用户进程。
+
+
+### 2026-09-07：启动快捷复用与纠偏记忆
+
+- 新增 skill_executables(name) 定向检查；手动 Task 默认开放技能检查/执行，定时任务禁止 skill_run。复用已检查哈希，包改变拒绝执行；外部/远端依赖版本不在包哈希保证内。
+- 用户明确的“机器人启动默认独立 Task、短句沿用、失败或变更才针对性排查”偏好保存到 ~/.loop/harness/robot-startup-preference.md（0600）；已核对总 harness 未超当前容量。默认工作流与 Worker 提示同步加入快捷复用约定。
+- 本地纠正/不满信号作为相关优先记忆，不作为成功、权限或人格结论；沉默不计验收成功。
+- 验证：test_offline_skills、test_memory_layers、test_task_supervisor、test_task_autonomy 共 30 项通过。新测试最初把 /skills save 的名称参数写错，修正为显式 skill_export 后重新通过。未调用用户模型、未启动机器人。CLI/监督器现有进程需重新加载代码与策略。
+
+### 2026-09-07 工具组折叠与重复读取反馈
+
+连续工具调用汇总、底部点击和 `/tools [GROUP]` 展开、每次调用开始时间／耗时／本地文本 token 粗估、持久化 `/details` 元数据。只复用同输入内未变化的本地读取和 Python 检查，模型上下文引用已有正文；脚本与远程状态继续真实执行。组编号限当前视图，恢复历史暂保持原渲染。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_tool_groups test_tool_groups_terminal test_color_output test_color_terminal test_markdown_code test_coding_agent test_workflow_harness test_session_display -q`，34 项通过（9.031 秒）。包含真实 PTY 鼠标展开、六次调用折叠、中文并行草稿、颜色和代码预览；文件修改失效、权限重查、上下文引用及数据库重开保留指标。不使用真实模型接口、SSH 或设备；Windows/macOS 原生终端未测。
+
+
+### 2026-09-07：Jetson 项目内快捷上下文
+
+已免密 SSH 连接 jetson@192.168.1.19，主机名 yahboom；在 `/home/jetson/loopmaster/hei-rebot-lift/software/lerobot-hei-rebot-lift/.loopros/` 新建 context.json、check_context.py、README.md，目录 0700、文件 0600。新建前检查已有文件，拒绝覆盖；没有存储凭据或启动服务。
+
+context.json 记录项目、已核实连接、robot-service/independent-host 入口以及启动脚本、两个 runner 和 pyproject.toml 的 sha256。入口只验证存在，last_verified_startup=null。检查脚本源码位于 [remote_context_check.py](../scripts/remote_context_check.py)。下次从远端项目根运行 `python3 .loopros/check_context.py`，返回变更列表及入口；身份/指纹不匹配退出 2，不自动刷新基线、不执行入口。
+
+真实远端校验返回 identity_matches=true、tracked_files_match=true、changed=[]；current_readiness=not_checked。本地 test_remote_context 覆盖一致、内容变更、缺失、越界路径及无启动成功声明，通过。选定文件之外的依赖和实时状态尚未覆盖，已知代码变更需要扩充受影响检查后再更新记录。本地 ~/.loop/harness/robot-startup-preference.md 已备份后追加远端入口，后续读取无需遍历项目。
+
+
+### 2026-09-07：重复读取空转与 reasoning 选择
+
+- 原引用复用只检查回执 ID，压缩后可能只剩 ID 没正文。现在比对正文、版本及分页，旧内容不可用则重发当前缓存回执；缓存命中不算新进展，相同 Python 输出派生报告不算新证据。
+- 只读/检查空转两轮提示换方法，六轮仍重复则无工具收尾，记录 repeated_without_new_evidence。保留当前前台 max_tool_rounds=None，不对正常执行引入固定轮数上限；现有无限执行与取消测试通过。
+- 增加 `/reasoning` 查询/补全/保存当前 profile，支持 default/none/minimal/low/medium/high/xhigh/max。Chat 编码 reasoning_effort，Responses 编码 reasoning.effort；未配置不发送。模型支持能力与配置请求值区分，未收费探测、未修改用户当前模型设置。
+- 验证：read_loop_reasoning、tool_groups、tool_continuation、token_budget、slash_terminal 首组 27 项通过；补充正文恢复集成测试后，read_loop_reasoning、settings、control 共 24 项通过。PTY 包含 high 选择和中文流式输入。初次测试暴露普通重复执行不应被只读收束及渲染键名带空格的问题，分别修正判断范围及测试断言后通过。未连接 Jetson 或播放轨迹。
+
+
+### 2026-09-07 工具详情关闭与颜色、减少独立检查往返
+
+- 工具详情标题新增可点击关闭入口；收起后重查终端光标位置，修正再次展开时鼠标落点失效。工具按读取/执行/修改/状态配色，错误红色；PTY 显式启用 256 色。
+- run_python 内置语法编译检查，语法错误在创建子进程前返回；正常调用不再需要单独 python_check。同步默认工具说明和任务提示，不更改用户权限或机器人程序。
+- 验证：`LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_tool_groups_terminal tests.test_tool_groups tests.test_color_output tests.test_color_terminal tests.test_python_runner tests.test_read_loop_reasoning -q`，20 项通过，含中文草稿、鼠标展开/关闭/重开和错误脚本不执行。
+- 会话累计用量及计量边界见 [Token 报告](research/token-accounting-and-efficiency.md#12-2026-09-07-实际累计用量核查与本次节省措施)。已有 CLI 进程须正常退出再启动加载源码；未重启设备或执行轨迹。
+
+补充回归：交互、任务导航和缩放共 25 项中，24 项通过；中文流式旧断言未适配彩色输出和工具延迟汇总，更新为去除颜色后验证正文、显式刷新工具组并校验时间格式，该项单独重跑通过。缩放测试早期出现过短窗口空白，后续该组通过，尚未证明间歇问题完全消失。
+
+### 2026-09-07 每次启动重置 Session Tokens 显示
+
+状态栏以本次进程首次载入各 Session 的 usage 为基线，只显示本次启动的新增用量与新增缺报标记；新启动和首次恢复旧 Session 均从 0 显示，同次启动切换回来继续累计。历史 usage、对话和任务记录不清空。`/context` 中 token_usage 仍是会话历史累计值。验证覆盖旧会话启动显示 0、新增计数、缺报标记、持久化历史累计、会话切换隔离及中文 PTY。
+
+### 2026-09-07 必要修复的连续执行与运行中详情滚动
+
+- 前台 BASE_PROMPT、后台 TaskWorker 提示和发行 workflow 明确：执行目标包含必要、范围内可恢复的软件诊断/备份修复/验证；前置条件失败只暂停依赖动作，不停止能继续的排查。真实缺失权限、输入或范围外操作仍须报告，不削弱安全检查。
+- 工具详情和 Actions 正文新增滚轮处理；普通详情 ↑/↓ 逐行滚动，任务选择和补全方向键优先行为保留。滚动不受 Working 状态影响，正文点击不关闭面板。
+- 验证：工具详情运行中真实 PTY（滚轮双向、↑/↓、中文草稿、关闭重开）、窄标题和任务导航 6 项通过；`PYTHONPATH=.:tests LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_coding_agent tests.test_workflow_harness tests.test_task_supervisor -q`，36 项通过。初次未配置 tests 导入路径导致 model_fixture 导入失败，按项目测试路径重跑通过。故障 Worker 的异常输出是测试注入。
+- 这是执行策略和终端代码修复；未调用真实模型验证自主决策，未连接机器人、修改远端保护或回放轨迹。前台重新启动加载；既有后台监督器须结束活动任务后按既有流程重启加载提示，未自动中断当前任务。
+
+### 2026-09-07 主界面原生滚动被鼠标捕获阻断
+
+前次只验证 Actions 内部滚动，遗漏主界面因已有工具组持续启用鼠标捕获，滚轮不再交给终端原生 scrollback。本次仅在 Actions 打开时启用 mouse_support；主界面和收起后的视图释放捕获。为保留输入草稿，Ctrl-O 打开/关闭工具详情，/tools 仍有效；主界面摘要取消误导性的 click 文案和鼠标入口。
+
+验证：工具组 PTY 与任务导航共 5 项通过，覆盖运行中主界面未发送鼠标启用序列、关闭详情后发送禁用序列、详情滚轮与方向键、中文草稿、重开和 Esc。原生历史滚动由用户终端实现，此处验证捕获协议释放，未模拟桌面终端的滚动条拖动。确认本机 loop 指向项目 .venv/bin/loop，重新打开加载源码，无需安装；未停止后台任务或操作机器人。
+
+
+## 2026-09-07：重复检查、停止来源与等待任务修复
+
+- 查明运行时停止提示曾作为 user 消息插入，导致模型把内部停止误称为用户要求；改为 system 并明确内部来源。连续两轮无进展提示具体修复，六轮停滞终止空转；前台仍无总工具轮次上限。
+- 相同脚本、参数与输出不因 timeout/日志文件名变化算新进展；查询类工具不再算实际操作。大 stdout/stderr 保存可分页的文本，模型预览保留状态与路径，减少反复运行来取日志。
+- needs_input 展示 worker 实际原因；缺少验收条件且无新信息的 resume 不再重新排队。当前请求显式进入上下文，旧任务不是新动作的授权来源；收紧重复承诺与排除项的反馈规则。
+- 验证：`PYTHONPATH=.:tests LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_python_runner tests.test_context_window tests.test_read_loop_reasoning tests.test_tool_continuation tests.test_task_supervisor tests.test_task_scope tests.test_task_navigation tests.test_workflow_harness tests.test_task_autonomy tests.test_coding_agent -q`，69 项通过（14.350 秒），`git diff --check` 通过。日志：[execution-stall-regressions.log](../artifacts/terminal/validation/execution-stall-regressions.log)。包含真实本地读取→编辑→执行验证和超过64KiB输出的末尾取证；故障 Worker 堆栈为测试注入。首次回归新测试缺 system_prompt，修正测试配置后通过。
+- 未调用真实模型或设备，也未重启既有 CLI/Task 服务；运行中的 Python 进程需重启加载源码。模型语义遵从与机械臂播放尚未端到端验收，不将本地回归当成机器人已运动。
+
+
+## 2026-09-07：记忆来源分层与审核
+
+用户要求与助手建议分层；新增 source_role、review_status 与历史数据权限标记，保留独立判断原则。排除明确引文/粘贴终端对话的自动偏好提取；retain 拒绝来源未知/冲突细节；召回过滤旧的未标记详情，手动检索仍保留审核状态。用户与工具相同文本分键，助手来源笔记仍未验证，原始历史不删除。此为来源结构与提取边界审核，不宣称通用语义事实审计。
+
+验证：`PYTHONPATH=.:tests LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_memory_layers tests.test_learning tests.test_connection_memory tests.test_coding_agent -q`，49 项通过（2.644 秒），git diff --check 通过。覆盖引文不升级偏好、未知/冲突来源拦截、不同来源不覆盖、来源链接不使助手笔记变成事实、既有成功连接召回。首轮发现 last_success 类型未列入运行时来源导致成功基准漏召回，补全后通过。日志：[memory-source-review.log](../artifacts/terminal/validation/memory-source-review.log)。未使用真实模型或设备；运行中进程需重启加载源码。
+
+
+## 2026-09-07：本地操作小本本
+
+将用户提供的连接、Host、VR、运动学、遥操作、录制与回放命令整理到被忽略的用户项目型号 docs/OPERATIONS.md，并更新现有三级索引。命令标为用户记录待验证；历史 PID、不同用途地址、孤立参数与描述不一致分别注明，不推定凭据。通用上下文改为已知小本本直接定位相关段，未知入口才发现索引，避免把逐级读索引变成每轮仪式。
+
+静态验证：11 段 Bash 命令通过 bash -n，本地链接全部存在，上下文模块编译通过；git check-ignore 确认笔记被忽略，git ls-files -- user_projects 为空，git diff --check 通过。未执行命令或连接设备，不把语法检查记为操作成功。笔记读取即可使用；运行中 Loop 的通用 Python 提示规则需重启加载。
+
+
+## 2026-09-07：简化执行 harness
+
+按用户要求精简默认 workflow 和个人 workflow，替换个人 AGENTS 的通用运动前校准审查条款；后台 Worker 也改为复用已知入口、遵从实际工具/驱动要求，不扩出一整套通用检查。保持权限、实际保护和真实回执验收。个人文件修改前已备份到用户目录 backups；个人操作内容未进入源码。真实 harness_prompt 读取确认新规则生效、旧条款不再加载。未执行机器人操作或自动重启任务服务。
+
+验证：test_workflow_harness、test_coding_agent、test_task_supervisor 回归通过；git diff --check 通过。日志：[simple-harness.log](../artifacts/terminal/validation/simple-harness.log)。用户 Markdown 下一次调用热加载；Python Worker 提示须进程重启。既有任务验收与历史消息不自动改写。
+
+
+### 2026-09-07 任务视图原生选择与两个操作入口
+
+任务卡片不再启用鼠标捕获，避免左右键进入后无法选择复制。入口改为 Enter session / Close session；进入将目标、状态及最近账本事件写入原生 scrollback，关闭只返回视图，保留任务记录/执行状态。未改变 Task 身份/归属，未提供独立聊天 Session，用户消息仍由原会话处理。
+
+`LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_task_navigation tests.test_tool_groups_terminal -q`，5 项通过。PTY 覆盖中文任务、两操作、鼠标捕获释放、进入正文、关闭后 queued 状态不变；未模拟桌面剪贴板操作。未连接设备或取消后台服务。
+
+
+### 2026-09-07 Task 独立 Session 与手动工具目录对齐
+
+核查 c50f7bab1e06 的真实回执：模型被告知可使用 agents_status，调用却被 TaskWorker 的工具白名单拒绝；其后把一次工具拒绝泛化成缺少所有执行能力，并以缺验收/需要输入结束。不能据此声称 run_python 或 skill_run 本身不可用。
+
+手动 Worker 使用完整注册目录，schema 与实际分发一致；strict_tools 不再注入不可用的元工具提示，元工具也经 App.tool 的共同权限门禁。定时工具与只读重新规划保持受限；缺少验收仍不判成功。settings_read(task_runtime) 解释实际目录与旧 worker_tools 字段的区别。
+
+SessionStore 新增 task_sessions 关联表。新 Task 建立独立会话但不切走主会话；旧会话任务启动时补齐，Enter session 可懒创建。/resume 支持恢复独立历史/草稿/队列/usage，父会话记录不改写。任务仍归属原会话，关联聊天可查看该任务；进入输出最近 20 条账本事件并恢复聊天。模型按需获得有界任务状态上下文，进入不执行/重播任务，消息也不会自动成为运行中 Worker 的指令。
+
+验证：Task监督器/Session恢复/任务导航/workflow/中文PTY共33项通过；设置与coding及PTY27项通过；多终端6项通过。包含子进程使用不在旧列表中的 agents_status 经统一分发成功，定时 Worker 不继承该工具；独立会话的恢复、父会话隔离和provider隔离。两次测试入口错误已修正（缺 tests 导入路径或不存在的测试名）；无真实模型调用或运动验收。
+
+运行生效：旧任务已注册聊天会话 e54a5f708d93，任务仍 waiting_input。确认监督器无 running/queued/retry_wait、无启用自动规则、子进程仅 resource_tracker 后，按现有权限检查重启监督器：PID 68331 → 952117，新心跳正常。没有恢复旧任务、启动机器人或播放轨迹。前台 CLI 仍需重新打开加载会话界面代码。

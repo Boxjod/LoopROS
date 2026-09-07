@@ -89,6 +89,7 @@ class ExperienceStore:
             raise ValueError('Learning note not found')
         return {'name': row['name'], 'revision': row['revision'], 'content': row['content'],
                 'source_ids': json.loads(row['sources']), 'active': bool(row['active']),
+                'source_role': 'assistant', 'review_status': 'advisory_not_verified',
                 'status': 'advisory_unverified', 'updated': row['updated']}
 
     def revise(self, scope, name, content, sources, expected_revision, active=True):

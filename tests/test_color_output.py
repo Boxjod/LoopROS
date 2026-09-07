@@ -50,6 +50,13 @@ class ColorOutputTests(unittest.TestCase):
         self.assertNotIn('\x1b',''.join(display.preview))
         self.assertIn('hello',''.join(display.preview))
 
+    def test_tool_categories_and_detail_errors_have_distinct_colors(self):
+        from terminal.colors import tool_role, detail_style, TOOL_STYLES
+        names = ['read_file','run_python','edit_file','node_status']
+        self.assertEqual([tool_role(name) for name in names], ['inspect','execute','modify','status'])
+        self.assertEqual(len({detail_style('12:00:00 '+name+'({})') for name in names}),4)
+        self.assertEqual(detail_style('  Error: failed'), TOOL_STYLES['error'])
+
     def test_semantic_colors_reset(self):
         for text in (tool_call('read_file({"path": "a.py"})'),tool_result('Error: failure · /details 1')):
             self.assertTrue(text.endswith('\x1b[0m'))

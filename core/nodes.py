@@ -66,8 +66,9 @@ def _run_worker(pipe, stopping, factory, config):
 
 
 class NodeRuntime:
-    def __init__(self, definitions, directory, max_nodes=8, stale_after=3.0, admission=None):
+    def __init__(self, definitions, directory, max_nodes=8, stale_after=3.0, admission=None, resource_claim=None):
         self.admission = admission
+        self.resource_claim = resource_claim
         self.definitions = dict(definitions)
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -117,7 +118,10 @@ class NodeRuntime:
             process = self.context.Process(target=_worker, args=(child, stopping, definition.factory, config),
                                            name='loop-node-' + name, daemon=True)
             token = None
+            ownership = None
             try:
+                if self.resource_claim:
+                    ownership = self.resource_claim(resource)
                 if self.admission:
                     from core.resources import ResourceBusy
                     token = self.admission.inspect(acquire=True, workload='node', request={})
@@ -133,11 +137,12 @@ class NodeRuntime:
                         process.kill()
                         process.join(timeout=1)
                 if token: self.admission.release(token)
+                if ownership is not None: ownership.close()
                 parent.close()
                 child.close()
                 raise
             child.close()
-            record = {'lease': token, 'name': name, 'kind': kind, 'instance_id': instance, 'process': process,
+            record = {'lease': token, 'ownership': ownership, 'name': name, 'kind': kind, 'instance_id': instance, 'process': process,
                       'pipe': parent, 'stopping': stopping, 'state': 'starting', 'snapshot': {},
                       'heartbeat': None, 'started': time.monotonic(), 'error': None, 'resource': resource,
                       'pending': {}, 'results': deque(maxlen=32), 'events': deque(maxlen=100),
@@ -216,6 +221,8 @@ class NodeRuntime:
                 record['process'].join(timeout=0)
                 record['pipe'].close()
                 record['reaped'] = True
+                ownership = record.pop('ownership', None)
+                if ownership is not None: ownership.close()
                 if record.get('lease'):
                     self.admission.release(record.pop('lease'))
                 if record['state'] != 'stopped':

@@ -1,5 +1,6 @@
 """Editable composer, scrollable transcript and boundary-delivered user steering."""
 import asyncio
+import json
 from collections import deque
 import shlex
 import sys
@@ -15,6 +16,7 @@ from prompt_toolkit.filters import Condition, to_filter
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
+from prompt_toolkit.output import ColorDepth
 from prompt_toolkit.enums import EditingMode
 from prompt_toolkit.layout.containers import VerticalAlign, DynamicContainer, FloatContainer, ConditionalContainer
 from prompt_toolkit.layout.screen import WritePosition
@@ -72,6 +74,8 @@ class Terminal:
         self.streamed_answer = False
         from terminal.tool_display import ToolDisplay
         self.tool_display = ToolDisplay()
+        from terminal.tool_groups import ToolGroups
+        self.tool_groups = ToolGroups()
         kb = KeyBindings()
 
         @kb.add('enter')
@@ -89,6 +93,12 @@ class Terminal:
                 return
             if self.selected_task and not self.input.text and not self.attachments:
                 command = self.task_buttons[self.task_action][1]
+                if command == 'enter_session':
+                    event.app.create_background_task(self.enter_task_session())
+                    return
+                if command == 'close_session':
+                    event.app.create_background_task(self.leave_task_session())
+                    return
                 self.input.text = command
                 event.app.create_background_task(self.submit())
                 return
@@ -192,6 +202,21 @@ class Terminal:
             self.panel_offset += max(1, getattr(self, 'panel_page_size', 1))
             self.ui.invalidate()
 
+        @kb.add('c-o')
+        def toggle_tool_details(event):
+            if self.action_panel and self.action_panel[0].startswith('/tools'):
+                self.close_panel()
+            elif self.tool_groups.groups or self.tool_groups.pending or self.tool_groups.current:
+                self.show_panel('/tools', self.tool_groups.details())
+
+        for key, direction in (('up', -1), ('down', 1)):
+            @kb.add(key, filter=Condition(lambda: self.action_panel is not None
+                    and self.selected_task is None and self.viewer_choice is None
+                    and self.input.buffer.complete_state is None))
+            def scroll_panel_line(event, step=direction):
+                self.panel_offset = max(0, self.panel_offset + step)
+                self.ui.invalidate()
+
         @kb.add(Keys.BracketedPaste)
         def paste_text(event):
             self.input.paste(event.data)
@@ -217,7 +242,8 @@ class Terminal:
             prompt_continuation='  ', key_bindings=kb,
             completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"], models=lambda: self.model_choices, agents=self.agent_choices, roles=lambda: list(self.app.runtime.definitions)),
             complete_while_typing=Condition(lambda: self.session.default_buffer.text.startswith('/')),
-            reserve_space_for_menu=0, complete_style=CompleteStyle.COLUMN, mouse_support=False, erase_when_done=True,
+            reserve_space_for_menu=0, complete_style=CompleteStyle.COLUMN, mouse_support=Condition(lambda: self.action_panel is not None and self.selected_task is None), erase_when_done=True,
+            color_depth=ColorDepth.DEPTH_8_BIT,
             style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold', 'chip': 'bg:#273a44 #b9dce8', 'chip-selected': 'bg:#74b7cc #10212b bold'}))
         # PromptSession normally stretches its editable window to absorb spare
         # renderer height. Keep the composer next to the transcript; spare
@@ -284,15 +310,20 @@ class Terminal:
         self.session.input_processors = [ChipProcessor(self.input)]
         self.input.buffer.on_text_changed += self.schedule_completion_refresh
         self.input.buffer.on_cursor_position_changed += self.schedule_completion_refresh
-        self.store = SessionStore(app.state_dir / 'conversation.sqlite')
-        saved = self.store.load(app.client.config)
+        self.store = SessionStore(app.state_dir / 'conversation.sqlite', exclusive=True)
+        # Every launch starts a fresh conversation; history is opt-in via /resume.
+        saved = {}
+        self.store.new_session()
         from terminal.session_task import SessionTask
         self.store.session_id = self.store.session_id or app.session_id
         app.session_id = self.store.session_id
+        app.task_session_link = self.store.task_link()
         app.session_task = SessionTask(saved.get('task'), identity=self.store.session_id, history=saved.get('history', []))
-        app.agent.history = saved.get('history', app.agent.history)
+        app.agent.history = saved.get('history', [])
         app.agent.turn_summaries = saved.get('summaries', [])
         app.agent.token_usage = saved.get('token_usage', {})
+        self.token_baselines = {self.store.session_id: dict(app.agent.token_usage)}
+        app.agent.token_usage_baseline = self.token_baselines[self.store.session_id]
         app.agent.context_report = saved.get('context_report', {})
         app.agent.history_message_limit = saved.get('history_message_limit', 32)
         self.queue.extend(saved.get('queue', []))
@@ -302,9 +333,14 @@ class Terminal:
         self.paused = bool(self.queue)
         from core.tasks import TaskStore
         self.task_store=TaskStore(app.state_dir/'tasks.sqlite')
+        for task in self.task_store.list(limit=None, session_id=app.session_id):
+            if task['spec'].get('provider') in (None, self.store.identity(app.client.config)):
+                self.store.ensure_task_session(app.client.config, task)
         self.task_cursor=self.task_store.meta('terminal_seen_event:' + app.session_id) or 0
         self.task_poll_at=0
         self.task_count = self.task_store.unfinished_count(app.session_id)
+        # Register the fresh session before menus resolve duplicate conversation titles.
+        self.checkpoint()
 
     def agent_choices(self):
         # Do not leak task titles through completion when status reading is denied.
@@ -343,13 +379,14 @@ class Terminal:
             draft = ''
         self.store.save(self.app.client.config, self.app.agent.history, self.queue, draft, self.attachments, self.app.agent.turn_summaries, self.app.session_task.snapshot(), composer=self.input.snapshot(), token_usage=self.app.agent.token_usage, context_report=self.app.agent.context_report, history_message_limit=self.app.agent.history_message_limit)
         self.bind_task_scope()
+        self.app.task_session_link = self.store.task_link()
 
     def bind_task_scope(self):
         if self.app.session_id != self.store.session_id:
             self.app.session_id = self.store.session_id
             self.task_cursor = self.task_store.meta('terminal_seen_event:' + self.app.session_id) or 0
             self.task_poll_at = 0
-            self.task_count = self.task_store.unfinished_count(self.app.session_id)
+            self.task_count = sum(t['state'] not in ('succeeded', 'cancelled') for t in self.scoped_tasks())
             self.selected_task = None
         with self.app.session_task.lock:
             self.app.session_task.data['session_id'] = self.app.session_id
@@ -415,6 +452,14 @@ class Terminal:
             fragments.extend(self.panel_fragments(available))
         elif not self.input.text and not self.attachments:
             status = self.input_placeholder() + ' | ' + status
+        if (self.tool_groups.groups or self.tool_groups.pending or self.tool_groups.current) and available and not self.action_panel and not (state and state.completions):
+            current=self.tool_groups.current
+            rows=self.tool_groups.pending or (self.tool_groups.groups[-1] if self.tool_groups.groups else [])
+            label=self.tool_groups.label(rows) if rows else 'Tools'
+            if current:
+                import time
+                label+=' · '+current['time']+' running '+current['name']+' {:.1f}s'.format(time.monotonic()-current['display'].started)
+            fragments.append(('class:hint-selected',self.clip_hint('▸ '+label+' · Ctrl-O /tools',columns)+'\n'))
         from terminal.token_budget import status as token_status
         status = token_status(self.app.agent) + ' | ' + status
         fragments.append(('class:separator', self.clip_hint(status, columns)))
@@ -448,16 +493,14 @@ class Terminal:
             # A streamed preamble before a tool call is not the final answer.
             self.streamed_answer = False
             if kind == 'tool':
-                self.write_line(tool_call(self.tool_display.call(text)))
+                self.tool_groups.call(text)
             else:
-                self.write_line(tool_result(self.tool_display.result(text, event_id)))
-                for line in self.tool_display.preview:
-                    role='added' if line.startswith('+') else 'removed' if line.startswith('-') else 'heading' if line.startswith('@@') else 'muted'
-                    self.write_line(paint('    '+line,role))
+                self.tool_groups.result(text,event_id)
             if kind == 'result':
                 self.checkpoint()
             self.ui.invalidate()
             return
+        self.flush_tools()
         delta = kind.endswith('_delta')
         if kind == 'answer_delta':
             self.streamed_answer = True
@@ -501,6 +544,41 @@ class Terminal:
             self.write_line(rendered)
         self.ui.invalidate()
 
+    def flush_tools(self):
+        group=self.tool_groups.flush()
+        if not group: return
+        index,rows=group
+        if len(rows)==1:
+            row=rows[0]
+            self.write_line(tool_call(row['call'])+paint(' · '+row['time'],'muted'))
+            self.write_line(tool_result(row['summary']))
+            for line in row['preview']:
+                role='added' if line.startswith('+') else 'removed' if line.startswith('-') else 'heading' if line.startswith('@@') else 'muted'
+                self.write_line(paint('    '+line,role))
+        else:
+            self.write_line(paint('Tools ▸ '+self.tool_groups.label(rows)+' · /tools '+str(index),'tool'))
+        self.store.record('tool_group',json.dumps({'session_id':self.app.session_id,'index':index,'calls':[{k:v for k,v in row.items() if k!='preview'} for row in rows]},ensure_ascii=False))
+
+    def tool_group_click(self, event):
+        from prompt_toolkit.mouse_events import MouseEventType
+        if event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
+            return self.panel_mouse(event)
+        if event.event_type == MouseEventType.MOUSE_UP:
+            if self.action_panel and self.action_panel[0].startswith('/tools'):
+                self.close_panel()
+            else:
+                self.show_panel('/tools',self.tool_groups.details())
+            self.ui.invalidate()
+
+    def panel_mouse(self, event):
+        from prompt_toolkit.mouse_events import MouseEventType
+        if self.action_panel and event.event_type in (MouseEventType.SCROLL_UP, MouseEventType.SCROLL_DOWN):
+            step = -3 if event.event_type == MouseEventType.SCROLL_UP else 3
+            self.panel_offset = max(0, self.panel_offset + step)
+            self.ui.invalidate()
+            return None
+        return NotImplemented
+
     def stream_prefix(self):
         if self.stream_started:
             return '  '
@@ -522,12 +600,16 @@ class Terminal:
         self.ui.invalidate()
 
     def close_panel(self):
+        was_tools = self.action_panel and self.action_panel[0].startswith('/tools')
         self.action_panel = None
         self.viewer_choice = None
         self.selected_task = None
         self.task_buttons = []
         self.task_action = 0
         self.panel_offset = 0
+        if was_tools:
+            self.ui.renderer.erase(leave_alternate_screen=False)
+            self.ui._request_absolute_cursor_position()
         self.ui.invalidate()
 
     async def redraw_session(self):
@@ -539,8 +621,13 @@ class Terminal:
         self.stream_started = self.streamed_answer = False
         self.markdown = BoldText()
         self.tool_display = ToolDisplay()
+        from terminal.tool_groups import ToolGroups
+        self.tool_groups = ToolGroups()
         # Save the new identity before yielding to terminal rendering/background polling.
         self.checkpoint()
+        task_link = self.store.task_link()
+        linked_task = self.task_store.get(task_link['task_id']) if task_link else None
+        task_events = self.task_store.history(task_link['task_id'])[-20:] if task_link else []
 
         def redraw():
             output = self.ui.output
@@ -551,6 +638,13 @@ class Terminal:
             if not hasattr(output, 'get_win32_screen_buffer_info'):
                 output.write_raw('\x1b[3J')
             output.write('Session · ' + self.store.title(self.app.client.config) + '\n\n')
+            if linked_task:
+                output.write('Linked task · ' + linked_task['state'] + '\n')
+                output.write(linked_task['spec']['goal'] + '\n')
+                for event in task_events:
+                    line = event['kind'] + ' · ' + json.dumps(event['data'], ensure_ascii=False)
+                    output.write(''.join(c if c.isprintable() else ' ' for c in line) + '\n')
+                output.write('\nConversation:\n')
             for line in history_lines(self.app.agent.history):
                 output.write_raw(line + '\n')
             if not self.app.agent.history:
@@ -560,7 +654,7 @@ class Terminal:
         await run_in_terminal(redraw)
 
     def select_task(self, step=0):
-        tasks = [task for task in self.task_store.list(limit=None, session_id=self.app.session_id) if task['state'] not in ('succeeded', 'cancelled')]
+        tasks = [task for task in self.scoped_tasks() if task['state'] not in ('succeeded', 'cancelled')]
         tasks.sort(key=lambda task: task['id'])
         if not tasks:
             if self.action_panel is not None and step:
@@ -589,17 +683,39 @@ class Terminal:
         self.render_task_panel()
 
     def task_commands(self):
+        return [('Enter session', 'enter_session'), ('Close session', 'close_session')]
+
+    async def enter_task_session(self):
+        if self.pending or self.queue or self.attachments:
+            self.append('Error', 'Wait for the active turn and clear the queue before switching sessions')
+            return
         task = self.task_store.get(self.selected_task)
-        commands = [('View details', '/tasks status ' + task['id'])]
-        if task['state'] not in ('succeeded', 'cancelled'):
-            if task['state'].startswith('waiting_'):
-                commands.append(('Resume', '/tasks resume ' + task['id']))
-            commands.append(('Cancel task', '/tasks cancel ' + task['id']))
-        return commands
+        link = self.store.task_link()
+        if task.get('session_id') != self.app.session_id and (not link or link['task_id'] != task['id']):
+            raise ValueError('Task belongs to another session')
+        self.checkpoint()
+        identity = self.store.ensure_task_session(self.app.client.config, task)
+        self.input.text = '/resume ' + identity
+        await self.submit()
+        self.close_panel()
+
+    def scoped_tasks(self):
+        tasks = self.task_store.list(limit=None, session_id=self.app.session_id)
+        link = self.store.task_link()
+        if link and not any(task['id'] == link['task_id'] for task in tasks):
+            tasks.append(self.task_store.get(link['task_id']))
+        return tasks
+
+    async def leave_task_session(self):
+        link = self.store.task_link()
+        if link and link['parent_id']:
+            self.input.text = '/resume ' + link['parent_id']
+            await self.submit()
+        self.close_panel()
 
     def render_task_panel(self):
         task = self.task_store.get(self.selected_task)
-        if task['state'] in ('succeeded', 'cancelled') or task.get('session_id') != self.app.session_id:
+        if task['state'] in ('succeeded', 'cancelled') or task['id'] not in {t['id'] for t in self.scoped_tasks()}:
             self.selected_task = None
             self.select_task()
             return
@@ -614,7 +730,7 @@ class Terminal:
         lines += [('> ' if i == self.task_action else '  ') + '[' + label + ']' for i, (label, _) in enumerate(commands)]
         lines += [task['spec']['goal'], str(reason)]
         text = '\n'.join(lines)
-        self.action_panel = ('Tasks', ''.join(c if c in '\n\t' or c.isprintable() else '\ufffd' for c in text))
+        self.action_panel = ('Task Session', ''.join(c if c in '\n\t' or c.isprintable() else '\ufffd' for c in text))
         self.ui.invalidate()
 
     def panel_fragments(self, rows):
@@ -623,25 +739,28 @@ class Terminal:
         title, text = self.action_panel
         columns = max(1, self.ui.output.get_size().columns)
         lines = []
+        is_tools = title.startswith('/tools')
+        from terminal.colors import detail_style
         for line in text.expandtabs(2).splitlines():
+            style = detail_style(line) if is_tools else ''
             chunk, width = '', 0
             for char in line:
                 size = get_cwidth(char)
                 if size > columns:
                     char, size = '\ufffd', 1
                 if width + size > columns:
-                    lines.append(chunk)
+                    lines.append((style, chunk))
                     chunk, width = '', 0
                 chunk += char
                 width += size
-            lines.append(chunk)
+            lines.append((style, chunk))
         height = max(0, rows - 1)
         self.panel_page_size = height
         self.panel_offset = min(self.panel_offset, max(0, len(lines) - max(1, height)))
-        heading = 'Actions · ' + title + ' · PgUp/PgDn scroll · Esc close'
+        heading = 'Actions · ' + title + (' · [× Close]' if is_tools else '') + ' · PgUp/PgDn scroll · Esc close'
         heading = self.clip_hint(heading, columns)
-        return [('class:prompt', heading + '\n'),
-                ('', '\n'.join(lines[self.panel_offset:self.panel_offset + height]) + ('\n' if height else ''))]
+        heading_fragment = ('class:prompt', heading + '\n', self.tool_group_click if is_tools else self.panel_mouse)
+        return [heading_fragment, *[(style, line + '\n', self.panel_mouse) for style, line in lines[self.panel_offset:self.panel_offset + height]]]
 
     def prompt_text(self):
         # The unfinished line belongs to the renderer, never raw stdout. Limit
@@ -792,6 +911,8 @@ class Terminal:
                     if goal:
                         self.app.session_task.update({'goal': goal, 'state': 'active'})
                     self.app.agent.token_usage={}
+                    self.token_baselines[self.store.session_id] = {}
+                    self.app.agent.token_usage_baseline = self.token_baselines[self.store.session_id]
                     self.app.agent.context_report={}
                     self.app.agent.history_message_limit=32
                     self.app.agent.history=[]
@@ -833,6 +954,8 @@ class Terminal:
                     self.app.agent.history=data.get('history',[])
                     self.app.agent.turn_summaries=data.get('summaries',[])
                     self.app.agent.token_usage=data.get('token_usage',{})
+                    self.app.agent.token_usage_baseline = self.token_baselines.setdefault(
+                        self.store.session_id, dict(self.app.agent.token_usage))
                     self.app.agent.context_report=data.get('context_report',{})
                     self.app.agent.history_message_limit=data.get('history_message_limit',32)
                     self.queue.extend(data.get('queue',[]))
@@ -843,11 +966,17 @@ class Terminal:
                     title=self.store.title(self.app.client.config)
                     await self.redraw_session()
                     self.show_panel('/resume','Resumed: '+title+'. History restored above. Continue typing to chat.' + (' Queued messages are paused; /queue resume to run them.' if self.queue else ''))
+                    if self.store.task_link():
+                        self.close_panel()
             elif text == '/queue clear':
                 self.queue.clear()
                 self.append('Queue', 'Cleared')
             elif text == '/queue':
                 self.append('Queue', '\n'.join('{}: {} ({} attachments)'.format(i, t, len(a)) for i, (t, a) in enumerate(self.queue, 1)) or 'Empty')
+            elif first_word == '/tools':
+                parts=text.split()
+                if len(parts)>2 or (len(parts)==2 and not parts[1].isdigit()): raise ValueError('Usage: /tools [group number]')
+                self.show_panel('/tools',self.tool_groups.details(int(parts[1]) if len(parts)==2 else None))
             elif first_word == '/details':
                 parts = text.split()
                 if len(parts) > 2 or (len(parts) == 2 and not parts[1].isdigit()):
@@ -971,7 +1100,7 @@ class Terminal:
         while True:
             self.poll_viewer()
             if time.monotonic()>=self.task_poll_at:
-                self.task_count = self.task_store.unfinished_count(self.app.session_id)
+                self.task_count = sum(t['state'] not in ('succeeded', 'cancelled') for t in self.scoped_tasks())
                 for feedback in self.task_store.notifications(self.task_cursor, session_id=self.app.session_id):
                     details=feedback.get('feedback') or {}
                     reason=details.get('reason') or details.get('review',{}).get('reason','')

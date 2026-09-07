@@ -36,6 +36,13 @@ class SlashCompleter(Completer):
         if document.cursor_position != len(prefix) or '\n' in prefix or '\r' in prefix:
             return
         parts = prefix.split()
+        if parts and parts[0] == '/reasoning' and len(parts) <= 2:
+            from terminal.config import REASONING_EFFORTS
+            word = parts[1] if len(parts) == 2 else ''
+            if len(parts) == 2 or prefix.endswith(' '):
+                for value in ('default', *REASONING_EFFORTS):
+                    if value.startswith(word): yield Completion(value, start_position=-len(word))
+                return
         if parts and parts[0] == '/node' and (len(parts) == 1 and prefix.endswith(' ') or len(parts) == 2 and not prefix.endswith(' ')):
             word = parts[1] if len(parts) == 2 else ''
             for verb in ('profiles', 'start', 'use', 'status', 'logs', 'send', 'stop', 'list', 'help'):

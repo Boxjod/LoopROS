@@ -79,3 +79,14 @@ stop 可省略；存在时在停止流程先运行，随后回收所拥有的本
 | 启动OpenPI推理 | start-openpi-inference | openpi-policy |
 
 源配置与生成包留在 `~/.loop`；项目不保存个人命令、地址和凭据。验证入口为 test_offline_skills、test_offline_skill_terminal：真实 Bash／进程、中文输入输出 PTY、禁止模型调用、审批、修改检测、取消和快照停止。
+
+
+### 重复任务快捷复用（2026-09-07）
+
+已有适用且已验证流程时，保留 Skill 名称、已检查包 sha256 和就绪验收条件，直接 skill_run 再做定向就绪检查，不必每次 skill_read 三份文件、遍历目录或扫描所有 Skill。需要更新检查时可调用 `skill_executables({"name":"start-robot"})`，只检查指定包；无 name 仍列全部。该入口不启动设备。skill_run 在执行前复核包哈希，包变化拒绝旧哈希。
+
+手动 Task 默认增加 skill_executables/skill_run，继续通过原有技能、进程和执行权限；定时/事件任务不能获得 skill_run。是否单独建 Task 依据用户既有偏好与当前要求，不用固定关键词拦截所有对话。
+
+包哈希覆盖 Skill 自身，不代表外部工作目录或远端机器人代码版本。已知机器人代码/配置变更后应检查受影响依赖并更新验证记录；尚未实现通用远端依赖版本追踪。启动受理不等于就绪，用户不纠正也不等于验收通过。失败时再读取相关日志和源码，避免每次重走完整探索流程。
+
+远端项目可将连接观察、入口与已跟踪文件指纹存入 `.loopros/context.json`，用 `python3 .loopros/check_context.py` 一次返回概要。Jetson 当前部署位置与实查结果见 [运行记录](RUNBOOK.md)。仅指纹一致不能替代就绪验收；依赖变更需定向检查并备份后更新，不自动覆盖基线。

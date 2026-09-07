@@ -79,6 +79,8 @@ class SessionRenderTests(unittest.TestCase):
                 try:
                     drain(.5)
                     send('切换前独有问题\r', 1.1)
+                    self.assertNotEqual(checkpoint()['session_id'], other)
+                    other = checkpoint()['session_id']
                     self.assertIn('切换前独有问题', transcript())
                     send('/resume missing-session\r')
                     self.assertEqual(checkpoint()['session_id'], other)
@@ -128,6 +130,7 @@ class SessionRenderTests(unittest.TestCase):
                 sessions = SessionStore(state / 'conversation.sqlite')
                 sessions.save(load_config()['llm'], [], [])
                 session_id = sessions.session_id
+                sessions.rename(load_config()['llm'], '任务测试会话')
                 sessions.close()
             store = TaskStore(state / 'tasks.sqlite')
             foreign = store.submit({'goal':'Foreign historical task', 'checks':[], 'session_id':'other-session'})
@@ -157,11 +160,14 @@ class SessionRenderTests(unittest.TestCase):
                 return '\n'.join(screen.display)
             try:
                 send(seconds=.7)
+                send('/resume 任务测试会话\r', .7)
+                send('\x1b', 1.2)
                 shown = send('\x1b[C')
                 self.assertIn(tasks[0]['spec']['goal'], shown)
                 self.assertNotIn(tasks[0]['id'], shown)
                 lines = screen.display
                 input_row = next(i for i,line in enumerate(lines) if line.startswith('❯ '))
+                self.assertTrue(any('Actions · Tasks' in line for line in lines), '\n'.join(lines))
                 task_row = next(i for i,line in enumerate(lines) if 'Actions · Tasks' in line)
                 self.assertGreater(task_row, input_row)
                 shown = send('\x1b[D')

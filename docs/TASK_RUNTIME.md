@@ -1,11 +1,11 @@
 # 持久任务、反馈循环与负责进程
 
-交互终端中，空输入时按 ←/→ 或输入 `/tasks` 打开当前会话的未完成任务面板（queued/running/retry_wait/waiting_*，成功或取消后自动移出）；↑/↓ 选择查看、取消，等待状态还可恢复，Enter 执行，Esc 关闭。切换任务不改变执行状态。完整键位见 [终端规范](TERMINAL.md)。
+交互终端中，空输入时按 ←/→ 或输入 `/tasks` 打开当前会话的未完成任务面板（queued/running/retry_wait/waiting_*，成功或取消后自动移出）；↑/↓ 只选择 Enter session 或 Close session，Enter 执行，Esc 返回。进入创建/恢复独立的 Task 聊天 Session，任务记录显示在原生正文；关闭返回原会话，后台任务继续。恢复和取消仍可用显式 /tasks 命令。切换任务不改变执行状态。完整键位见 [终端规范](TERMINAL.md)。
 
 不带目标的 `/task`（包括尾随空格）等同 `/tasks`，只打开任务列表；`/task 目标` 才提交新任务。Session 是会话，Task 是目标及执行状态记录，Worker 是执行进程；任务排队或等待时不一定占用 Worker，重试也可能使用新进程。左右键查看 Task 不创建或切换 Session。
 
 
-Session 保存对话及前台工作记录，一个 Session 可拥有多个独立 ID 的 task；`task_submit` 创建的是记录当前 session_id 的后台持久任务，不会把输入框切换成子 Agent 的对话。左右键只浏览当前会话的未完成后台任务及其操作面板，包括 `waiting_input`；也可用 `/tasks status ID` 查看详情。需要向后台任务补充信息时使用 `/tasks resume ID 补充信息`，它会重新排队，不是进入聊天窗口。恢复前需先解决反馈指出的缺失条件；若缺后台工具白名单，仅追加消息不能解除阻塞。
+Session 保存对话及前台工作记录，一个 Session 可拥有多个独立 ID 的 task；`task_submit` 创建的是记录当前 session_id 的后台持久任务，同时建立独立聊天 Session 的关联，但提交时不切走当前输入框。Enter session 或 /resume 可进入关联聊天。左右键只浏览当前会话的未完成后台任务及其操作面板，包括 `waiting_input`；也可用 `/tasks status ID` 查看详情。需要向后台任务补充信息时使用 `/tasks resume ID 补充信息`，它会重新排队，不是进入聊天窗口。恢复前需先解决反馈指出的缺失条件；若缺后台工具白名单，仅追加消息不能解除阻塞。
 
 `Success check requires a tool not granted by task_runtime.json` 表示验收工具不在当前后台执行工具集合中，任务在启动 Worker 前等待。用 `/tasks config` 核对有效配置；工具白名单和权限门禁分别生效，前台可用工具不代表后台获准使用。成功条件还必须验证目标产物的实际内容，`read_file.path` 等于报告路径本身不能证明 SSH 检查已经完成。
 
@@ -45,7 +45,11 @@ stateDiagram-v2
     running --> cancelled
 ```
 
-等待状态都是**未完成**，不是成功，也不自动丢弃。默认每轮 180 秒、并发上限 108，实际启动量按 RAM／CPU 与配置的 GPU 预算动态限制（见 [Agent 资源调度](AGENT_RUNTIME.md)）；已有用户 task_runtime.json 的较低 max_workers 保留；失败重试从 5 秒退避到 300 秒；连续 3 次验收结果没有变化先派发只读 TaskReplanner 重新规划，再派执行子 Agent 按新方案继续；不会仅因失败次数就结束任务。不同轮次观察值改变会重置停滞计数。没有全任务“达到轮数就算完成”的规则。
+等待状态都是**未完成**，不是成功，也不自动丢弃。默认每轮 180 秒、并发上限 108，实际启动量受资源准入限制；失败从 5 秒退避到 300 秒。连续 `stalled_attempts=3` 次验收结果相同，允许 `max_replans=3` 次重新规划；每次修订后回到执行验证；三次重新规划用完且仍无新证据，转入 waiting_input。停滞计数跨重新规划保留，观察值改变才重置连续计数。每次明确恢复的执行周期最多 `max_attempts=9` 个 Worker 尝试（包括重新规划和工具执行前的模型失败），预算耗尽暂停，不算成功。旧配置省略新字段时使用上述默认值。轮数预算不是精确 token 上限，每轮仍可能有多次模型调用。
+
+`/tasks resume ID 补充信息` 会保留原验收、累计尝试数和历史证据，开启新预算周期并清除停滞状态；定时器、资源轮询或事件唤醒不会重置预算。不要让模型通过反复 resume 或新建同目标任务绕过预算。任务等待期间不启动 Worker，常驻服务由 Node 管理，不靠模型轮询保活。
+
+成功、取消及等待状态自动写入状态目录 `task-reports/ID.md`，`task_status`／`/tasks status ID` 返回 `report_path`。报告由程序生成，不调用模型，列出状态、累计尝试、逐项验收结果、停滞／预算原因和证据账本入口；任意目标文本、参数、原始输出留在原账本，不复制进报告。报告文件权限 0600，原子替换。详细失败输出和修复回执从同 ID 的任务记录查询。
 
 每次调用先记录 tool_intent，再记录工具原始结果 tool_result；每轮保存 review、worker_result、下一步和未满足条件。新子 Agent 接收这些反馈修正方案。文字回报不作为验收回执，失败/取消后的迟到结果不能覆盖 cancelled。进程中断可能留下已执行但未回执的操作，因此恢复时先等观察核对，不盲目重放。人可以 `/tasks resume ID 补充信息` 继续，`task_resume` 还可补 checks。
 
@@ -80,7 +84,7 @@ Worker 可在缺少初始 checks 时通过 `task_feedback.checks` 提出验收�
 
 ## 定时与触发配置
 
-配置文件内有默认关闭的示例。`schedules` 每项包含 `name/enabled/every_s/task`，`triggers` 包含 `name/enabled/event/task`。task 是上述 goal/checks 对象。`worker_tools` 为普通任务工具，`scheduled_tools` 是其子集；两者仍受 PermissionGate 的 plan/allow/ask/deny 和真机约束限制。不能配置子 Agent 递归管理、权限写入或技能写入工具。
+配置文件内有默认关闭的示例。`schedules` 每项包含 `name/enabled/every_s/task`，`triggers` 包含 `name/enabled/event/task`。task 是上述 goal/checks 对象。手动 TaskWorker 使用完整注册工具目录；`worker_tools` 保留旧配置兼容与重新规划读取工具选择，不再作为手动执行白名单。`scheduled_tools` 继续限制定时/触发执行。所有实际工具操作均经过共享 PermissionGate；拥有工具目录不等于 allow，也不能自批权限或通过递归新建任务重置预算。
 
 同一个规则只有一个未完成任务，重复事件或定时到期不会堆出并发重复任务。不同规则互不合并。重启后到期定时器只产生一次任务并从当前时刻排下次，不补放所有漏过的周期。事件消费和任务创建在同一 SQLite 事务内完成；事件 payload 存为数据，不插值成命令。
 
@@ -101,3 +105,9 @@ Worker 可在缺少初始 checks 时通过 `task_feedback.checks` 提出验收�
 2026-09-07 可读任务标题：面板和反馈使用“目标 · 最近补充”的短标题，常规显示不列随机 ID。命令支持 `/tasks status 标题`、`/tasks cancel 标题`、`/tasks resume 标题 -- 补充信息`；旧 ID 命令仍兼容。标题解析优先当前会话，再查历史；同名不盲选，改从所属会话面板选择。
 
 资源不足时持久任务保持 queued／retry_wait，反馈记录 resource_wait，不增加 attempt，不提前启动超时计时；下次轮询重试准入。前后台共享同一 state 的预留额度，恢复资源后才创建执行进程。
+
+2026-09-07：默认增加为 3 次重新规划、9 次总尝试，确保连续 3 次失败后仍容纳三组“重新规划→验证”。已有用户显式预算不被覆盖。TaskReplanner 可按原任务工具授权读取相关文件或调用 web_search/web_fetch；TaskScheduledReplanner 仅取 scheduled_tools 的同类只读子集，不继承手动任务权限。按报错缺失的信息决定检索，联网并非每轮必做。全面计量与节约设计见 [Token 方案](research/token-accounting-and-efficiency.md)。
+
+2026-09-07 等待反馈修正：worker 的 needs_input 原因保存为 feedback.reason，终端优先展示具体缺口，review 仍独立报告验收状态。缺少 checks 且未提供新信息时拒绝原样 resume，不重置尝试预算、不重新排队；可补充 checks 或具体新信息后恢复。task_submit 仍允许先提交目标，再由 worker 定义验收。test_task_supervisor 验证拒绝前后任务与事件不变、补充信息后可恢复。
+
+2026-09-07：TaskWorker 的 strict_tools 令模型可见 schema 与执行目录一致，元工具也经 App.tool 分发到共享权限门禁，不再无条件插入随后被拒的 agents_status 等工具。新增任务会话关联以及已有会话任务的启动迁移只写本地对话记录，不重排或执行任务。后台进程须重新启动加载新的工具目录。

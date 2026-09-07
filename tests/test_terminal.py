@@ -87,7 +87,8 @@ class TerminalTests(unittest.TestCase):
                 self.calls += 1
                 if self.calls < 3:
                     return {"tool_calls": [{"id": str(self.calls), "function": {"name": "expert_advice", "arguments": "{}"}}]}
-                assert json.loads(messages[-1]['content'])['repeated_request_skipped']
+                receipt = next(m for m in reversed(messages) if m.get('role') == 'tool')
+                assert json.loads(receipt['content'])['repeated_request_skipped']
                 return {"content": "专家接口不可用"}
         with patch('builtins.input'):
             from unittest.mock import Mock

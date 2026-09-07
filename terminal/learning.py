@@ -3,7 +3,7 @@ import json
 import re
 import uuid
 from core.experience import ExperienceStore
-from core.memory_layers import MemoryLayers
+from core.memory_layers import MemoryLayers, memory_provenance
 from core.tasks import assess
 from terminal.files import schema
 from terminal.memory_facts import extract
@@ -76,7 +76,7 @@ class Learning:
                     payload = json.loads(row['payload'])
                     for memory in self.clean(extract(self.clean(row['request'])), 600):
                         text = memory['text']
-                        self._layers.save(scope, 'detail', text.casefold(), text,
+                        self._layers.save(scope, 'detail', memory.get('kind', 'unknown') + ':' + text.casefold(), text,
                                           {**memory, 'session_id': payload.get('session_id'), 'task_id': payload.get('task_id')},
                                           row['id'], updated=row['updated'])
                 if not imported:
@@ -90,8 +90,10 @@ class Learning:
     def retain(self, source, memories, session_id=None, task_id=None, task=None):
         scope = self.scope()
         for memory in memories:
+            if memory_provenance('detail', memory)['review_status']=='review_required':
+                continue
             text = memory.get('text') or json.dumps(memory.get('values', {}), ensure_ascii=False)
-            self.layers.save(scope, 'detail', text.casefold(), text,
+            self.layers.save(scope, 'detail', memory.get('kind', 'unknown') + ':' + text.casefold(), text,
                              {**memory, 'session_id': session_id, 'task_id': task_id}, source)
         if task:
             text = str(task.get('goal') or '')[:700]
@@ -197,7 +199,10 @@ class Learning:
         # No full transcripts or file bodies in the prompt; detail is available on demand.
         compact = []
         for detail in details:
+            if detail['provenance']['review_status'] == 'review_required':
+                continue
             item = {k: detail[k] for k in ('id', 'kind', 'text', 'sources', 'updated')}
+            item['provenance'] = detail['provenance']
             payload = detail['payload']
             item['evidence'] = payload.get('evidence', payload.get('status'))
             if payload.get('session_id'):
@@ -215,11 +220,14 @@ class Learning:
                 continue
             if row['kind'] == 'lesson':
                 item = {k: row[k] for k in ('name', 'revision', 'source_ids', 'status')}
+                item['provenance'] = {'source_role':'assistant','review_status':'advisory_not_verified','authority':'historical_data_only'}
                 item['content'] = row['content'][:700]
             else:
                 memories = row['payload'].get('memories', [])
                 unique = []
                 for memory in memories:
+                    if memory_provenance('detail', memory)['review_status']=='review_required':
+                        continue
                     key = json.dumps(memory, sort_keys=True, ensure_ascii=False)
                     if key not in seen:
                         unique.append(memory)

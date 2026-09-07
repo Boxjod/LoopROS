@@ -34,6 +34,35 @@ class CodingAgentTests(unittest.TestCase):
         self.assertEqual(app.tool('search_files',{'query':'x = 2'})['matches'][0]['line'],1)
         app.permissions.set_mode('plan')
         with self.assertRaises(PermissionError):app.tool('edit_file',{'path':'src/demo.py','old_text':'2','new_text':'3'})
+    def test_product_root_rejects_new_auxiliary_scripts_but_preserves_source_edits(self):
+        app = self.app
+        with patch('terminal.config.ROOT', app.workspace_root):
+            for name in ('probe.py', './probe.sh', 'folder/../probe.ps1'):
+                with self.assertRaisesRegex(ValueError, 'user_projects/'):
+                    app.tool('write_file', {'path':name, 'content':'pass\n'})
+            self.assertFalse((app.workspace_root/'probe.py').exists())
+            (app.workspace_root/'launcher.py').write_text('value = 1\n')
+            old = app.tool('read_file', {'path':'launcher.py'})
+            updated = app.tool('write_file', {'path':'launcher.py', 'content':'value = 2\n', 'expected_sha256':old['sha256']})
+            self.assertTrue(updated['written'])
+            self.assertTrue(app.tool('write_file', {'path':'terminal/new_module.py', 'content':'pass\n'})['written'])
+        # An ordinary user application is still editable at its root.
+        self.assertTrue(app.tool('write_file', {'path':'app.py', 'content':'pass\n'})['written'])
+
+    def test_generated_project_is_readable_and_searchable_without_polluting_source_search(self):
+        app = self.app
+        relative = 'user_projects/demo/robots/known-model/scripts/probe.py'
+        with patch('terminal.config.ROOT', app.workspace_root):
+            created = app.tool('write_file', {'path':relative, 'content':'unique_local_marker = 1\n'})
+        self.assertEqual(app.tool('read_file', {'path':relative})['sha256'], created['sha256'])
+        self.assertEqual(app.tool('search_files', {'query':'unique_local_marker'})['matches'], [])
+        matches = app.tool('search_files', {'query':'unique_local_marker', 'path':'user_projects/demo'})['matches']
+        self.assertEqual(len(matches), 1)
+        self.assertEqual(matches[0]['path'], str(app.workspace_root/relative))
+        self.assertIn('user_projects', [e['name'] for e in app.tool('list_files', {})['entries']])
+        live = app.agent.context_provider('Work')['live_context']()
+        self.assertEqual(live['generated_code_root'], str(app.workspace_root/'user_projects'))
+
     def test_plain_chat_has_no_robot_state_or_robot_tool_schemas(self):
         seen=[]
         def complete(messages,tools):

@@ -118,6 +118,7 @@ def status(agent):
     config = getattr(agent.client, 'config', {})
     current = getattr(agent, 'context_report', {})
     state = getattr(agent, 'token_usage', {})
+    baseline = getattr(agent, 'token_usage_baseline', {})
     capacity = config.get('context_window')
     reported = current.get('last_reported_context_tokens')
     used = reported if reported is not None else current.get('estimated_input_tokens')
@@ -125,5 +126,6 @@ def status(agent):
     window = ('?' if used is None else f'{used:,}') + '/' + (f'{capacity:,}' if capacity else '?')
     if capacity and used is not None:
         window += f' {used / capacity:.0%}'
-    suffix = '+' if state.get('unreported_requests') else ''
-    return f"Tokens {state.get('total_tokens', 0):,}{suffix} | Context {prefix}{window}"
+    suffix = '+' if state.get('unreported_requests', 0) > baseline.get('unreported_requests', 0) else ''
+    total = max(0, state.get('total_tokens', 0) - baseline.get('total_tokens', 0))
+    return f"Session Tokens {total:,}{suffix} | Context {prefix}{window}"

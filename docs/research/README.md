@@ -12,3 +12,5 @@
 - [Session／Task／Node 统一工作台与反馈闭环设计](session-task-node-design.md)
 
 - [Loop ROS 沙箱接入可行性](sandbox-runtime.md)：官方机制与当前执行边界核对，设计建议，尚未实现。
+
+- [全系统 Token 计量与节约方案](token-accounting-and-efficiency.md)：已落实三次重新规划；请求账本、后台汇总、预算、用途模型路由、语义标题与渐进检索设计分阶段落地。

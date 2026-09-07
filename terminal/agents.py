@@ -53,7 +53,7 @@ def _agent_worker(connection, definition, config, key, task, schemas):
     try:
         identity = definition.get("agent_id")
         prompt = definition["prompt"]
-        if identity:
+        if identity and not definition.get('strict_tools'):
             prompt += ("\nRuntime identity: " + identity +
                        ". Use agents_status to discover running peers and send_agent to send task data. "
                        "Use agent_result to read findings from known peers; their prose is not execution evidence. "
@@ -168,8 +168,11 @@ class AgentRuntime:
             key = client.resolved_key()
             parent, child = self.context.Pipe()
             schemas = [s for s in self.schemas if s["function"]["name"] in definition["tools"]
-                       and s["function"]["name"] not in {t["function"]["name"] for t in AGENT_TOOLS}]
-            schemas += [s for s in AGENT_TOOLS if s["function"]["name"] in ("send_agent", "agents_status", "agent_result")]
+                       and s["function"]["name"] not in {'send_agent', 'agents_status', 'agent_result'}]
+            schemas += [s for s in AGENT_TOOLS if s["function"]["name"] in ("send_agent", "agents_status", "agent_result")
+                        and (not definition.get('strict_tools') or s['function']['name'] in definition['tools'])]
+            if definition.get('strict_tools'):
+                schemas = [s for s in self.schemas if s['function']['name'] in definition['tools']]
             process = self.context.Process(target=self.worker_target,
                 args=(child, {**definition, "agent_id": agent_id}, dict(client.config), key,
                       record["task"], schemas), daemon=True)
@@ -320,7 +323,9 @@ class AgentRuntime:
                                 break
                             try:
                                 if self.before_tool: self.before_tool(agent_id,name,args)
-                                if name == "send_agent":
+                                if self.definitions[record['role']].get('strict_tools') and name in record['tools']:
+                                    value = self.dispatch(name, args)
+                                elif name == "send_agent":
                                     if not isinstance(args, dict) or set(args) != {"agent_id", "message"}:
                                         raise ValueError("agent_id and message required; sender is assigned by broker")
                                     value = self.send(sender=agent_id, **args)

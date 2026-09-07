@@ -152,7 +152,7 @@ def load_bound(state):
 
 
 def bind(state, deployment):
-    """Called under the CLI's exclusive state lock before App initialization."""
+    """Called under the CLI's deployment binding lock before App initialization."""
     path = Path(state) / 'deployment.json'
     existing = load_bound(state)
     if existing and (existing.deployment_id, existing.host_id) != (deployment.deployment_id, deployment.host_id):

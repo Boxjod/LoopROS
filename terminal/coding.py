@@ -14,7 +14,7 @@ LIMIT = 1024 * 1024
 CODING_TOOLS = [
     schema('list_files', 'List a local directory. Relative paths use the current workspace.', {'path': {'type':'string'}}, []),
     schema('search_files', 'Find literal text in workspace UTF-8 files; bounded results, skips generated/private directories.', {'query':{'type':'string'}, 'path':{'type':'string'}}, ['query']),
-    schema('write_file', 'Create a UTF-8 workspace file. To replace an existing file, supply its sha256 from read_file. Returns backup and diff.', {'path':{'type':'string'}, 'content':{'type':'string'}, 'expected_sha256':{'type':'string'}}, ['path','content']),
+    schema('write_file', 'Create a UTF-8 workspace file. To replace an existing file, supply its sha256 from read_file. Returns backup and diff. For auxiliary generated scripts use user_projects/PROJECT/robots/MODEL/scripts/ (omit robots/MODEL when unknown); maintain existing application source in place.', {'path':{'type':'string'}, 'content':{'type':'string'}, 'expected_sha256':{'type':'string'}}, ['path','content']),
     schema('edit_file', 'Replace one unique exact text in a workspace file, preserving surrounding content. Returns diff and backup.', {'path':{'type':'string'}, 'old_text':{'type':'string'}, 'new_text':{'type':'string'}, 'expected_sha256':{'type':'string'}}, ['path','old_text','new_text']),
 ]
 CODING_NAMES = {t['function']['name'] for t in CODING_TOOLS}
@@ -29,6 +29,12 @@ def resolve(app, value='.', write=False):
     if write:
         if not path.is_relative_to(app.workspace_root): raise PermissionError('Writes must stay inside the workspace: ' + str(app.workspace_root))
         if any(part in SKIP for part in path.relative_to(app.workspace_root).parts): raise PermissionError('Protected/generated directory; choose a source file')
+        from terminal.config import ROOT
+        if (app.workspace_root.resolve() == ROOT.resolve() and path.parent == ROOT.resolve()
+                and not path.exists() and path.suffix.lower() in {'.py', '.sh', '.bash', '.ps1', '.bat', '.cmd'}):
+            raise ValueError('New scripts must not clutter the Loop ROS package root. '
+                             'Use user_projects/PROJECT/robots/MODEL/scripts/NAME (omit robots/MODEL if unknown); '
+                             'maintained product code belongs in core/, terminal/, toolchain/ or scripts/.')
         from terminal.home import loop_home
         if path.is_relative_to(loop_home().resolve()): raise PermissionError('Use skill_write or harness_write for Loop configuration')
     return path
@@ -85,7 +91,9 @@ def tool(app,name,args):
         matches=[]; scanned=0
         roots=os.walk(path) if path.is_dir() else [(path.parent,[],[path.name])]
         for root,dirs,files in roots:
-            dirs[:]=[d for d in dirs if d not in SKIP and not (Path(root)/d).is_symlink()]
+            dirs[:]=[d for d in dirs if d not in SKIP
+                     and not (d == 'user_projects' and Path(root) == app.workspace_root)
+                     and not (Path(root)/d).is_symlink()]
             for filename in sorted(files):
                 file=Path(root)/filename; scanned+=1
                 if scanned>2000: return {'matches':matches,'truncated':True}

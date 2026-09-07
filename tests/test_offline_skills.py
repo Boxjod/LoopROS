@@ -42,6 +42,19 @@ class OfflineSkillTests(unittest.TestCase):
             time.sleep(.03)
         self.fail('No script output')
 
+    def test_named_inspection_skips_catalog_and_changed_package_rejects_run(self):
+        self.app.tool('skill_export', {'profile':'fixture','name':'fixture-start','title':'Fixture start'})
+        with patch('toolchain.offline_skill.catalog', side_effect=AssertionError('No full catalog scan')):
+            value = self.app.tool('skill_executables', {'name':'fixture-start'})
+        self.assertEqual(len(value['skills']), 1)
+        inspected = value['skills'][0]
+        root = Path(inspected['path'])
+        script = next((root/'scripts').glob('*.sh'))
+        script.write_text(script.read_text() + '\n# changed version\n')
+        with patch.object(self.app.nodes, 'start', side_effect=AssertionError('Must not start changed code')):
+            with self.assertRaisesRegex(ValueError, 'Skill changed'):
+                self.app.tool('skill_run', {'name':'fixture-start','expected_sha256':inspected['sha256']})
+
     def test_export_run_logs_and_stop_with_no_api_and_snapshot(self):
         self.app.dispatch('/skills save fixture start-host 启动机械臂 Host')
         self.assertIn('启动机械臂 Host',self.app.dispatch('/skills'))

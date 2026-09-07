@@ -5,7 +5,7 @@ import shlex
 from terminal.skills import schema
 
 TOOLS = [
-    schema('skill_executables', 'Inspect offline executable Skills, readable titles, platform support, scripts and package hashes. Does not execute.', {}, []),
+    schema('skill_executables', 'Inspect offline executable Skills, readable titles, platform support, scripts and package hashes. Optional name inspects only that Skill; reuse an unchanged previously inspected hash without rereading every script. Does not execute.', {'name':{'type':'string'}}, []),
     schema('skill_run', 'Run an inspected executable Skill without an LLM. Requires current package sha256 and existing process-node permissions. Returns process acceptance, not task success.', {'name':{'type':'string'},'expected_sha256':{'type':'string'}}, ['name','expected_sha256']),
     schema('skill_export', 'On user request, save an existing process profile as a new offline Skill with Bash or batch entrypoints for this host. Does not execute or certify past success; never overwrites an existing Skill.', {'profile':{'type':'string'},'name':{'type':'string'},'title':{'type':'string'}}, ['profile','name','title']),
 ]
@@ -19,10 +19,10 @@ def node_name(name):
 def tool(app, name, args):
     from toolchain.offline_skill import catalog, save_profile, inspect
     fields={'skill_executables':set(),'skill_run':{'name','expected_sha256'},'skill_export':{'profile','name','title'}}
-    if not isinstance(args,dict) or set(args)!=fields[name]: raise ValueError('Invalid executable Skill arguments')
+    if not isinstance(args,dict) or (set(args)-{'name'} if name=='skill_executables' else set(args)!=fields[name]): raise ValueError('Invalid executable Skill arguments')
     app.permissions.check(name,args)
     if name=='skill_executables':
-        return {'skills':catalog()}
+        return {'skills':[inspect(args['name'])] if 'name' in args else catalog()}
     if name=='skill_export': return save_profile(args['profile'],args['name'],args['title'])
     data=inspect(args['name'])
     if data['sha256']!=args['expected_sha256']: raise ValueError('Skill changed; inspect it again')

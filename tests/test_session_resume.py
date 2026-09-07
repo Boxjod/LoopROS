@@ -8,6 +8,31 @@ from terminal.llm import ChatAgent
 CONFIG={'base_url':'https://example.test','model':'test','protocol':'openai'}
 
 class SessionResumeTests(unittest.TestCase):
+    def test_task_conversation_is_independent_resumable_and_provider_scoped(self):
+        with tempfile.TemporaryDirectory() as directory:
+            store = SessionStore(Path(directory)/'conversation.sqlite', exclusive=True)
+            try:
+                original = [{'role':'user','content':'原会话'}]
+                store.save(CONFIG, original, [])
+                parent = store.session_id
+                task = {'id':'task-one','session_id':parent,'spec':{'goal':'启动机器人','provider':store.identity(CONFIG)}}
+                child = store.ensure_task_session(CONFIG, task)
+                self.assertNotEqual(child,parent)
+                self.assertEqual(store.session_id,parent)
+                self.assertEqual(store.ensure_task_session(CONFIG,task),child)
+                self.assertEqual(len(store.list_sessions(CONFIG)),2)
+                self.assertEqual(store.resume(CONFIG,child)['history'],[])
+                self.assertEqual(store.task_link(),{'task_id':'task-one','parent_id':parent})
+                messages = [{'role':'user','content':'检查这个任务的工具权限'}]
+                store.save(CONFIG,messages,[],token_usage={'total_tokens':42})
+                self.assertEqual(store.resume(CONFIG,parent)['history'],original)
+                self.assertIsNone(store.task_link())
+                self.assertEqual(store.resume(CONFIG,child)['history'],messages)
+                with self.assertRaises(ValueError):
+                    store.ensure_task_session({**CONFIG,'base_url':'https://other.test'},task)
+            finally:
+                store.close()
+
     def test_rename_search_export_persist_and_isolate_providers(self):
         with tempfile.TemporaryDirectory() as directory:
             path = Path(directory) / 'conversation.sqlite'
@@ -46,6 +71,28 @@ class SessionResumeTests(unittest.TestCase):
                 self.assertEqual(store.list_sessions(CONFIG, query='左臂')[0]['title'], '左臂排查记录')
             finally:
                 store.close()
+
+    def test_checkpoint_only_legacy_history_is_archived_before_fresh_save(self):
+        import json
+        with tempfile.TemporaryDirectory() as directory:
+            path = Path(directory)/'conversation.sqlite'
+            store = SessionStore(path)
+            with store.db:
+                store.db.execute('INSERT INTO checkpoint VALUES(1,?)', (json.dumps({
+                    'provider':SessionStore.identity(CONFIG), 'history':[{'role':'user','content':'旧检查点'}],
+                    'queue':[], 'draft':'原草稿'}),))
+            store.close()
+            store = SessionStore(path)
+            original = store.list_sessions(CONFIG)[0]['id']
+            store.new_session(); store.save(CONFIG, [], [])
+            store.close()
+            store = SessionStore(path)
+            try:
+                self.assertEqual(len(store.list_sessions(CONFIG)), 2)
+                data = store.resume(CONFIG, original)
+                self.assertEqual(data['history'][0]['content'], '旧检查点')
+                self.assertEqual(data['draft'], '原草稿')
+            finally: store.close()
 
     def test_multiple_sessions_provider_isolation_and_summaries(self):
         with tempfile.TemporaryDirectory() as directory:
