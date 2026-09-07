@@ -1,12 +1,73 @@
 # Loop ROS
 
+**English** · [简体中文](README.zh-CN.md)
+
 **Loop Robot Operating System — a coding agent with optional robotics tools.**
 
 Loop connects a user-selected model to tools, persistent tasks and robot runtimes. Its central contract is **goal → execute → observe → review → revise**. Execution receipts and task success are recorded separately.
 
-Version **0.1.0**, local release preparation; no public GitHub release has been published from this workspace.
+Initial hosted release **0.0.1** is available on the [official website](https://loopmaster.box2ai.com/LoopROS/). GitHub source and hosted release are separate snapshots; no GitHub Release has been created.
 
-## Quick start
+## Installation by platform
+
+The [website](https://loopmaster.box2ai.com/LoopROS/) defaults to English with a Simplified Chinese option; Docs links to this repository README.
+
+Start with an OS-compatible Python 3.8+; the installer uses uv to prepare an isolated Python 3.12 runtime without replacing system Python. These commands install the terminal edition; omit `--terminal-only` to include optional simulation dependencies.
+
+### Linux
+
+```sh
+curl -fsSL https://loopmaster.box2ai.com/LoopROS/install.sh | sh -s -- --terminal-only
+```
+
+### macOS (Intel / Apple Silicon)
+
+```sh
+curl -fsSL https://loopmaster.box2ai.com/LoopROS/install.sh | sh -s -- --terminal-only
+```
+
+### Windows 10/11 — PowerShell
+
+```powershell
+Invoke-WebRequest -Uri https://loopmaster.box2ai.com/LoopROS/install.ps1 -OutFile loop-install.ps1 -ErrorAction Stop
+powershell -NoProfile -ExecutionPolicy Bypass -File .\loop-install.ps1 --terminal-only
+```
+
+### Windows 10/11 — CMD
+
+```bat
+curl.exe -fSLo loop-install.ps1 https://loopmaster.box2ai.com/LoopROS/install.ps1 && powershell -NoProfile -ExecutionPolicy Bypass -File .\loop-install.ps1 --terminal-only
+```
+
+### Older systems — SSH
+
+On Windows 7/8 or systems unable to run the required Python, use a compatible SSH client to connect to a host with Loop ROS installed. Replace `USER` and `HOST`:
+
+```sh
+ssh -t USER@HOST '$HOME/.local/bin/loop'
+```
+
+SSH does not include local USB/camera forwarding. Linux HTTPS installation is verified; native macOS and Windows installation remains unverified. After installation, reopen the terminal and run `loop` to configure the model connection.
+
+## Hosted updates and uninstall
+
+```sh
+loop update --check
+loop update
+loop update --rollback
+```
+
+Close Loop terminals and background services first. Updating retains settings and Skills; rollback switches the runtime without reverting user data.
+
+Linux/macOS uninstall:
+
+```sh
+curl -fsSL https://loopmaster.box2ai.com/LoopROS/uninstall.sh | sh
+```
+
+User configuration, sessions and uv are retained.
+
+## Source checkout
 
 Requires Python 3.10+. From a source checkout:
 
@@ -30,7 +91,7 @@ For the optional MuJoCo environment, use `python3 scripts/install.py`. First lau
 | Robotics tools | MuJoCo scenes/assets, window control, joint trajectories, position IK, torque/PID/model analysis | Simulated results do not establish real-world success |
 | Device access | Serial enumeration/receive, Feetech scanning/status, STS3215 Host primitives | Terminal hardware motion remains gated off; hardware acceptance is separate |
 | Supporting tools | Search/web/weather, scheduling, inference-service hooks, ROS read-only adapter, resource budgets | ROS communication and actual policy model backends are not end-to-end verified |
-| Distribution | CLI installers, wheel build, platform smoke workflow, update-check client | Public hosting and cross-platform hardware certification are not established |
+| Distribution | CLI installers, wheel build, platform smoke workflow, update-check client | Hosted Linux installation is verified; native macOS/Windows validation remains pending |
 
 The default model context exposes 21 general tools. Specialist toolsets (robotics, tasks, agents) load only when the model requests them and reset each turn. No robot keyword routing, automatic scene/device/weather execution or implicit background task creation is used. MuJoCo, hardware adapters and policy integrations remain optional tools. All Agent roles use the currently selected model and credentials. Session history and resume remain available; model input is bounded separately from saved history.
 
