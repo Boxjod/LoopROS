@@ -2,7 +2,7 @@ from pathlib import Path
 import tempfile
 import unittest
 
-from terminal.media import mentioned_image
+from loop_robot.terminal.media import mentioned_image
 
 
 class MentionedImageTests(unittest.TestCase):

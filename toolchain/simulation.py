@@ -4,7 +4,7 @@ from pathlib import Path
 import threading
 import uuid
 
-from toolchain.sim_tasks import validate_task, evaluate
+from loop_robot.toolchain.sim_tasks import validate_task, evaluate
 
 
 class SimulationWorkbench:
@@ -18,10 +18,10 @@ class SimulationWorkbench:
     def create(self, backend, scene=None):
         if len(self.instances)>=4: raise ValueError('At most four owned simulation instances')
         if backend == 'mujoco':
-            from toolchain.sim_mujoco import MujocoSimulation
+            from loop_robot.toolchain.sim_mujoco import MujocoSimulation
             engine = MujocoSimulation(scene)
         elif backend == 'isaac':
-            from toolchain.sim_isaac_client import IsaacSimulationClient
+            from loop_robot.toolchain.sim_isaac_client import IsaacSimulationClient
             engine = IsaacSimulationClient(self.isaac_config, scene)
         else: raise ValueError('backend must be mujoco or isaac')
         instance = uuid.uuid4().hex
@@ -74,7 +74,7 @@ class SimulationWorkbench:
             entry['task']=validate_task(args['task']);entry['steps']=0
             return self.inspect(instance)
         if name == 'sim_capture':
-            from toolchain.sim_cameras import save_capture
+            from loop_robot.toolchain.sim_cameras import save_capture
             before = self.inspect(instance)
             frames = engine.capture(args['cameras'])
             after = self.inspect(instance)
@@ -88,14 +88,14 @@ class SimulationWorkbench:
         raise ValueError('Unknown simulation tool')
 
     def record(self, instance, args):
-        from toolchain.sim_dataset import EpisodeWriter
+        from loop_robot.toolchain.sim_dataset import EpisodeWriter
         entry=self.entry(instance);engine=entry['engine']
         actions=args['actions']; cameras=args['cameras']; steps=args.get('steps',1)
         if not isinstance(actions,list) or not 1<=len(actions)<=1000:
             raise ValueError('Provide 1..1000 actions for a bounded demonstration')
         if type(steps) is not int or not 1<=steps<=1000: raise ValueError('steps must be 1..1000')
         # Validate every action before executing any of the episode.
-        from toolchain.sim_cameras import vector
+        from loop_robot.toolchain.sim_cameras import vector
         state=self.inspect(instance)
         for action in actions:
             vector(action,len(state['action']), 'action')

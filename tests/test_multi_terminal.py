@@ -7,10 +7,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import ROOT, load_config
-from terminal.instances import TerminalInstance, claim_node_resource
-from terminal.session import SessionStore
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import ROOT, load_config
+from loop_robot.terminal.instances import TerminalInstance, claim_node_resource
+from loop_robot.terminal.session import SessionStore
 
 CONFIG = {'base_url':'https://example.test', 'model':'test', 'protocol':'openai'}
 
@@ -38,8 +38,8 @@ class MultiTerminalTests(unittest.TestCase):
             code = """
 import sys
 from pathlib import Path
-from terminal.instances import TerminalInstance
-from terminal.session import SessionStore
+from loop_robot.terminal.instances import TerminalInstance
+from loop_robot.terminal.session import SessionStore
 with TerminalInstance(sys.argv[1]):
     store = SessionStore(Path(sys.argv[1])/'conversation.sqlite', exclusive=True)
     store.save({'base_url':'https://example.test','model':'test','protocol':'openai'}, [], [])
@@ -121,7 +121,7 @@ with TerminalInstance(sys.argv[1]):
                     b.close()
 
     def test_owned_node_resource_is_released_after_stop_and_startup_failure(self):
-        from core.nodes import NodeDefinition, NodeRuntime
+        from loop_robot.core.nodes import NodeDefinition, NodeRuntime
         from test_nodes import HeartbeatNode, BrokenNode, validate, resource, wait_for
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)

@@ -2,7 +2,7 @@
 import hashlib
 import json
 import time
-from core.experience import terms
+from .experience import terms
 
 
 def memory_provenance(kind, payload):

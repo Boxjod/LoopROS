@@ -7,11 +7,11 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
-from core.deployment import Deployment
-from terminal.app import App
-from terminal.carriers import bind, validate_bindings
-from terminal.config import ROOT, load_config
-from toolchain.node_workers import definitions
+from loop_robot.core.deployment import Deployment
+from loop_robot.terminal.app import App
+from loop_robot.terminal.carriers import bind, validate_bindings
+from loop_robot.terminal.config import ROOT, load_config
+from loop_robot.toolchain.node_workers import definitions
 
 
 def manifest():
@@ -143,7 +143,7 @@ class CarrierTests(unittest.TestCase):
 
     def test_declared_unknown_adapter_does_not_create_capabilities(self):
         data=manifest();data['carriers'][0]['adapter']='future_base'
-        from terminal.carriers import Carriers
+        from loop_robot.terminal.carriers import Carriers
         self.app.carriers=Carriers(self.app,Deployment(data,'bench-a'))
         listing=self.app.tool('carrier_list',{})
         self.assertEqual(listing['carriers'][0]['capabilities'],{})

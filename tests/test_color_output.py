@@ -1,10 +1,10 @@
 import json
 import re
 import unittest
-from terminal.markdown import BoldText, SYNTAX
-from terminal.tool_display import ToolDisplay
-from terminal.colors import tool_call, tool_result
-from terminal.session_display import history_lines
+from loop_robot.terminal.markdown import BoldText, SYNTAX
+from loop_robot.terminal.tool_display import ToolDisplay
+from loop_robot.terminal.colors import tool_call, tool_result
+from loop_robot.terminal.session_display import history_lines
 
 
 def plain(text): return re.sub(r'\x1b\[[0-9;]*m','',text)
@@ -51,7 +51,7 @@ class ColorOutputTests(unittest.TestCase):
         self.assertIn('hello',''.join(display.preview))
 
     def test_tool_categories_and_detail_errors_have_distinct_colors(self):
-        from terminal.colors import tool_role, detail_style, TOOL_STYLES
+        from loop_robot.terminal.colors import tool_role, detail_style, TOOL_STYLES
         names = ['read_file','run_python','edit_file','node_status']
         self.assertEqual([tool_role(name) for name in names], ['inspect','execute','modify','status'])
         self.assertEqual(len({detail_style('12:00:00 '+name+'({})') for name in names}),4)

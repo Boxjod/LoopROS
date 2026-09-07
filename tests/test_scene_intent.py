@@ -1,9 +1,9 @@
 import tempfile
 import unittest
 from unittest.mock import patch
-from terminal.app import App
-from terminal.config import load_config
-from terminal.scene_intent import direct_edit
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.scene_intent import direct_edit
 from model_fixture import call
 
 class SceneIntentTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class SceneIntentTests(unittest.TestCase):
                     answer=app.agent.reply('我需要的只要一个衣柜')
                     self.assertEqual(set(app.scene_objects()),{'wardrobe'})
                     self.assertIn('场景',answer)
-                    from toolchain.composition import state,load_spec
+                    from loop_robot.toolchain.composition import state,load_spec
                     model,_=state(load_spec(app.latest_scene))
                     self.assertEqual(model.nu,2)
             finally: app.close()

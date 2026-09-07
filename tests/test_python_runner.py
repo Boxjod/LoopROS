@@ -2,13 +2,63 @@ import hashlib
 from pathlib import Path
 import tempfile
 import unittest
-from terminal.app import App
-from terminal.config import load_config
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
 
 class PythonRunnerTests(unittest.TestCase):
+    def test_cancel_delivers_sigint_and_preserves_cleanup_receipt(self):
+        import concurrent.futures
+        import time
+        with tempfile.TemporaryDirectory() as folder:
+            app = App(load_config(), Path(folder)/'state'); app.workspace_root = Path(folder)
+            app.permissions.set_rule('run_python', 'allow')
+            path = Path(folder)/'interrupt.py'
+            path.write_text('import signal,time\nfrom pathlib import Path\n'
+                'def stop(*args):\n Path("cleaned").write_text("SIGINT")\n print("cleanup completed",flush=True)\n raise SystemExit(0)\n'
+                'signal.signal(signal.SIGINT,stop)\nPath("ready").touch()\nwhile True: time.sleep(.02)\n')
+            try:
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(app.tool, 'run_python', {'path': str(path),
+                        'expected_sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+                    deadline = time.monotonic()+3
+                    while not (Path(folder)/'ready').exists() and time.monotonic()<deadline: time.sleep(.01)
+                    self.assertTrue((Path(folder)/'ready').exists())
+                    app.stop_event.set()
+                    result = future.result(timeout=3)
+                self.assertEqual((Path(folder)/'cleaned').read_text(), 'SIGINT')
+                self.assertEqual(result['stop_reason'], 'cancelled')
+                self.assertEqual(result['returncode'], 0)
+                self.assertIn('cleanup completed', result['stdout'])
+                self.assertEqual(result['review']['verdict'], 'inconclusive')
+            finally: app.close()
+
+    def test_ignored_interrupt_does_not_force_kill_or_return_early(self):
+        import concurrent.futures
+        import time
+        with tempfile.TemporaryDirectory() as folder:
+            app = App(load_config(), Path(folder)/'state'); app.workspace_root = Path(folder)
+            app.permissions.set_rule('run_python', 'allow')
+            path = Path(folder)/'interrupt.py'
+            path.write_text('import signal,time\nfrom pathlib import Path\n'
+                'signal.signal(signal.SIGINT,signal.SIG_IGN)\nPath("ready").touch()\n'
+                'while not Path("release").exists(): time.sleep(.02)\n')
+            try:
+                with concurrent.futures.ThreadPoolExecutor() as pool:
+                    future = pool.submit(app.tool, 'run_python', {'path': str(path),
+                        'expected_sha256': hashlib.sha256(path.read_bytes()).hexdigest()})
+                    try:
+                        deadline = time.monotonic()+3
+                        while not (Path(folder)/'ready').exists() and time.monotonic()<deadline: time.sleep(.01)
+                        self.assertTrue((Path(folder)/'ready').exists())
+                        app.stop_event.set(); time.sleep(.15)
+                        self.assertFalse(future.done())
+                    finally: (Path(folder)/'release').touch()
+                    self.assertEqual(future.result(timeout=3)['stop_reason'], 'cancelled')
+            finally: app.close()
+
     def test_large_output_can_be_paged_without_reexecuting(self):
         import json
-        from terminal.context_window import tool_text
+        from loop_robot.terminal.context_window import tool_text
         with tempfile.TemporaryDirectory() as d:
             app=App(load_config(),Path(d)/'state');app.workspace_root=Path(d)
             try:
@@ -53,7 +103,7 @@ class PythonRunnerTests(unittest.TestCase):
             try:
                 app.permissions.set_rule('run_python','allow')
                 path=Path(folder)/'bad.py';path.write_text('def broken(:')
-                with patch('terminal.python_runner.subprocess.Popen', side_effect=AssertionError('Must not launch')):
+                with patch('loop_robot.terminal.python_runner.subprocess.Popen', side_effect=AssertionError('Must not launch')):
                     with self.assertRaisesRegex(ValueError, 'syntax check failed'):
                         app.tool('run_python',{'path':str(path),'expected_sha256':hashlib.sha256(path.read_bytes()).hexdigest()})
             finally:app.close()

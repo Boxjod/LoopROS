@@ -7,13 +7,13 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.config import ROOT, load_config, user_config_file
-from terminal.home import initialize, harness_prompt, save_key, saved_key
-from terminal.skills import write, discover, read
-from terminal.task_service import policy_path
-from terminal.task_supervisor import load_policy
-from terminal.agents import AgentRuntime
-from terminal.providers import ProviderStore
+from loop_robot.terminal.config import ROOT, load_config, user_config_file
+from loop_robot.terminal.home import initialize, harness_prompt, save_key, saved_key
+from loop_robot.terminal.skills import write, discover, read
+from loop_robot.terminal.task_service import policy_path
+from loop_robot.terminal.task_supervisor import load_policy
+from loop_robot.terminal.agents import AgentRuntime
+from loop_robot.terminal.providers import ProviderStore
 
 
 class UserPortabilityTests(unittest.TestCase):
@@ -55,7 +55,7 @@ class UserPortabilityTests(unittest.TestCase):
                 store = ProviderStore(root / 'new-state/providers.sqlite', config)
                 self.assertEqual(store.selected()['master'], 'portable')
                 store.close()
-                from terminal.app import App
+                from loop_robot.terminal.app import App
                 app = App(config, root / 'new-state')
                 try:
                     self.assertEqual(app.runtime.definitions, roles)

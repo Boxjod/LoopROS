@@ -1,7 +1,7 @@
 import json
 import unittest
 from prompt_toolkit.buffer import Buffer
-from terminal.composer import Composer
+from loop_robot.terminal.composer import Composer
 
 
 class ComposerTests(unittest.TestCase):

@@ -21,13 +21,13 @@ FILE_NAMES = {t['function']['name'] for t in FILE_TOOLS}
 
 
 def _denied(path):
-    from terminal.home import loop_home
+    from loop_robot.terminal.home import loop_home
     if path.name in ('.env', 'id_rsa', 'id_ed25519', 'config.local.json') or any(part in ('.ssh', '.aws') for part in path.parts):
         return True
     if path.suffix.lower() in ('.sqlite', '.db'):
         return True
     try:
-        return path == (loop_home() / 'credentials.json').resolve()
+        return path in {(loop_home() / name).resolve() for name in ('credentials.json', 'config.json')}
     except OSError:
         return False
 
@@ -41,7 +41,7 @@ def read_file(path, offset=None, limit=None):
         raise ValueError('limit must be a positive integer')
     resolved = Path(path).expanduser()
     if not resolved.is_absolute():
-        from terminal.config import ROOT
+        from loop_robot.terminal.config import ROOT
         resolved = ROOT / resolved
     try:
         resolved = resolved.resolve(strict=True)
@@ -78,11 +78,11 @@ def read_file(path, offset=None, limit=None):
 def tool(app, name, args):
     if not isinstance(args, dict) or set(args) - {'path', 'offset', 'limit'} or 'path' not in args:
         raise ValueError('path is required; offset/limit are optional')
-    from terminal.coding import resolve
+    from loop_robot.terminal.coding import resolve
     path=resolve(app,args['path'])
     if name == 'read_image':
         if set(args) != {'path'}: raise ValueError('read_image takes path only')
-        from terminal.media import IMAGE_TYPES, image_part
+        from loop_robot.terminal.media import IMAGE_TYPES, image_part
         if path.suffix.lower() not in IMAGE_TYPES or not path.is_file(): raise ValueError('Image file not found or unsupported type')
         media=image_part(path)
         return {'path':str(path), 'image_loaded':True, 'mime_type':IMAGE_TYPES[path.suffix.lower()], '_media':[media]}

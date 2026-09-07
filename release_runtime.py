@@ -3,6 +3,7 @@ from contextlib import contextmanager
 import os
 from pathlib import Path
 import sys
+import time
 import uuid
 
 
@@ -22,6 +23,29 @@ def _lock(stream):
     else:
         import fcntl
         fcntl.flock(stream, fcntl.LOCK_EX | fcntl.LOCK_NB)
+
+
+def runtime_directories(state):
+    state = Path(state)
+    return [state, *sorted(p for p in (state / 'terminals').glob('*') if p.is_dir())]
+
+
+@contextmanager
+def state_startup(state):
+    """Serialize runtime-slot acquisition with source migration checks."""
+    state = Path(state)
+    state.mkdir(parents=True, exist_ok=True)
+    with (state / 'migration.lock').open('a+b') as gate:
+        deadline = time.monotonic() + .5
+        while True:
+            try:
+                _lock(gate)
+                break
+            except OSError:
+                if time.monotonic() >= deadline:
+                    raise RuntimeError('State migration or another runtime startup is in progress; retry.') from None
+                time.sleep(.01)
+        yield
 
 
 @contextmanager

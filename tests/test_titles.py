@@ -4,10 +4,10 @@ import unittest
 from pathlib import Path
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
-from terminal.completion import SlashCompleter
-from terminal.session import SessionStore
-from terminal.titles import conversation_title, task_title
-from terminal.command_display import format_command_result
+from loop_robot.terminal.completion import SlashCompleter
+from loop_robot.terminal.session import SessionStore
+from loop_robot.terminal.titles import conversation_title, task_title
+from loop_robot.terminal.command_display import format_command_result
 
 CONFIG = {'base_url': 'https://example.invalid', 'model': 'test'}
 
@@ -66,9 +66,9 @@ class TitleTests(unittest.TestCase):
     def test_operator_task_commands_accept_readable_titles(self):
         import os
         from unittest.mock import patch
-        from terminal.app import App
-        from terminal.config import load_config
-        from core.tasks import TaskStore
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
+        from loop_robot.core.tasks import TaskStore
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'LOOP_HOME': directory + '/home'}):
             app = App(load_config(), Path(directory) / 'state')
             try:
@@ -77,7 +77,7 @@ class TitleTests(unittest.TestCase):
                 value = json.loads(app.dispatch('/tasks status Check robot connection'))
                 self.assertEqual(value['task']['id'], task['id'])
                 store.update(task['id'], 'waiting_input')
-                with patch('terminal.task_service.start', return_value={}):
+                with patch('loop_robot.terminal.task_service.start', return_value={}):
                     value = json.loads(app.dispatch('/tasks resume Check robot connection -- check serial port'))
                 self.assertEqual(value['task']['feedback']['new_input'], 'check serial port')
                 value = app.dispatch('/tasks cancel Check robot connection · check serial port')

@@ -73,26 +73,62 @@ def _credentials():
         raise ValueError("Invalid credentials file; contents withheld") from None
 
 
+def _key_config():
+    path = loop_home() / 'config.json'
+    if path.is_symlink():
+        raise ValueError('Config must not be a symbolic link')
+    try:
+        data = json.loads(path.read_text()) if path.exists() else {}
+        entries = data.get('endpoints', [])
+        if not isinstance(entries, list) or any(not isinstance(e, dict) or not isinstance(e.get('api_key'), str) for e in entries):
+            raise ValueError()
+        return data
+    except (ValueError, UnicodeError):
+        raise ValueError('Invalid user config; contents withheld') from None
+
+
 def saved_key(config):
-    return _credentials().get(credential_id(config))
+    identity = credential_id(config)
+    for entry in _key_config().get('endpoints', []):
+        if entry.get('legacy_id') == identity:
+            save_key(config, entry['api_key'])
+            return entry['api_key']
+        if (entry.get('base_url', '').rstrip('/') == config['base_url'].rstrip('/')
+                and entry.get('api_key_env') == config['api_key_env']):
+            return entry['api_key']
+    key = _credentials().get(identity)
+    if key:
+        save_key(config, key)
+    return key
 
 
 def save_key(config, key):
     if not key or "\n" in key or "\r" in key:
         raise ValueError("API key must be a nonempty single line")
     root = initialize()
-    data = _credentials()
-    data[credential_id(config)] = key
-    fd, temporary = tempfile.mkstemp(prefix=".credentials-", dir=root)
+    data = _key_config()
+    entries = data.setdefault('endpoints', [])
+    # Keep unresolved legacy entries so migration never drops another profile's key.
+    for identity, old_key in _credentials().items():
+        if not any(e.get('legacy_id') == identity or
+                   ('base_url' in e and credential_id(e) == identity) for e in entries):
+            entries.append({'legacy_id': identity, 'api_key': old_key})
+    identity = credential_id(config)
+    entries[:] = [e for e in entries if e.get('legacy_id') != identity and
+                  not ('base_url' in e and credential_id(e) == identity)]
+    entries.append({'base_url': config['base_url'].rstrip('/'),
+                    'api_key_env': config['api_key_env'], 'api_key': key})
+    fd, temporary = tempfile.mkstemp(prefix='.config-', dir=root)
     try:
-        with os.fdopen(fd, "w", encoding="utf-8") as stream:
-            json.dump(data, stream)
+        with os.fdopen(fd, 'w', encoding='utf-8') as stream:
+            json.dump(data, stream, ensure_ascii=False, indent=2)
+            stream.write('\n')
             stream.flush()
             os.fsync(stream.fileno())
-        os.replace(temporary, root / "credentials.json")
+        os.replace(temporary, root / 'config.json')
+        (root / 'credentials.json').unlink(missing_ok=True)
     finally:
-        if os.path.exists(temporary):
-            os.unlink(temporary)
+        if os.path.exists(temporary): os.unlink(temporary)
 
 
 def harness_prompt():

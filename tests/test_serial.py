@@ -6,10 +6,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config
-from terminal.control import list_devices
-from toolchain.serial_port import SerialPort
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.control import list_devices
+from loop_robot.toolchain.serial_port import SerialPort
 
 
 class SerialTests(unittest.TestCase):
@@ -47,7 +47,7 @@ class SerialTests(unittest.TestCase):
         port = SerialPort()
         real_open = os.open
         try:
-            with patch('toolchain.serial_port.Path.resolve', return_value=Path('/dev/ttyACM999')), patch('toolchain.serial_port.os.open', side_effect=lambda path, flags: real_open(name, flags)):
+            with patch('loop_robot.toolchain.serial_port.Path.resolve', return_value=Path('/dev/ttyACM999')), patch('loop_robot.toolchain.serial_port.os.open', side_effect=lambda path, flags: real_open(name, flags)):
                 port.open('/dev/ttyACM999', 115200)
             port.path = name
             self.assertTrue(port.status()['connected'])

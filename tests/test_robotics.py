@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from toolchain.robot_engineering import current_to_torque,pid_trial
-from toolchain.robot_model_analysis import analyze
-from terminal.robotics import diagnose,docs,ROBOT_NAMES
-from terminal.app import App
-from terminal.config import load_config,ROOT
+from loop_robot.toolchain.robot_engineering import current_to_torque,pid_trial
+from loop_robot.toolchain.robot_model_analysis import analyze
+from loop_robot.terminal.robotics import diagnose,docs,ROBOT_NAMES
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config,ROOT
 
 TORQUE={'current_A':2,'kt_Nm_per_A':.1,'current_basis':'iq_peak','kt_current_basis':'iq_peak','gear_ratio':10,'efficiency':.9}
 PID={'kp':10,'ki':1,'kd':2,'inertia_kg_m2':.05,'damping_Nm_s_per_rad':.1,'torque_limit_Nm':2,'target_rad':1}
@@ -41,7 +41,7 @@ class EngineeringTests(unittest.TestCase):
     def test_model_jacobian_finite_difference_and_dynamics_residual(self):
         import numpy as np
         import mujoco
-        path=ROOT/'examples/two_joint.xml'
+        path=ROOT/'assets/simulation/two_joint.xml'
         model=mujoco.MjModel.from_xml_path(str(path));body=model.body(model.nbody-1).name
         q=[.2,-.3];velocity=[.1,-.1];acc=[.2,.4]
         fk=analyze(path,'kinematics',body=body,qpos=q)
@@ -72,7 +72,7 @@ class EngineeringTests(unittest.TestCase):
         self.assertEqual({x['category'] for x in r['findings']},{'bus_off','encoder','timeout'})
 
     def test_official_document_search_filters_version_and_caches(self):
-        with tempfile.TemporaryDirectory() as d,patch('terminal.robotics.web_dispatch',return_value={'results':[{'url':'https://evil.example/manual'}]}),patch('terminal.robotics.request',return_value={'url':'https://control.ros.org/jazzy/','body':'<h1>PID</h1><p>antiwindup reference</p>','retrieved_at':'now'}) as fetch:
+        with tempfile.TemporaryDirectory() as d,patch('loop_robot.terminal.robotics.web_dispatch',return_value={'results':[{'url':'https://evil.example/manual'}]}),patch('loop_robot.terminal.robotics.request',return_value={'url':'https://control.ros.org/jazzy/','body':'<h1>PID</h1><p>antiwindup reference</p>','retrieved_at':'now'}) as fetch:
             r=docs(d,'ros2_control','PID',version='jazzy')
             self.assertIn('antiwindup',r['text'])
             fetch.assert_called_once_with('https://control.ros.org/jazzy/')

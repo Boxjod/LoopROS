@@ -2,8 +2,8 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from terminal.session import SessionStore
-from terminal.llm import ChatAgent
+from loop_robot.terminal.session import SessionStore
+from loop_robot.terminal.llm import ChatAgent
 
 CONFIG={'base_url':'https://example.test','model':'test','protocol':'openai'}
 
@@ -137,7 +137,7 @@ class SessionResumeTests(unittest.TestCase):
         self.assertEqual(agent.turn_summaries[-1]['request'],'继续')
 
     def test_resume_completion_selects_real_sessions(self):
-        from terminal.completion import SlashCompleter
+        from loop_robot.terminal.completion import SlashCompleter
         from prompt_toolkit.document import Document
         from prompt_toolkit.completion import CompleteEvent
         rows=[{'id':'abc123','title':'衣柜','turns':2,'updated':'2026-09-05'}]

@@ -17,8 +17,8 @@ except ImportError: pyte=None
 @unittest.skipUnless(pyte,'pyte required')
 class SessionRenderTests(unittest.TestCase):
     def test_resume_replaces_visible_history_and_scrollback(self):
-        from terminal.session import SessionStore
-        from terminal.config import load_config
+        from loop_robot.terminal.session import SessionStore
+        from loop_robot.terminal.config import load_config
         from unittest.mock import patch
         import json
         import sqlite3
@@ -119,12 +119,12 @@ class SessionRenderTests(unittest.TestCase):
                     os.close(master)
 
     def test_task_buttons_and_permission_profiles(self):
-        from core.tasks import TaskStore
+        from loop_robot.core.tasks import TaskStore
         with tempfile.TemporaryDirectory() as directory:
             state = Path(directory) / 'state'
             state.mkdir()
-            from terminal.session import SessionStore
-            from terminal.config import load_config
+            from loop_robot.terminal.session import SessionStore
+            from loop_robot.terminal.config import load_config
             from unittest.mock import patch
             with patch.dict(os.environ, {'LOOP_HOME': directory + '/home'}):
                 sessions = SessionStore(state / 'conversation.sqlite')
@@ -167,31 +167,32 @@ class SessionRenderTests(unittest.TestCase):
                 self.assertNotIn(tasks[0]['id'], shown)
                 lines = screen.display
                 input_row = next(i for i,line in enumerate(lines) if line.startswith('❯ '))
-                self.assertTrue(any('Actions · Tasks' in line for line in lines), '\n'.join(lines))
-                task_row = next(i for i,line in enumerate(lines) if 'Actions · Tasks' in line)
+                self.assertTrue(any('Actions · Task Session' in line for line in lines), '\n'.join(lines))
+                task_row = next(i for i,line in enumerate(lines) if 'Actions · Task Session' in line)
                 self.assertGreater(task_row, input_row)
                 shown = send('\x1b[D')
-                self.assertNotIn('Actions · Tasks', shown)
+                self.assertNotIn('Actions · Task Session', shown)
                 self.assertTrue(all(store.get(t['id'])['state'] == 'running' for t in tasks))
                 shown = send('\x1b[C')
-                self.assertIn('Actions · Tasks', shown)
+                self.assertIn('Actions · Task Session', shown)
                 shown = send('\x1b', 1.2)
-                self.assertNotIn('Actions · Tasks', shown)
+                self.assertNotIn('Actions · Task Session', shown)
                 shown = send('\x1b[C')
                 shown = send('\x1b[C')
                 self.assertIn(tasks[1]['spec']['goal'], shown)
                 self.assertNotIn(tasks[1]['id'], shown)
                 shown = send('\x1b[C')
-                self.assertNotIn('Actions · Tasks', shown)
+                self.assertNotIn('Actions · Task Session', shown)
                 shown = send('\x1b[D')
                 self.assertIn(tasks[1]['spec']['goal'], shown)
                 self.assertNotIn(tasks[1]['id'], shown)
                 self.assertTrue(all(store.get(t['id'])['state'] == 'running' for t in tasks))
 
                 shown = send('\x1b[B')
-                self.assertIn('> [Cancel task]', shown)
+                self.assertIn('> [Close session]', shown)
                 send('\r', .6)
-                self.assertEqual(store.get(tasks[1]['id'])['state'], 'cancelled')
+                self.assertEqual(store.get(tasks[1]['id'])['state'], 'running')
+                store.cancel(tasks[1]['id'])  # Explicit task cancellation is separate from closing its session.
                 self.assertEqual(store.get(tasks[0]['id'])['state'], 'running')
                 # A running task becoming blocked must stay reachable by arrows.
                 store.update(tasks[0]['id'], 'waiting_input', {'reason': 'Tool permission required'})
@@ -201,8 +202,8 @@ class SessionRenderTests(unittest.TestCase):
                 self.assertNotIn(tasks[0]['id'], shown)
                 self.assertIn('waiting_input', shown)
                 self.assertIn('Tool permission required', shown)
-                self.assertIn('[Resume]', shown)
-                self.assertIn('[Cancel task]', shown)
+                self.assertIn('[Enter session]', shown)
+                self.assertIn('[Close session]', shown)
                 self.assertEqual(store.get(tasks[0]['id'])['state'], 'waiting_input')
                 send('\x1b', 1.2)
                 queued = store.submit({'goal': '尚未启动', 'checks': [], 'session_id':session_id})
@@ -211,7 +212,7 @@ class SessionRenderTests(unittest.TestCase):
                     shown = send('\x1b[C')
                     self.assertIn(task['spec']['goal'], shown)
                 shown = send('\x1b[C')
-                self.assertNotIn('Actions · Tasks', shown)
+                self.assertNotIn('Actions · Task Session', shown)
                 self.assertEqual(store.get(queued['id'])['state'], 'queued')
                 store.cancel(queued['id'])
                 store.cancel(tasks[0]['id'])
@@ -226,7 +227,7 @@ class SessionRenderTests(unittest.TestCase):
                 send('\x1b', 1.2)
                 send('/permissions yo', .3)
                 send('\x1b[B\r', .5)
-                from terminal.permissions import PermissionGate
+                from loop_robot.terminal.permissions import PermissionGate
                 gate = PermissionGate(state / 'permissions.sqlite')
                 self.assertTrue(all(rule == 'allow' for rule in gate.snapshot()['rules'].values()))
                 self.assertEqual(gate.snapshot()['rules']['policy_start'], 'allow')

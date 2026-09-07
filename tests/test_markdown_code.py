@@ -1,6 +1,6 @@
 import re
 import unittest
-from terminal.markdown import BoldText, CODE
+from loop_robot.terminal.markdown import BoldText, CODE
 
 
 def plain(text):

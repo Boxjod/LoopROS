@@ -1,8 +1,8 @@
 """Feetech diagnostic tools; motion primitives are not agent tools."""
 import json
 import uuid
-from toolchain import feetech
-from terminal.files import schema
+from loop_robot.toolchain import feetech
+from loop_robot.terminal.files import schema
 
 TOOLS = [
     schema('feetech_environment', 'Inspect this Python for pyserial and packaged Feetech capabilities. No connection.', {}, []),
@@ -23,9 +23,9 @@ def dispatch(app, name, args):
         raise ValueError('Unexpected Feetech arguments')
     if name == 'feetech_environment':
         return feetech.environment()
-    from core.store import EventStore
+    from loop_robot.core.store import EventStore
     # Reuse the project's Episode/Review evidence types, independent of model prose.
-    from core.contracts import Episode, Review, record as serialize
+    from loop_robot.core.contracts import Episode, Review, record as serialize
     directory = app.state_dir / 'feetech'
     directory.mkdir(parents=True, exist_ok=True)
     operation_id = uuid.uuid4().hex
@@ -42,14 +42,10 @@ def dispatch(app, name, args):
                   'register_writes': False, 'retryable': False}
     path = directory / (operation_id + '.json')
     path.write_text(json.dumps({'tool': name, 'arguments': args, 'result': result}, ensure_ascii=False, indent=2))
-    store = EventStore(directory / 'evidence.sqlite')
-    try:
+    with EventStore(directory / 'evidence.sqlite') as store:
         episode = Episode(operation_id, 1, 'feetech-diagnostics', 'hardware-query',
                           actions=[{'tool': name, 'arguments': args}], observations=[{'report': str(path)}])
-        store.append('episode', serialize(episode))
         review = Review(result['verdict'], 1. if result['verdict'] == 'pass' else 0.,
                         'Serial diagnostic evidence only; no motor movement or physical task success established')
-        store.append('review', serialize(review))
-    finally:
-        store.close()
+        store.append_episode_review(episode, review)
     return {**result, 'report': str(path), 'review': serialize(review)}

@@ -8,7 +8,7 @@ import unittest
 from unittest.mock import Mock, patch
 
 from scripts.install import windows_launcher
-from terminal.platform_support import InputPoller, lock_terminal, venv_python
+from loop_robot.terminal.platform_support import InputPoller, lock_terminal, venv_python
 
 
 class PlatformTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class PlatformTests(unittest.TestCase):
     def test_windows_lock_adapter(self):
         api = Mock(LK_NBLCK=2)
         with tempfile.TemporaryFile("w+b") as stream:
-            with patch("terminal.platform_support.os.name", "nt"), patch.dict(sys.modules, {"msvcrt": api}):
+            with patch("loop_robot.terminal.platform_support.os.name", "nt"), patch.dict(sys.modules, {"msvcrt": api}):
                 lock_terminal(stream)
                 api.locking.assert_called_once_with(stream.fileno(), 2, 1)
                 api.locking.side_effect = OSError("busy")
@@ -43,7 +43,7 @@ class PlatformTests(unittest.TestCase):
             path = Path(directory) / "terminal.lock"
             with path.open("a+b") as stream:
                 lock_terminal(stream)
-                code = "from terminal.platform_support import lock_terminal; import sys; f=open(sys.argv[1],'a+b'); lock_terminal(f)"
+                code = "from loop_robot.terminal.platform_support import lock_terminal; import sys; f=open(sys.argv[1],'a+b'); lock_terminal(f)"
                 result = subprocess.run([sys.executable, "-c", code, str(path)], capture_output=True, timeout=10)
                 self.assertNotEqual(result.returncode, 0)
                 self.assertIn(b"BlockingIOError", result.stderr)

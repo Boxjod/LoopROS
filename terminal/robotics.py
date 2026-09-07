@@ -10,7 +10,7 @@ import time
 import uuid
 from urllib.parse import urlsplit
 
-from terminal.web import dispatch as web_dispatch, request, clean_html
+from loop_robot.terminal.web import dispatch as web_dispatch, request, clean_html
 
 SOURCES={
  'ros2':('https://docs.ros.org/en/{version}/','ROS 2 nodes/topics/services/actions, QoS, tf2, rosbag2; match ROS_DISTRO'),
@@ -128,19 +128,16 @@ def diagnose(observation,model=None,firmware=None,transport=None,error_code=None
 
 
 def record(app,operation,args,result):
-    from core.store import EventStore
-    from core.contracts import Episode,Review,record as serialize
+    from loop_robot.core.store import EventStore
+    from loop_robot.core.contracts import Episode,Review,record as serialize
     directory=app.state_dir/'engineering';directory.mkdir(parents=True,exist_ok=True)
     path=directory/(uuid.uuid4().hex+'.json')
     path.write_text(json.dumps({'operation':operation,'inputs':args,'result':result},ensure_ascii=False,indent=2,allow_nan=False))
-    store=EventStore(directory/'evidence.sqlite')
-    try:
+    with EventStore(directory/'evidence.sqlite') as store:
         episode=Episode(uuid.uuid4().hex,1,'robot-engineering','offline',actions=[{'tool':operation,'arguments':args}],observations=[{'report':str(path)}])
-        store.append('episode',serialize(episode))
         verdict='inconclusive' if result.get('verdict')=='inconclusive' else 'pass'
         review=Review(verdict,1. if verdict=='pass' else 0.,'Computation/observation report saved; no hardware execution or physical task success established')
-        store.append('review',serialize(review))
-    finally: store.close()
+        store.append_episode_review(episode,review)
     if 'samples' in result:
         rows=result['samples'];result={k:v for k,v in result.items() if k!='samples'}
         result['sample_count']=len(rows);result['samples_preview']=rows[::max(1,len(rows)//30)]
@@ -151,7 +148,7 @@ def record(app,operation,args,result):
 
 
 def dispatch(app,name,args):
-    from terminal.feetech import NAMES, dispatch as feetech_dispatch
+    from loop_robot.terminal.feetech import NAMES, dispatch as feetech_dispatch
     if name in NAMES: return feetech_dispatch(app, name, args)
     if name=='robot_toolchains':
         if args!={}: raise ValueError('robot_toolchains takes no arguments')
@@ -161,14 +158,14 @@ def dispatch(app,name,args):
         return docs(app.state_dir/'robot_docs_cache',**args)
     if name=='robot_diagnose': return record(app,name,args,diagnose(**args))
     if name=='motor_torque':
-        from toolchain.robot_engineering import current_to_torque
+        from loop_robot.toolchain.robot_engineering import current_to_torque
         return record(app,name,args,current_to_torque(args))
     if name=='pid_trial':
-        from toolchain.robot_engineering import pid_trial
+        from loop_robot.toolchain.robot_engineering import pid_trial
         return record(app,name,args,pid_trial(args))
     if name=='robot_model_analysis':
         if app.latest_scene is None: raise ValueError('No verified scene selected; load a robot model first')
-        from toolchain.robot_model_analysis import analyze
+        from loop_robot.toolchain.robot_model_analysis import analyze
         return record(app,name,args,analyze(app.latest_scene,**args))
     raise ValueError('Unknown robotics tool')
 
@@ -187,6 +184,6 @@ ROBOT_TOOLS=[
  schema('robot_model_analysis','根据当前校验机器人模型离线计算FK、世界坐标雅可比、惯量矩阵、逆动力学或J转置力映射。默认home状态；不改变窗口/硬件。关节广义力不等于actuator ctrl。',
         {'operation':{'type':'string','enum':['kinematics','dynamics','wrench_to_joint']},'body':TEXT,'qpos':VEC,'qvel':VEC,'qacc':VEC,'world_wrench':VEC},('operation',)),
 ]
-from terminal.feetech import TOOLS as FEETECH_TOOLS
+from loop_robot.terminal.feetech import TOOLS as FEETECH_TOOLS
 ROBOT_TOOLS += FEETECH_TOOLS
 ROBOT_NAMES={t['function']['name'] for t in ROBOT_TOOLS}

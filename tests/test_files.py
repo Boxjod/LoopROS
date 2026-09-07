@@ -4,10 +4,17 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.files import read_file
+from loop_robot.terminal.files import read_file
 
 
 class ReadFileTests(unittest.TestCase):
+    def test_endpoint_key_config_cannot_be_read_as_plain_file(self):
+        with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, LOOP_HOME=folder):
+            path=Path(folder)/'config.json'
+            path.write_text('{"endpoints":[{"api_key":"private-test-key"}]}')
+            with self.assertRaises(ValueError):
+                read_file(str(path))
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
         self.directory = Path(self.temp.name)
@@ -86,8 +93,8 @@ class ReadFileTests(unittest.TestCase):
 class AppReadFileWiringTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         self.App, self.load_config = App, load_config
         self.app = self.App(self.load_config(), self.temp.name)
 

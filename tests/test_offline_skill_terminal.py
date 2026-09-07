@@ -44,7 +44,7 @@ class OfflineSkillTerminalTests(unittest.TestCase):
                 send(duration=.6)
                 self.assertIn('离线控制台', send('/skills'))
                 send('/skills run 离线控制台', 1)
-                from terminal.offline_skills import node_name
+                from loop_robot.terminal.offline_skills import node_name
                 name = node_name('offline-console')
                 send('/node send '+name+' 中文离线反馈', .5)
                 os.write(master, '/skills logs 离线控制台'.encode())

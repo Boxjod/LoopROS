@@ -6,7 +6,7 @@ import re
 import time
 from urllib.parse import urlsplit
 
-from terminal.web import dispatch, PageText, request
+from loop_robot.terminal.web import dispatch, PageText, request
 
 ORIGIN='https://mujoco.readthedocs.io'
 TOPICS={'model_editing':'python.html','mjcf':'XMLreference.html','simulation':'programming/simulation.html',

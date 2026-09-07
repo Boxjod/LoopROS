@@ -14,6 +14,7 @@ sys.path.insert(0, str(ROOT))
 from release_client import base_url
 from install_support import ensure_uv
 from _version import __version__
+from scripts.check_public_source import check as check_source
 
 
 def public_source(root, destination):
@@ -28,7 +29,7 @@ def public_source(root, destination):
     excluded = set(ignored.stdout.decode().split('\0'))
     destination.mkdir(parents=True)
     for name in names:
-        if name in excluded or Path(name).parts[0] == 'user_projects':
+        if name in excluded or Path(name).parts[0] in ('user_projects', 'website', 'examples'):
             continue
         source = root / name
         if source.is_symlink():
@@ -43,32 +44,77 @@ def public_source(root, destination):
     return destination
 
 
+def validate_source(root):
+    """New runtime modules must be explicitly reviewed into the index."""
+    missing = subprocess.check_output(
+        ['git', '-C', str(root), 'ls-files', '--others', '--exclude-standard', '--',
+         'core', 'terminal', 'toolchain', 'configs', 'assets'], text=True).splitlines()
+    missing = [name for name in missing if name.endswith(('.py', '.json', '.xml', '.html', '.css', '.js', '.png', '.md', '.txt'))
+               and not name.startswith('toolchain/candidates/')]
+    if missing:
+        raise ValueError('Untracked runtime files require review before release:\n' + '\n'.join(missing))
+
+
+def expected_files(source):
+    # Release builds use Python 3.11+; runtime/installation support is unchanged.
+    import tomllib
+    config = tomllib.loads((source / 'pyproject.toml').read_text())['tool']['setuptools']
+    expected = set()
+    for package in config['packages']:
+        directory = source.joinpath(*package.split('.')[1:])
+        expected.update(package.replace('.', '/') + '/' + p.name for p in directory.glob('*.py'))
+    for package, names in config.get('package-data', {}).items():
+        directory = source.joinpath(*package.split('.')[1:])
+        for name in names:
+            path = directory / name
+            if not path.is_file():
+                raise ValueError('Missing declared package data: ' + str(path.relative_to(source)))
+            expected.add(package.replace('.', '/') + '/' + name)
+    return expected
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--url', required=True, help='Final HTTPS public base URL')
     parser.add_argument('--output', required=True, help='New directory; existing paths refused')
     args = parser.parse_args()
+    if sys.version_info < (3, 11):
+        parser.error('Release builds require Python 3.11+; use the installed source .venv Python')
     url = base_url(args.url)
     if any(char in url for char in "'\"`$\\\n\r "):
         parser.error('Use a plain HTTPS URL without shell metacharacters')
     output = Path(args.output).resolve()
     if output.exists():
         parser.error('Output already exists; choose a fresh release directory')
+    check_source(ROOT)
+    validate_source(ROOT)
     with tempfile.TemporaryDirectory(prefix='loop-wheel-') as directory:
         source = public_source(ROOT, Path(directory) / 'source')
+        required = expected_files(source)
+        bootstrap = {name: (source / name).read_bytes() for name in
+                     ('release_client.py', 'install_support.py', 'release_runtime.py', 'release_manifest.py', '_version.py')}
         subprocess.run([ensure_uv(), 'build', '--wheel', '--out-dir', directory, str(source)], check=True)
         wheel, = Path(directory).glob('loop_ros-*.whl')
         expected = 'loop_ros-' + __version__ + '-py3-none-any.whl'
         if wheel.name != expected:
             raise ValueError('Wheel version differs from the single version source')
         with zipfile.ZipFile(wheel) as archive:
+            missing = required - set(archive.namelist())
+            if missing:
+                raise ValueError('Wheel is missing required files: ' + ', '.join(sorted(missing)))
             for name in archive.namelist():
                 parts = Path(name).parts
-                if any(p in ('artifacts', '.loop', '.looper', '.venv', '__pycache__', 'candidates', 'user_skills', 'user_tools', 'user_projects') for p in parts) or any(
+                if any(p in ('artifacts', '.loop', '.looper', '.venv', '__pycache__', 'candidates', 'user_skills', 'user_tools', 'user_projects', 'website', 'examples') for p in parts) or any(
                     p in name for p in ('credentials.json', 'config.local.json', '.sqlite', 'DEPLOYMENT.md')):
                     raise ValueError('Private/runtime file found in wheel: ' + name)
                 if not name.startswith(('loop_robot/', 'loop_ros-' + __version__ + '.dist-info/')):
                     raise ValueError('Unexpected wheel entry: ' + name)
+        environment = Path(directory) / 'installed'
+        subprocess.run([ensure_uv(), 'venv', '--python', sys.executable, str(environment)], check=True)
+        from install_support import venv_python
+        from release_client import smoke
+        subprocess.run([ensure_uv(), 'pip', 'install', '--python', str(venv_python(environment)), str(wheel)], check=True)
+        smoke(environment, __version__)
         output.mkdir(parents=True)
         shutil.copy2(wheel, output / wheel.name)
     metadata = {'version': __version__, 'wheel': expected, 'state_schema': 1,
@@ -78,9 +124,8 @@ def main():
     version_dir.mkdir(parents=True)
     shutil.copy2(output / 'latest.json', version_dir / 'latest.json')
     with zipfile.ZipFile(output / 'bootstrap.pyz', 'w', zipfile.ZIP_DEFLATED) as archive:
-        archive.write(ROOT / 'release_client.py', '__main__.py')
-        for name in ('install_support.py', 'release_runtime.py', '_version.py'):
-            archive.write(ROOT / name, name)
+        for name, payload in bootstrap.items():
+            archive.writestr('__main__.py' if name == 'release_client.py' else name, payload)
     script = '''#!/bin/sh
 # Loop ROS HTTPS release installer. No sudo; no system Python changes.
 set -eu
@@ -118,8 +163,6 @@ try {
 } finally { Remove-Item -Recurse -Force $loopTemp }
 '''.replace('__URL__', url)
     (output / 'install.ps1').write_text(powershell)
-    from scripts.build_website import export_website
-    export_website(output, url, __version__)
     # Immutable release-specific metadata; latest.json is published last by deployment.
     sums = []
     for path in sorted(output.rglob('*')):

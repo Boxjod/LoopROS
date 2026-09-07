@@ -4,7 +4,7 @@ from pathlib import Path
 from unittest.mock import patch
 import mujoco
 import numpy as np
-from toolchain.viewer_control import SimulationControl, validate
+from loop_robot.toolchain.viewer_control import SimulationControl, validate
 
 XML='''<mujoco><option gravity="0 0 0"/><worldbody><body name="arm/base"><joint name="arm/joint" axis="0 0 1" range="-90 90"/><geom type="capsule" fromto="0 0 0 .3 0 0" size=".02"/><body name="arm/hand" pos=".3 0 0"><geom size=".01"/></body></body></worldbody><actuator><position name="arm/motor" joint="arm/joint" kp="100" kv="10" ctrlrange="-1.5 1.5"/></actuator></mujoco>'''
 
@@ -43,9 +43,9 @@ class MotionTests(unittest.TestCase):
             c.apply({'action':'move_joints','robot':'arm','target':[1.2],'duration':2},None)
         self.assertIsNone(c.motion.active)
     def test_closed_window_notification_is_once_and_not_in_history(self):
-        from terminal.app import App
-        from terminal.config import load_config
-        from terminal.interactive import Terminal
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
+        from loop_robot.terminal.interactive import Terminal
         from prompt_toolkit.application import create_app_session
         from prompt_toolkit.input import create_pipe_input
         from prompt_toolkit.output import DummyOutput
@@ -64,8 +64,8 @@ class MotionTests(unittest.TestCase):
     def test_manipulation_enters_tools_and_keeps_planning_after_motion_receipt(self):
         import json
         from model_fixture import call
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         with tempfile.TemporaryDirectory() as d:
             app=App(load_config(),d)
             try:

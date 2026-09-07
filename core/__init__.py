@@ -1,1 +1,1 @@
-"""LoopMaster M1: dependency-free, offline-first control orchestration."""
+"""Standard-library contracts, evidence, tasks, memory and runtime resources."""

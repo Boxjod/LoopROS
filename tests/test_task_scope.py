@@ -5,10 +5,10 @@ import sqlite3
 import tempfile
 import unittest
 from unittest.mock import patch
-from core.tasks import TaskStore
-from terminal.app import App
-from terminal.config import load_config
-from terminal.session_task import SessionTask
+from loop_robot.core.tasks import TaskStore
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.session_task import SessionTask
 
 
 class TaskScopeTests(unittest.TestCase):
@@ -28,7 +28,7 @@ class TaskScopeTests(unittest.TestCase):
     def test_submit_belongs_to_session_default_list_and_explicit_history(self):
         old = self.store.submit({'goal': 'legacy'})
         foreign = self.store.submit({'goal': 'foreign', 'session_id': 'another-session'})
-        with patch('terminal.task_service.start', return_value={'process_alive': False}):
+        with patch('loop_robot.terminal.task_service.start', return_value={'process_alive': False}):
             own = self.app.tool('task_submit', {'goal': 'current'})['task']
             second = self.app.tool('task_submit', {'goal': 'second'})['task']
         self.assertEqual(own['session_id'], self.app.session_id)
@@ -75,7 +75,7 @@ class ScopeInteractionTests(unittest.IsolatedAsyncioTestCase):
         from prompt_toolkit.application import create_app_session
         from prompt_toolkit.input import create_pipe_input
         from prompt_toolkit.output import DummyOutput
-        from terminal.interactive import Terminal
+        from loop_robot.terminal.interactive import Terminal
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'LOOP_HOME': directory + '/home'}), create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 app = App(load_config(), Path(directory) / 'state')

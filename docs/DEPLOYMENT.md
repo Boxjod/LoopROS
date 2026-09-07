@@ -1,6 +1,45 @@
 # Loop ROS deployment
 
-## Current: initial version 0.0.1 — 2026-09-07
+## ESP32-C3 selector entry — 2026-09-08
+
+Added ESP32-C3 directly to the top selector on index.html and zh-CN.html, not only to the lower guide. Selecting it shows Rust/PlatformIO build commands, development-source prerequisites and the configuration/flashing link; it hides the CLI-only simulation option and replaces the CLI startup instructions. Returning to a Linux platform restores the prior controls. Versioned JS/CSS URLs avoid stale selector logic after refresh.
+
+Two JS tests and local/live Chrome checks passed both languages, ESP32-C3 selection, Linux-board commands and 1440/390/320-pixel layouts. [Live receipt](../artifacts/website-esp32-selector-live/result.json). [Publication receipt](../artifacts/website-esp32-selector-publish.log) confirms existing 0.0.2 downloads unchanged.
+
+Latest private source backup: `/root/workspaces/LoopROS/website-source-backups/67d672d98e8442a98b619f3f11224ff8/website-source.tar.gz`, SHA-256 `7063e763b1369d8fa952f5cca42ade54f2a16d38c83021fe17dbbb6819d84073`, remote hash verified. [Backup receipt](../artifacts/website-esp32-selector-source-backup/receipt.json). Website source remains excluded from Git.
+
+## Platform installation guide and Rust edge preview — 2026-09-08
+
+Published bilingual platform instructions at `https://loopmaster.box2ai.com/LoopROS/#platform-guide` and `https://loopmaster.box2ai.com/LoopROS/zh-CN.html#platform-guide`. The pages distinguish verified Linux CLI installation, pending native Windows/macOS/ARM acceptance, ESP32-C3 Rust + Arduino C++ development firmware, Cortex-M0+ core-only builds, and unsupported AVR firmware. No Rust source or firmware binary release was uploaded.
+
+Website-only publication preserved the existing 0.0.2 wheel, bootstrap, installers and version manifests byte-for-byte. Prior website assets were backed up at `/root/workspaces/LoopROS/website/909bb966af0a4d188d052aa13501b5bf/previous`. [Publisher receipt](../artifacts/website-platforms-publish.log). Local and live Chrome checks passed both languages, the three Linux-board command selectors and 1440/390/320-pixel layouts without horizontal overflow or page errors. [Live browser receipt](../artifacts/website-platforms-live-validation/result.json).
+
+Final private source backup: `/root/workspaces/LoopROS/website-source-backups/011b519f07334f70a6f6162e39565b04/website-source.tar.gz` on `root@8.134.90.171`, SHA-256 `1defc36e2c8addabfbcfbdf3adf31f1cabd32d169937d555fb25a757230830ec`. All 22 explicit source files plus the manifest are archived; the remote archive hash matches locally. [Backup receipt](../artifacts/website-platforms-source-backup-final-20260908/receipt.json). Future backups use `scripts/backup_website.py --host root@8.134.90.171 --output artifacts/NEW_BACKUP_DIRECTORY`; restore only to a new private directory. Website source remains outside the Git index.
+
+## Website source backup and CLI split — 2026-09-08
+
+Website source is now local/server-only and excluded from the public Git index, wheel and CLI release bundle. Required local workbench assets moved to `assets/workbench`; runtime scenes moved to `assets/simulation`. Release publication no longer exports website files. The existing website and published 0.0.2 downloads were not changed.
+
+Using the existing verified `root@8.134.90.171` SSH access, saved the final source backup to `/root/workspaces/LoopROS/website-source-backups/20260907T161744Z-split/website-source.tar.gz`. It contains 20 files: website source, required workbench assets/license, logo, website build/publish scripts, version source and website tests, plus a per-file manifest. Remote archive SHA-256 matches local: `98048c3f83924d6b1ab9dd7e7069c82dab71c305fedeb53e15c4cd3688a4f9d9`. [Backup receipt](../artifacts/website-source-backup-20260907T161744Z-split/receipt.json). The pre-move snapshot is also retained at `/root/workspaces/LoopROS/website-source-backups/20260907T161526Z/website-source.tar.gz`.
+
+Future website source backups use this private backup directory; website publication remains a separate action. Extract source backups into a new private directory and check `manifest.json`; do not extract into the live web root. Local CLI candidate validation is recorded in [RUNBOOK](RUNBOOK.md). A new version is required before publishing changed CLI bytes.
+
+## Current: version 0.0.2 — 2026-09-07
+
+Published **0.0.2** to the existing authorized release directory at `https://loopmaster.box2ai.com/LoopROS`. Version 0.0.1 and its versioned manifest remain immutable.
+
+- Wheel: `loop_ros-0.0.2-py3-none-any.whl`; SHA-256: `797229611e7aa3b189686c037dbf29e6e5eab85a6d58d84a0601c0fa249e2a79`.
+- Exact public bundle: `artifacts/release-0.0.2-final/`, 20 files including checksums, 1,416,503 bytes total; wheel 595,009 bytes.
+- Verified private server staging: `/root/workspaces/LoopROS/releases/0.0.2-797229611e7a`.
+- Publisher receipt: [publish.log](../artifacts/release-validation-0.0.2/publish.log). Public checksums and real upgrade validation are recorded with the release validation below.
+
+Validation passed on Linux in isolated homes: all 19 SHA256SUMS-listed downloads matched over verified HTTPS; install 0.0.1 → check → update 0.0.2 → no-op update → rollback 0.0.1 → re-upgrade 0.0.2; user Skill and selected state path retained. A separate source `loop update --migrate --terminal-only --state-dir ...` installed 0.0.2 successfully. Evidence: [live result](../artifacts/release-validation-0.0.2/live-result.json), [live log](../artifacts/release-validation-0.0.2/live-e2e.log). Native macOS/Windows and hardware operation were not tested.
+
+Source/unmanaged clients migrate explicitly with `loop update --migrate` (add `--terminal-only` to omit simulation dependencies); subsequent managed upgrades use `loop update`. Source files and user state are retained. Publication does not migrate or restart this workstation's active user sessions. No GitHub push/tag is part of this upload.
+
+The release is a frozen build snapshot. A later concurrent edit to terminal/completion.py is not part of this wheel; [package snapshot](../artifacts/release-validation-0.0.2/package-snapshot.json) records exact module hashes. Later source work must use a new version for publication.
+
+## Previous: initial version 0.0.1 — 2026-09-07
 
 Published the first version **0.0.1** to the authorized server `root@8.134.90.171`. Earlier 0.1.0/0.2.0 artifacts were local development candidates, never official releases. The application is distributed as a Python wheel with uv bootstrap; it is not a standalone native executable.
 

@@ -4,9 +4,9 @@ import tempfile
 import time
 import unittest
 
-from terminal.agents import AgentRuntime, agent_worker
-from terminal.config import ROOT, load_config
-from terminal.llm import QwenClient
+from loop_robot.terminal.agents import AgentRuntime, agent_worker
+from loop_robot.terminal.config import ROOT, load_config
+from loop_robot.terminal.llm import QwenClient
 
 
 def fake_worker(pipe, definition, config, key, task, schemas):
@@ -45,7 +45,7 @@ def fake_worker(pipe, definition, config, key, task, schemas):
 
 def offline_agent_worker(*args):
     from unittest.mock import patch
-    with patch("terminal.llm.QwenClient.complete", return_value={"content": "离线上下文回复"}):
+    with patch("loop_robot.terminal.llm.QwenClient.complete", return_value={"content": "离线上下文回复"}):
         agent_worker(*args)
 
 

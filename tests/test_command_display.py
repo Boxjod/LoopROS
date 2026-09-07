@@ -2,8 +2,8 @@ import json
 import unittest
 from prompt_toolkit.document import Document
 from prompt_toolkit.completion import CompleteEvent
-from terminal.command_display import format_command_result
-from terminal.completion import SlashCompleter
+from loop_robot.terminal.command_display import format_command_result
+from loop_robot.terminal.completion import SlashCompleter
 
 class CommandDisplayTests(unittest.TestCase):
     def test_permissions_groups_preserve_every_rule(self):

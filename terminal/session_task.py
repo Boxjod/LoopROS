@@ -2,13 +2,20 @@
 import json
 import threading
 import uuid
-from core.tasks import assess, validate_spec
-from terminal.files import schema
+from loop_robot.core.tasks import assess, validate_spec
+from loop_robot.terminal.files import schema
 
 TOOLS = [schema('session_task_read', 'Read this session task, plan, acceptance checks and observed tool receipts. No background execution.', {}, []),
          schema('session_task_update', 'Update this session task plan, checks, progress and next step. Completion requires checks against host-observed receipts; prose is not evidence. Goal changes must follow user direction. New messages continue this work; /new opens a new conversation with a fresh work record. Session and task IDs are distinct.',
                 {'goal': {'type': 'string'}, 'plan': {'type': 'array', 'items': {'type': 'string'}},
-                 'checks': {'type': 'array', 'items': {'type': 'object'}},
+                 'checks': {'type': 'array', 'maxItems': 20,
+                            'description': 'Checks against actual tool result fields. Leave empty until the receipt shape is known; never invent output fields. run_python returns stdout (text), stderr and returncode, not output. Exit zero alone does not verify the user goal.',
+                            'items': {'type': 'object', 'properties': {
+                                'tool': {'type': 'string', 'description': 'Tool that supplies the evidence.'},
+                                'path': {'type': 'string', 'description': 'Dotted path in that tool result.'},
+                                'equals': {'description': 'Expected JSON value; comparison includes its type.'},
+                                'arguments': {'type': 'object', 'description': 'Optional exact tool arguments to select a specific invocation.'}},
+                                'required': ['tool', 'path', 'equals'], 'additionalProperties': False}},
                  'progress': {'type': 'string'}, 'next_step': {'type': 'string'},
                  'state': {'type': 'string', 'enum': ['active', 'waiting_input', 'needs_review', 'complete']}}, [])]
 NAMES = {t['function']['name'] for t in TOOLS}
@@ -35,12 +42,22 @@ class SessionTask:
         with self.lock:
             data = json.loads(json.dumps(self.data))
         if compact:
+            data['current_turn_review'] = assess(data['checks'], [r for r in data['receipts'] if r['turn'] == data['turn']])
+            data['receipt_view'] = 'Compact host-observed receipts: omitted fields/history are not missing execution; reviews cover configured checks only.'
             data['receipts'] = data['receipts'][-6:]
             data['feedback'] = data['feedback'][-3:]
             data.pop('last_turn', None)
             for receipt in data['receipts']:
                 if isinstance(receipt['result'], dict):
-                    receipt['result'] = {k: v for k, v in receipt['result'].items() if k not in ('stdout', 'stderr', 'content', 'diff', 'source')}
+                    original = receipt['result']
+                    receipt['result'] = {k: v for k, v in original.items() if k not in ('stdout', 'stderr', 'content', 'diff', 'source')}
+                    receipt['omitted_fields'] = [k for k in ('content', 'diff', 'source') if k in original]
+                    for key in ('stdout', 'stderr'):
+                        value = original.get(key)
+                        if isinstance(value, str):
+                            receipt['result'][key] = value[:1200]
+                            if len(value) > 1200:
+                                receipt['result'][key + '_preview_truncated'] = True
             while data['receipts'] and len(json.dumps(data)) > 12000:
                 data['receipts'].pop(0)
         return data
@@ -52,6 +69,41 @@ class SessionTask:
             self.data['latest_request'] = text[:16000]
             self.data['turn'] += 1
             self.data['state'] = 'running'
+
+    def continuation(self):
+        """Only current-turn explicit work can keep a reply open; never revive history."""
+        with self.lock:
+            if self.data.get('execution_turn') != self.data['turn']:
+                return None
+            if self.data['state'] in ('waiting_input', 'complete'):
+                return None
+            current = [r for r in self.data['receipts'] if r['turn'] == self.data['turn']]
+            review = assess(self.data['checks'], current)
+            if review['verdict'] == 'pass':
+                self.data['state'] = 'complete'
+                self.data['review'] = review
+                return None
+            return {'goal':self.data['goal'], 'next_step':self.data['next_step'], 'review':review,
+                    'check_diagnostics': self._check_diagnostics(current)}
+
+    def _check_diagnostics(self, receipts):
+        """Missing fields are a contract problem, not proof of a device failure."""
+        diagnostics = []
+        for check in self.data['checks']:
+            matching = [r for r in receipts if r['tool'] == check['tool']
+                        and ('arguments' not in check or r.get('arguments') == check['arguments'])]
+            if not matching:
+                continue
+            result = matching[-1]['result']
+            value = result
+            for key in check['path'].split('.'):
+                if not isinstance(value, dict) or key not in value:
+                    diagnostics.append({'tool': check['tool'], 'path': check['path'],
+                        'available_fields': sorted(result) if isinstance(result, dict) else [],
+                        'reason': 'Field absent from receipt. Correct the check using actual evidence; do not rerun an operation to manufacture this field.'})
+                    break
+                value = value[key]
+        return diagnostics
 
     def receipt(self, name, args, result):
         if name in NAMES:
@@ -91,17 +143,25 @@ class SessionTask:
             if 'state' in args and args['state'] not in ('active', 'waiting_input', 'needs_review', 'complete'):
                 raise ValueError('Invalid session task state')
             candidate = {**self.data, **args}
+            if args.get('state') == 'waiting_input' and not str(args.get('next_step', '')).strip():
+                raise ValueError('waiting_input requires a concrete blocker in next_step')
             validate_spec({'goal': candidate['goal'] or 'Session task', 'checks': candidate['checks']})
             # Reads/configuration declarations cannot be selected as automatic acceptance evidence.
             if any(c['tool'] in NAMES for c in candidate['checks']):
                 raise ValueError('Task metadata cannot prove its own completion')
+            if any(c['tool'] == 'run_python' and c['path'].split('.')[0] == 'output' for c in candidate['checks']):
+                raise ValueError('run_python has no output field. Inspect stdout (text), stderr and returncode; leave checks empty until the relevant evidence is available. Do not rerun completed actions to fix a check.')
             current = [r for r in self.data['receipts'] if r['turn'] == self.data['turn']]
             review = assess(candidate['checks'], current)
             if candidate['state'] == 'complete' and review['verdict'] != 'pass':
                 raise ValueError('Completion not verified: ' + review['reason'])
             self.data.update(args)
+            if args.get('state') == 'active':
+                self.data['execution_turn'] = self.data['turn']
             self.data['review'] = review
-            return self.snapshot()
+            result = self.snapshot(compact=True)
+            result['check_diagnostics'] = self._check_diagnostics(current)
+            return result
 
     def finish(self, summary, events):
         with self.lock:

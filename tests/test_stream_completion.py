@@ -1,7 +1,8 @@
 import io
 import json
 import unittest
-from terminal.llm import ChatAgent, read_stream
+from unittest.mock import patch
+from loop_robot.terminal.llm import ChatAgent, ModelAPIError, QwenClient, read_stream
 
 
 def chunk(delta, **extra):
@@ -9,6 +10,56 @@ def chunk(delta, **extra):
 
 
 class StreamCompletionTests(unittest.TestCase):
+    def client(self):
+        client = QwenClient({'protocol': 'openai', 'model': 'fixture',
+                             'base_url': 'https://unused.invalid/v1',
+                             'api_key_env': 'LOOP_TEST_UNUSED', 'timeout_s': 1})
+        client.key = 'test-placeholder'
+        return client
+
+    def test_many_fragmented_calls_execute_once_and_continue(self):
+        for count in (1, 5, 12):
+            with self.subTest(count=count):
+                initial = [{'index': i, 'id': 'call' + str(i),
+                            'function': {'name': 'work', 'arguments': '{"step":'}}
+                           for i in reversed(range(count))]
+                tail = [{'index': i, 'function': {'arguments': str(i) + '}'}}
+                        for i in range(count)]
+                stream = chunk({'tool_calls': initial}) + chunk({'tool_calls': tail})
+                stream += chunk({}, finish_reason='tool_calls') + b'data: [DONE]\n\n'
+                final = chunk({'content': '完成'}, finish_reason='stop') + b'data: [DONE]\n\n'
+                executed = []
+                agent = ChatAgent(self.client(), [],
+                                  lambda name, args: executed.append(args['step']) or {'ok': True})
+                agent.streaming = True
+                agent.on_event = lambda *e: None
+                with patch('loop_robot.terminal.llm.build_opener') as opener:
+                    opener.return_value.open.side_effect = [io.BytesIO(stream), io.BytesIO(final)]
+                    self.assertEqual(agent.reply('Execute each step'), '完成')
+                    self.assertEqual(opener.return_value.open.call_count, 2)
+                    request = opener.return_value.open.call_args.args[0]
+                    messages = json.loads(request.data)['messages']
+                self.assertEqual(executed, list(range(count)))
+                results = [m for m in messages if m['role'] == 'tool']
+                self.assertEqual([m['tool_call_id'] for m in results],
+                                 ['call' + str(i) for i in range(count)])
+
+    def test_client_reports_parse_failures_without_protocol_guess_or_retry(self):
+        cases = [(b'data: {private-invalid-json}\n\n', 'invalid JSON'),
+                 (b'data: [DONE]\n\n', 'without finish reason'),
+                 (b'data: []\n\n', 'invalid or missing fields')]
+        for index in (-1, '4', True, None):
+            cases.append((chunk({'tool_calls': [{'index': index}]}), 'tool call index'))
+        for stream, expected in cases:
+            with self.subTest(expected=expected, stream=stream):
+                with patch('loop_robot.terminal.llm.build_opener') as opener:
+                    opener.return_value.open.return_value = io.BytesIO(stream)
+                    with self.assertRaisesRegex(ModelAPIError, expected) as error:
+                        self.client().complete([], [], on_event=lambda *e: None)
+                    opener.return_value.open.assert_called_once()
+                    self.assertNotIn('private', str(error.exception))
+                    self.assertNotIn('Chat Completions vs', str(error.exception))
+
     def test_finish_reason_completes_without_waiting_for_done(self):
         class Response(io.BytesIO):
             def readline(self, limit):

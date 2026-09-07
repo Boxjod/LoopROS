@@ -5,9 +5,9 @@ import sqlite3
 import threading
 import uuid
 from contextlib import closing
-from terminal.web import WEB_NAMES
-from terminal.robotics import ROBOT_NAMES
-from terminal.simulation import NAMES as SIM_NAMES, READ_NAMES as SIM_READ_NAMES
+from loop_robot.terminal.web import WEB_NAMES
+from loop_robot.terminal.robotics import ROBOT_NAMES
+from loop_robot.terminal.simulation import NAMES as SIM_NAMES, READ_NAMES as SIM_READ_NAMES
 
 ACTION_NAMES = {"simulator_control", "load_model", "node_start", "node_command", "open_serial", "read_serial", "run_sim", "move_sim", "generate_scene", "expert_advice", "spawn_agent", "policy_start", "devices", "open_simulator"}
 PLAN_BLOCKED = {"simulator_control", "load_model", "node_start", "node_command", "open_serial", "read_serial", "run_sim", "move_sim", "generate_scene", "spawn_agent", "policy_start", "open_simulator"}
@@ -28,6 +28,8 @@ ACTION_NAMES |= {"experience_search", "experience_read", "learning_note", "learn
 PLAN_BLOCKED |= {"learning_note", "learning_forget"}
 ACTION_NAMES |= {"read_file","read_image","read_url","list_files","search_files","write_file","edit_file","harness_read","harness_write"}
 PLAN_BLOCKED |= {"write_file","edit_file","harness_write","skill_write"}
+ACTION_NAMES |= {'process_inspect', 'process_stop'}
+PLAN_BLOCKED.add('process_stop')
 ACTION_NAMES |= SIM_NAMES
 PLAN_BLOCKED |= SIM_NAMES - SIM_READ_NAMES - {'sim_close'}
 
@@ -52,8 +54,10 @@ class PermissionGate:
         with closing(sqlite3.connect(str(self.path))) as db, db:
             rules = dict(db.execute("SELECT action,rule FROM rules"))
             mode = db.execute("SELECT value FROM settings WHERE key='mode'").fetchone()[0]
-        defaults = {name: 'ask' if name in ('skill_export', 'policy_start', 'skill_write', 'harness_write', 'run_python', 'settings_update', 'tool_write', 'tool_run', 'sim_record') else 'allow' for name in sorted(ACTION_NAMES)}
+        defaults = {name: 'ask' if name in ('process_stop', 'skill_export', 'policy_start', 'skill_write', 'harness_write', 'run_python', 'settings_update', 'tool_write', 'tool_run', 'sim_record') else 'allow' for name in sorted(ACTION_NAMES)}
         effective = {name: rules.get(name, rule) for name, rule in defaults.items()}
+        if 'process_stop' not in rules:
+            effective['process_stop'] = effective['run_python']
         profile = ('plan' if mode == 'plan' else 'yolo' if all(rule == 'allow' for rule in effective.values())
                    else 'cautious' if all(rule == 'ask' for rule in effective.values())
                    else 'default' if effective == defaults else 'custom')

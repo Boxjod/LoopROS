@@ -8,11 +8,11 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
-from terminal.app import App
-from terminal.config import load_config
-from terminal.offline_skills import node_name
-from toolchain.offline_skill import save_profile, inspect, package, materialize
-from toolchain.process_node import config
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.offline_skills import node_name
+from loop_robot.toolchain.offline_skill import save_profile, inspect, package, materialize
+from loop_robot.toolchain.process_node import config
 
 
 @unittest.skipUnless(os.name=='posix', 'Bash integration runs on POSIX')
@@ -44,7 +44,7 @@ class OfflineSkillTests(unittest.TestCase):
 
     def test_named_inspection_skips_catalog_and_changed_package_rejects_run(self):
         self.app.tool('skill_export', {'profile':'fixture','name':'fixture-start','title':'Fixture start'})
-        with patch('toolchain.offline_skill.catalog', side_effect=AssertionError('No full catalog scan')):
+        with patch('loop_robot.toolchain.offline_skill.catalog', side_effect=AssertionError('No full catalog scan')):
             value = self.app.tool('skill_executables', {'name':'fixture-start'})
         self.assertEqual(len(value['skills']), 1)
         inspected = value['skills'][0]
@@ -109,8 +109,8 @@ class OfflineSkillTests(unittest.TestCase):
         with self.assertRaises(PermissionError): self.app.dispatch('/skills save fixture saved-host 启动Host')
         request=next(iter(self.app.permissions.requests()))
         self.app.dispatch('/approve '+request)
-        from terminal.completion import SlashCompleter
-        from terminal.app import HELP
+        from loop_robot.terminal.completion import SlashCompleter
+        from loop_robot.terminal.app import HELP
         from prompt_toolkit.document import Document
         completer=SlashCompleter(HELP)
         self.assertIn('启动Host',[c.text for c in completer.get_completions(Document('/skills run 启'),None)])

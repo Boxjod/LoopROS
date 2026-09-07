@@ -2,12 +2,12 @@ import unittest
 import tempfile
 from pathlib import Path
 from unittest.mock import Mock
-from terminal.interactive import Terminal
+from loop_robot.terminal.interactive import Terminal
 
 
 class TaskNavigationTests(unittest.TestCase):
     def test_unfinished_count_is_scoped_and_includes_waiting(self):
-        from core.tasks import TaskStore
+        from loop_robot.core.tasks import TaskStore
         with tempfile.TemporaryDirectory() as folder:
             store = TaskStore(Path(folder)/'tasks.sqlite')
             for state in ('queued','running','waiting_input','retry_wait','succeeded','cancelled'):
@@ -20,13 +20,13 @@ class TaskNavigationTests(unittest.TestCase):
         import json
         import tempfile
         from unittest.mock import patch
-        from terminal.app import App
-        from terminal.config import load_config
-        from core.tasks import TaskStore
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
+        from loop_robot.core.tasks import TaskStore
         with tempfile.TemporaryDirectory() as directory, patch.dict('os.environ', {'LOOP_HOME': directory + '/home'}):
             app = App(load_config(), directory + '/state')
             try:
-                with patch('terminal.task_service.start') as start:
+                with patch('loop_robot.terminal.task_service.start') as start:
                     for command in ('/task', '/task   ', '/tasks'):
                         result = json.loads(app.dispatch(command))
                         self.assertEqual(result['task'], [])
@@ -42,7 +42,7 @@ class TaskNavigationTests(unittest.TestCase):
     def terminal(self, tasks):
         terminal = Terminal.__new__(Terminal)
         from types import SimpleNamespace
-        from terminal.session_task import SessionTask
+        from loop_robot.terminal.session_task import SessionTask
         terminal.app = SimpleNamespace(session_id='current', session_task=SessionTask(identity='current'), client=SimpleNamespace(config={}))
         for task in tasks:
             task['session_id'] = 'current'

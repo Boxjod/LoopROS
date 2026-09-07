@@ -33,7 +33,7 @@ class PolicyServices:
         env = {k: v for k, v in os.environ.items() if not k.endswith(("API_KEY", "TOKEN", "SECRET"))}
         token = None
         if self.resources is not None:
-            from core.resources import ResourceBusy
+            from loop_robot.core.resources import ResourceBusy
             token = self.resources.inspect(acquire=True, workload='policy_service', request=spec.get('resources', {}))
             if token is None:
                 raise ResourceBusy('Waiting for resources: ' + self.resources.last['reason'])

@@ -6,9 +6,9 @@ import re
 from datetime import datetime, timezone
 from urllib.request import Request, build_opener
 
-from terminal.config import validate_provider
-from terminal.home import save_key
-from terminal.llm import NoRedirect, QwenClient, ModelAPIError, model_https_handler
+from loop_robot.terminal.config import validate_provider
+from loop_robot.terminal.home import save_key
+from loop_robot.terminal.llm import NoRedirect, QwenClient, ModelAPIError, model_https_handler
 
 # Public endpoints, not subscriptions or guarantees of account access.
 PRESETS = [
@@ -90,6 +90,10 @@ def discover_models(config, key):
             model = {"id": name, "company": model_company(item),
                      "date": date.strftime("%Y-%m-%d") if date else "Unknown",
                      "timestamp": date.timestamp() if date else 0}
+            from loop_robot.terminal.reasoning import metadata
+            levels = metadata(item)
+            if levels is not None:
+                model['reasoning_efforts'] = levels
             if name not in models or model["timestamp"] > models[name]["timestamp"]:
                 models[name] = model
         return sorted(models.values(), key=lambda m: (m["company"] == "Unknown", m["company"].casefold(),
@@ -103,10 +107,13 @@ def quick_setup(store, slot="master", read=None, secret=None, write=print):
     write("\nLoop Switch · Quick setup")
     for index, (label, url, _) in enumerate(PRESETS, 1):
         write("  {}. {}  {}".format(index, label, url))
+    write("  s. Saved profiles / reuse key")
     write("  c. Custom URL / token platform    0. Cancel")
     choice = read("Provider number or API base URL [1]: ").strip() or "1"
     if choice == "0":
         return None
+    if choice.lower() == "s":
+        return recover_profile(store, read=read, write=write, offer_setup=False)
     model = ""
     if choice.isdigit() and 1 <= int(choice) <= len(PRESETS):
         _, url, model = PRESETS[int(choice) - 1]
@@ -125,7 +132,7 @@ def quick_setup(store, slot="master", read=None, secret=None, write=print):
               "protocol": protocol}
     validate_provider(config)  # Reject credential URLs before asking for a secret.
     write("API type: 1. OpenAI-compatible Chat Completions  2. OpenAI Responses")
-    default = "2" if protocol == "openai-responses" else "1"
+    default = "1"
     choice = read("API type [{}] (0 to cancel): ".format(default)).strip() or default
     if choice == "0":
         return None
@@ -144,7 +151,15 @@ def quick_setup(store, slot="master", read=None, secret=None, write=print):
         write(str(exc))
         models = []
     if models:
-        write("Available models: company A-Z, newest catalog date first; unknown dates last.")
+        counts = {}
+        visible = []
+        for item in models:  # Discovery already sorts each company newest first.
+            company = item['company']
+            counts[company] = counts.get(company, 0) + 1
+            if counts[company] <= 10:
+                visible.append(item)
+        models = visible
+        write("Available models: latest 10 per company, company A-Z; unknown dates last. Enter any model ID manually.")
         write("Catalog listing does not verify API type or tool support.")
         company = None
         for index, item in enumerate(models, 1):
@@ -174,12 +189,13 @@ def quick_setup(store, slot="master", read=None, secret=None, write=print):
         return None
     config["model"] = model
     validate_provider(config)
-    # New profile per setup: preserve existing profiles and inactive account settings.
+    # Keep the latest setup for the same endpoint and credential.
     import uuid
     name = "setup-" + uuid.uuid4().hex[:12]
     save_key(config, key)
     store.save(name, config)
     store.use(slot, name)
+    store.deduplicate(newest=name)
     write("Saved. {} uses {} · {}. API access is not yet verified.".format("Current model", model, config["protocol"]))
     return name
 
@@ -191,9 +207,17 @@ def check_connection(client):
         raise ModelAPIError("No API key configured")
     probe = QwenClient(dict(client.config))
     probe.key = key
-    result = probe.complete([{"role": "user", "content": "Reply with OK only."}], [])
-    if not isinstance(result, dict) or not isinstance(result.get("content"), str) or not result["content"].strip():
-        raise ModelAPIError("Model returned no text; check the model ID and API type")
+    try:
+        result = probe.complete([{"role": "user", "content": "Reply with OK only."}], [])
+        if not isinstance(result, dict) or not isinstance(result.get("content"), str) or not result["content"].strip():
+            raise ModelAPIError("Model returned no text; check the model ID and API type")
+    except ModelAPIError as exc:
+        if exc.status not in (None, 400, 403, 404):
+            raise
+        if check_alternative_models(client, key):
+            # Fast evidence for another model does not apply to the selected model.
+            return 'unknown'
+        raise
     if probe.last_service_tier in ('priority', 'fast'):
         return 'active'
     print('Checking Fast availability (one short request; provider charges may apply)...', flush=True)
@@ -210,6 +234,68 @@ def check_connection(client):
     return 'unknown'
 
 
+def check_alternative_models(client, key):
+    """Verify this API with up to three catalog models, preserving user selection."""
+    print('Checking other models on the same API (up to 3 short requests; provider charges may apply)...', flush=True)
+    try:
+        models = discover_models(client.config, key)
+    except ValueError:
+        return False
+    candidates = [item['id'] for item in models
+                  if item['id'] != client.config['model']
+                  and not re.search(r'embedding|rerank|whisper|tts|transcri|dall-e', item['id'], re.I)]
+    for model in candidates[:3]:
+        probe = QwenClient({**client.config, 'model': model,
+                            'timeout_s': min(client.config['timeout_s'], 10)})
+        probe.key = key
+        print('Checking API with model {}...'.format(model), flush=True)
+        try:
+            result = probe.complete([{'role': 'user', 'content': 'Reply with OK only.'}], [])
+        except ModelAPIError as exc:
+            if exc.status == 401:
+                return False
+            continue
+        except (RuntimeError, ValueError, OSError):
+            continue
+        if isinstance(result, dict) and isinstance(result.get('content'), str) and result['content'].strip():
+            print('API connected using {}. Selected model {} is unchanged and failed its check; use /switch to choose a working model.'.format(model, client.config['model']), flush=True)
+            return True
+    return False
+
+
+def recover_profile(store, read=None, write=print, offer_setup=True):
+    """Choose existing state before asking for new credentials; no network here."""
+    read = read or input
+    store.deduplicate()
+    profiles = store.list()
+    if not profiles:
+        if offer_setup:
+            return quick_setup(store)
+        write('No saved profiles. Run setup to add one.')
+        return None
+    if offer_setup and all(item['connection_check']['status'].startswith('failed') for item in profiles):
+        write('All saved profiles failed their latest connection checks. Enter a new configuration.')
+        return quick_setup(store)
+    write('Saved profiles (selection reuses saved credentials):')
+    for index, item in enumerate(profiles, 1):
+        active = ' [default/current]' if 'master' in item['active_for'] else ''
+        write('  {}. {} | {} | {}{}'.format(index, item['model'], item.get('protocol', 'openai'), item['base_url'], active + ' | ' + item['connection_check']['status'] + (' @ ' + item['connection_check']['checked_at'] if item['connection_check']['checked_at'] else '')))
+    while True:
+        prompt = 'Profile number, r retry, n new setup, 0 cancel: ' if offer_setup else 'Profile number, r retry current, 0 cancel: '
+        answer = read(prompt).strip().lower()
+        if answer in ('', '0'):
+            return None
+        if answer == 'r':
+            return store.selected()['master']
+        if answer == 'n' and offer_setup:
+            return quick_setup(store)
+        if answer.isdigit() and 1 <= int(answer) <= len(profiles):
+            name = profiles[int(answer)-1]['name']
+            store.use('master', name)
+            return name
+        write('Choose a listed profile, r or 0.' if not offer_setup else 'Choose a listed profile, r, n or 0.')
+
+
 def ensure_setup(app, interactive):
     app.startup_fast_status = None
     if not interactive:
@@ -218,19 +304,26 @@ def ensure_setup(app, interactive):
         try:
             print("Checking model connection (short request, no tools)...", flush=True)
             app.startup_fast_status = check_connection(app.client)
-            print("Model connected.")
+            app.providers.record_check('passed')
+            print("API connection verified.")
             return True
         except (EOFError, KeyboardInterrupt):
             print("\nConnection check cancelled.")
             return False
         except (RuntimeError, ValueError, OSError) as exc:
+            status = 'failed'
+            if isinstance(exc, ModelAPIError):
+                match = re.search(r'HTTP (\d{3})', str(exc))
+                if match:
+                    status += ' (HTTP ' + match.group(1) + ')'
+            app.providers.record_check(status)
             # No raw exception/response text: gateways and local paths may contain secrets.
             print("Model connection failed. " + (str(exc) if isinstance(exc, ModelAPIError)
                   else "Check API URL, key, model ID and API type."))
-            print("Opening Loop Switch setup. Environment keys take precedence over saved keys.")
+            print("Choose a saved profile or configure a new one. Saved endpoint keys take precedence over environment keys.")
         while True:
             try:
-                name = quick_setup(app.providers)
+                name = recover_profile(app.providers)
                 if name is None:
                     return False
                 app.apply_profiles()

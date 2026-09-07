@@ -8,11 +8,11 @@ import time
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config, ROOT
-from terminal.llm import ChatAgent, QwenClient
-from terminal.scheduler import Scheduler
-from terminal.services import PolicyServices
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config, ROOT
+from loop_robot.terminal.llm import ChatAgent, QwenClient
+from loop_robot.terminal.scheduler import Scheduler
+from loop_robot.terminal.services import PolicyServices
 
 
 class TerminalTests(unittest.TestCase):
@@ -27,7 +27,7 @@ class TerminalTests(unittest.TestCase):
         client = QwenClient(json.loads((ROOT / "configs/config.example.json").read_text())["llm"])
         client.key = "test-only"
         response = io.BytesIO(json.dumps({"choices": [{"message": {"role": "assistant", "content": "你好"}}]}).encode())
-        with patch("terminal.llm.build_opener") as opener:
+        with patch("loop_robot.terminal.llm.build_opener") as opener:
             opener.return_value.open.return_value = response
             self.assertEqual(client.complete([{"role": "user", "content": "hi"}], [])["content"], "你好")
             request = opener.return_value.open.call_args[0][0]
@@ -63,7 +63,7 @@ class TerminalTests(unittest.TestCase):
         self.assertEqual(agent.reply('完成检查'), '已验证')
 
     def test_scene_failure_details_reach_master(self):
-        from toolchain.scenes import SceneGenerationError
+        from loop_robot.toolchain.scenes import SceneGenerationError
         class Client:
             calls = 0
             def complete(self, messages, tools):
@@ -108,7 +108,7 @@ class TerminalTests(unittest.TestCase):
         scheduler = Scheduler(":memory:")
         try:
             job = scheduler.add(10, "/status")
-            with patch("terminal.scheduler.time.time", return_value=time.time() + 20):
+            with patch("loop_robot.terminal.scheduler.time.time", return_value=time.time() + 20):
                 self.assertEqual(scheduler.tick(lambda text: "ok"), (job, "ok"))
                 self.assertIsNone(scheduler.tick(lambda text: "duplicate"))
             second = scheduler.add(10, "hello", repeat=True)
@@ -122,7 +122,7 @@ class TerminalTests(unittest.TestCase):
             scheduler.add(1, "hello", repeat=True)
             def fail(text):
                 raise RuntimeError("error")
-            with patch("terminal.scheduler.time.time", return_value=time.time() + 5):
+            with patch("loop_robot.terminal.scheduler.time.time", return_value=time.time() + 5):
                 scheduler.tick(fail)
                 self.assertEqual(scheduler.list()[0][4], "failed")
         finally:

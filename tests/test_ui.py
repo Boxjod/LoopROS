@@ -2,8 +2,8 @@ import re
 import unittest
 from pathlib import Path
 
-from terminal.app import HELP
-from terminal.ui import welcome, VERSION, LOGO, TAGLINE
+from loop_robot.terminal.app import HELP
+from loop_robot.terminal.ui import welcome, VERSION, LOGO, TAGLINE
 
 
 class WelcomeTests(unittest.TestCase):

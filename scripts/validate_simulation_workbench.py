@@ -6,14 +6,16 @@ import sys
 
 ROOT=Path(__file__).resolve().parents[1]
 sys.path.insert(0,str(ROOT))
+from launcher import _bootstrap
+_bootstrap(legacy=False)
 
 
 def run(backend,output,isaac_config=None):
-    from toolchain.simulation import SimulationWorkbench
+    from loop_robot.toolchain.simulation import SimulationWorkbench
     output=Path(output)
     if output.exists(): raise ValueError('Choose a new validation output directory')
     service=SimulationWorkbench(output,isaac_config)
-    created=service.call('sim_create',{'backend':backend,**({'scene':str(ROOT/'examples/simulation_workbench.xml')} if backend=='mujoco' else {})})
+    created=service.call('sim_create',{'backend':backend,**({'scene':str(ROOT/'assets/simulation/simulation_workbench.xml')} if backend=='mujoco' else {})})
     instance=created['instance']
     def call(name,**kw): return service.call(name,{'instance':instance,**kw})
     try:

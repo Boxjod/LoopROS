@@ -21,10 +21,15 @@ class NodeDefinition:
     validate: object
     resource: object
     stop_timeout_s: float = .5
+    force_stop: bool = True
 
 
-def _worker(pipe, stopping, factory, config):
-    from release_runtime import runtime_session
+def _worker(pipe, stopping, factory, config, admitted):
+    while not admitted.wait(.02):
+        if stopping.is_set():
+            pipe.close()
+            return
+    from loop_robot.release_runtime import runtime_session
     with runtime_session(), Path(config['evidence_path']).with_suffix('.log').open('a', encoding='utf-8', buffering=1) as output:
         with redirect_stdout(output), redirect_stderr(output):
             _run_worker(pipe, stopping, factory, config)
@@ -115,21 +120,24 @@ class NodeRuntime:
                           evidence_path=str(self.directory / (instance + '.sqlite')))
             parent, child = self.context.Pipe()
             stopping = self.context.Event()
-            process = self.context.Process(target=_worker, args=(child, stopping, definition.factory, config),
-                                           name='loop-node-' + name, daemon=True)
+            admitted = self.context.Event()
+            process = self.context.Process(target=_worker, args=(child, stopping, definition.factory, config, admitted),
+                                           name='loop-node-' + name, daemon=definition.force_stop)
             token = None
             ownership = None
             try:
                 if self.resource_claim:
                     ownership = self.resource_claim(resource)
                 if self.admission:
-                    from core.resources import ResourceBusy
+                    from .resources import ResourceBusy
                     token = self.admission.inspect(acquire=True, workload='node', request={})
                     if token is None:
                         raise ResourceBusy('Waiting for resources: ' + self.admission.last['reason'])
                 process.start()
                 if token: self.admission.bind(token, process.pid)
             except BaseException:
+                # No factory runs before admission binds; cleanup cannot orphan a host.
+                stopping.set()
                 if process.pid is not None:
                     if process.is_alive(): process.terminate()
                     process.join(timeout=1)
@@ -143,12 +151,13 @@ class NodeRuntime:
                 raise
             child.close()
             record = {'lease': token, 'ownership': ownership, 'name': name, 'kind': kind, 'instance_id': instance, 'process': process,
-                      'pipe': parent, 'stopping': stopping, 'state': 'starting', 'snapshot': {},
+                      'pipe': parent, 'stopping': stopping, 'admitted': admitted, 'state': 'starting', 'snapshot': {},
                       'heartbeat': None, 'started': time.monotonic(), 'error': None, 'resource': resource,
                       'pending': {}, 'results': deque(maxlen=32), 'events': deque(maxlen=100),
                       'evidence_path': config['evidence_path'], 'reaped': False}
             self.records[name] = record
             self.resources[resource] = name
+            admitted.set()
             self._event(record, 'started', pid=process.pid, node_kind=kind, resource=resource)
             return self._status(record)
 
@@ -160,6 +169,8 @@ class NodeRuntime:
         state = record['state']
         if alive and state not in ('failed', 'stopping'):
             state = 'running' if fresh else ('starting' if heartbeat is None and time.monotonic() - record['started'] < self.stale_after else 'unresponsive')
+        if fresh and record['kind'] == 'process' and record['snapshot'].get('process_state') == 'exited' and state == 'running':
+            state = 'exited'  # Supervisor heartbeat is not child-service liveness.
         return {'name': record['name'], 'kind': record['kind'], 'instance_id': record['instance_id'],
                 'pid': record['process'].pid, 'process_alive': alive, 'state': state,
                 'heartbeat_fresh': fresh, 'heartbeat_age_s': age, 'resource': record['resource'],
@@ -225,6 +236,8 @@ class NodeRuntime:
                 if ownership is not None: ownership.close()
                 if record.get('lease'):
                     self.admission.release(record.pop('lease'))
+                if record['state'] == 'stopping' and record['process'].exitcode == 0:
+                    record['state'] = 'stopped'
                 if record['state'] != 'stopped':
                     record['state'] = 'failed'
                     record['error'] = record['error'] or 'Node exited unexpectedly'
@@ -234,8 +247,8 @@ class NodeRuntime:
                     self._event(record, 'result', **result)
                     # The child has exited. Record missing completion evidence without
                     # replaying the command, even if its earlier intent was persisted.
-                    from core.contracts import Episode, Review, record as encode
-                    from core.store import EventStore
+                    from .contracts import Episode, Review, record as encode
+                    from .store import EventStore
                     evidence = EventStore(record['evidence_path'])
                     try:
                         episode = Episode(command_id, 1, record['name'], 'unavailable',
@@ -253,6 +266,8 @@ class NodeRuntime:
         while not self.wake.wait(.05):
             with self.lock:
                 self._poll()
+                if self.closed and all(r['reaped'] for r in self.records.values()):
+                    return
 
     def logs(self, name, limit=20):
         if type(limit) is not int or not 1 <= limit <= 100:
@@ -270,6 +285,11 @@ class NodeRuntime:
                 process = record['process']
                 process.join(timeout=self.definitions[record['kind']].stop_timeout_s)
                 forced = process.is_alive()
+                if forced and not self.definitions[record['kind']].force_stop:
+                    self._event(record, 'stop_timeout', forced=False,
+                                reason='Graceful stop pending; process and resource ownership retained')
+                    self._poll()
+                    return self._status(record)
                 if forced:
                     process.terminate()
                     process.join(timeout=.5)
@@ -286,5 +306,6 @@ class NodeRuntime:
             self.closed = True
             for name in list(self.records):
                 self.stop(name)
-        self.wake.set()
+        if all(r['reaped'] for r in self.records.values()):
+            self.wake.set()
         self.monitor.join(timeout=1)

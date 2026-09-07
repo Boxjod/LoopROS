@@ -3,8 +3,8 @@ import math
 import time
 import uuid
 
-from core.contracts import Capability, EmbodimentSpec
-from toolchain.trajectory import validate_target
+from loop_robot.core.contracts import Capability, EmbodimentSpec
+from loop_robot.toolchain.trajectory import validate_target
 
 
 class MujocoBody:

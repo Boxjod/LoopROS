@@ -78,7 +78,7 @@ def format_command_result(command, result):
     if isinstance(data, dict) and 'spec' in data and 'state' in data:
         task_data = data
     if task_data is not None and command.split()[0] in ('/tasks', '/task'):
-        from terminal.titles import task_title
+        from loop_robot.terminal.titles import task_title
         tasks = task_data if isinstance(task_data, list) else [task_data]
         output = []
         for index, task in enumerate(tasks, 1):

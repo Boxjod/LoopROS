@@ -11,7 +11,7 @@ import time
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 
-from terminal.config import ROOT
+from loop_robot.terminal.config import ROOT
 
 
 @unittest.skipUnless(os.name == 'posix', 'PTY test requires POSIX')
@@ -86,9 +86,11 @@ class StartupSetupTests(unittest.TestCase):
 
                 try:
                     expect(b'Model connection failed')
+                    expect(b'Profile number, r retry, n new setup, 0 cancel: ')
+                    os.write(master, b'n\n')
                     expect(b'Provider number or API base URL')
                     os.write(master, (url + '/responses\n').encode())
-                    expect(b'API type [2]')
+                    expect(b'API type [1]')
                     os.write(master, b'2\n')
                     expect(b'API key (hidden; Enter to cancel): ')
                     os.write(master, b'startup-new-key\n')
@@ -97,7 +99,7 @@ class StartupSetupTests(unittest.TestCase):
                     expect(b'3. gpt-2026-09-01')
                     expect(b'Model number or ID [1]')
                     os.write(master, b'2\n')
-                    expect(b'Model connected.')
+                    expect(b'API connection verified.')
                     expect('Fast · available (probe only)'.encode())
                     # Exit through the terminal after the startup gate succeeds.
                     expect('❯'.encode())

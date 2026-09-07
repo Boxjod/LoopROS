@@ -11,7 +11,7 @@
 - 输入框紧跟对话输出，不固定贴底；菜单关闭、输入收缩后按实际内容高度重新绘制，避免将旧渲染高度变成空白历史。保留上下分隔线、多行输入及原生滚动历史。
 - 已提交的用户消息（含排队回显）使用深灰底色与浅色文字；每行结束重置颜色，避免影响助手输出和编辑区。样式只用于显示，历史记录保存原始文本。
 - 持久后台任务用 `/tasks cancel ID` 取消，用 `/tasks stop` 停止监督服务及其工作进程；任务记录保留，不回滚已执行动作。服务可由 `/tasks start` 或新任务自动启动，详见 [持久任务](TASK_RUNTIME.md)。
-- 输入为空且无附件时，←/→ 在对话和当前 Session 所属的未完成任务之间切换（对话 → 任务1 → … → 对话）；右键进入第一个任务后按左键可直接退回对话，Esc 可关闭面板，均不取消任务或退出程序。没有未完成任务时再次按左/右键可关闭提示；`/tasks` 也可打开。包含 queued、running、retry_wait 与 waiting_* 状态；仅 succeeded/cancelled 自动移出，没有当前会话的未完成后台任务时显示当前前台工作记录。等待任务显示阻塞原因。↑/↓ 选择 View details、Cancel task，waiting_* 另提供 Resume，Enter 执行，Esc 关闭。其他会话及无归属历史任务不进入切换列表，记录仍保留，可用 `/tasks all` 与 `/tasks status ID` 查看；切换只改变选中项，不取消任务或将新消息发给该任务。输入非空时保留编辑功能；有候选菜单时方向键优先选择候选。
+- 输入为空且无附件时，←/→ 在对话和当前 Session 所属的未完成任务之间切换（对话 → 任务1 → … → 对话）；右键进入第一个任务后按左键可直接退回对话，Esc 可关闭面板，均不取消任务或退出程序。没有未完成任务时再次按左/右键可关闭提示；`/tasks` 也可打开。包含 queued、running、retry_wait 与 waiting_* 状态；仅 succeeded/cancelled 自动移出，没有当前会话的未完成后台任务时显示当前前台工作记录。等待任务显示阻塞原因。↑/↓ 选择 Enter session 或 Close session，Enter 执行，Esc 关闭。其他会话及无归属历史任务不进入切换列表，记录仍保留，可用 `/tasks all` 与 `/tasks status ID` 查看；切换只改变选中项，不取消任务或将新消息发给该任务。输入非空时保留编辑功能；有候选菜单时方向键优先选择候选。
 - 命令候选、左右键任务切换和 Actions 面板统一显示在输入框下分隔线之后，使用普通布局行，不使用悬浮菜单，不覆盖上方对话。候选出现时暂时使用同一提示区域；Esc 关闭候选后可继续查看 Actions。列表按可用高度显示并跟随选中项滚动。
 - `/resume` 与 `/permissions` 候选为纵向列表，↑/← 上一项、↓/→ 下一项、Enter 选择，支持输入筛选，PgUp/PgDn 滚动 Actions 内容。
 - `/permissions default` 恢复默认规则；`plan` 只规划；`cautious` 对所有注册动作询问；`yolo` 对所有注册动作放行并进入 sim。切换配置覆盖已有逐项规则，随后可用 allow/ask/deny ACTION 定制，面板显示 custom。配置持久化；YOLO 不增加工具、shell 或未实现的硬件驱动，也不自动执行操作。权限配置仅操作员入口可修改。
@@ -177,15 +177,15 @@ Python／py／python3 围栏代码使用标准库 tokenize 识别关键字、字
 
 验证：test_color_output、test_color_terminal、test_markdown_code、test_session_display。真实PTY覆盖彩色Python、实际文件修改的diff、中文草稿并行输入及颜色可见性。
 
-2026-09-07：底部状态栏增加本次启动内当前前台会话累计 `Session Tokens` 与 `Context` 用量/容量；`~` 为请求估算，`?` 为未知，`+` 表示累计存在缺报。`/context` 查看详细预算，`/compact` 的窗口偏好随会话恢复。统计范围、profile字段及自动压缩边界见 [Session Memory](SESSION_MEMORY.md)。
+2026-09-08：底部只显示 `Context` 用量/容量，不显示 `Session Tokens`、空闲 `Ready` 或 `queued` 计数；附件数量仅非零显示，执行中保留 Working。粘贴提示统一为 `/paste`，不再固定显示 `Ctrl-V image`；终端自己的粘贴快捷键继续由终端处理。`~` 为请求估算，`?` 为未知。`/context` 查看详细预算，`/compact` 的窗口偏好随会话恢复。统计范围、profile字段及自动压缩边界见 [Session Memory](SESSION_MEMORY.md)。
 
 ### 工具调用折叠与本地用量估算
 
-当前交互视图中，连续多个工具调用汇总为一行 `Tools ▸ N calls`，显示工具名计数、累计执行耗时和 `~N local tokens`。单次调用保留原有彩色结果及代码修改预览。运行中，输入框下方显示当前工具、开始时间和已运行秒数。按 Ctrl-O（保留草稿）或输入 `/tools` 展开最近一组，`/tools N` 查看指定组；Actions 面板用 PgUp/PgDn 翻页，点击标题的 `[× Close]` 或 Esc 关闭，保留输入草稿。收起后重新校准鼠标坐标，支持再次按 Ctrl-O 展开。主界面不捕获鼠标，滚轮交给终端原生历史滚动；仅打开 Actions 面板时启用鼠标捕获，面板内滚轮翻阅详情。底部摘要和旧滚动区文本不是可点击控件。
+工具调用开始时立即在输入框上方的对话记录显示命令与时间，返回后接着显示彩色结果及代码修改预览；输入框下方不再显示工具调用进度行。连续调用结束后仍可显示 `Tools ▸ N calls` 分组摘要，记录累计耗时与本地用量。按 Ctrl-O（保留草稿）或输入 `/tools` 展开最近一组，`/tools N` 查看指定组；Actions 面板用 PgUp/PgDn 翻页，点击标题的 `[× Close]` 或 Esc 关闭，保留输入草稿。收起后重新校准鼠标坐标，支持再次按 Ctrl-O 展开。主界面不捕获鼠标，滚轮交给终端原生历史滚动；仅打开 Actions 面板时启用鼠标捕获，面板内滚轮翻阅详情。对话中的摘要和旧滚动区文本不是可点击控件。
 
-展开后每次调用显示本地 `HH:MM:SS`、耗时、估算 token 和 `/details ID` 原始回执入口。估算仅按调用参数和结果文本的字符组成计算，不调用 API，不代表模型 tokenizer 精确结果或服务商计费，也不包含整轮上下文与回复。底部会话 Tokens 统计仍使用其原有口径。时间和估算随工具组存入本地 transcript，重启后 `/details ID` 可查；组编号只属于当前视图，切换会话后重置，历史回放暂沿用原有逐条显示。
+展开后每次调用显示本地 `HH:MM:SS`、耗时、估算 token 和 `/details ID` 原始回执入口。估算仅按调用参数和结果文本的字符组成计算，不调用 API，不代表模型 tokenizer 精确结果或服务商计费，也不包含整轮上下文与回复。会话 Tokens 统计仍保存，底部不再展示。时间和估算随工具组存入本地 transcript，重启后 `/details ID` 可查；组编号只属于当前视图，切换会话后重置，历史回放暂沿用原有逐条显示。
 
-验证：test_tool_groups、test_tool_groups_terminal；真实 PTY 覆盖连续六次调用折叠、Ctrl-O 展开→点击关闭→再次展开→Esc 关闭及主界面释放鼠标捕获、工具颜色可见及中文草稿保留。
+验证：test_tool_groups、test_tool_groups_terminal；真实 PTY 覆盖连续六次调用实时写入对话、输入框下无工具进度、Ctrl-O 展开→点击关闭→再次展开→Esc 关闭及主界面释放鼠标捕获、工具颜色可见及中文草稿保留。
 
 2026-09-07：增加 `/reasoning` 查询、档位补全和当前 profile 持久设置，`default` 恢复供应商默认；参数与服务等级区别见 [模型切换](MODEL_SWITCH.md)。中文流式输入 PTY 测试覆盖选择 high 后继续输入。
 
@@ -208,3 +208,19 @@ Python／py／python3 围栏代码使用标准库 tokenize 识别关键字、字
 
 
 2026-09-07 Task Session：左右键任务卡片提供 Enter session / Close session，关闭鼠标捕获以支持原生选择复制。Enter session 创建或恢复绑定该 Task 的独立聊天 Session；它在 /resume 列表可见，保存自己的历史、草稿、队列和用量。进入展示最近 20 条任务账本事件并恢复聊天记录；普通聊天工具及权限门禁保持一致。Close session 返回原会话，不取消任务或推定远端停止。Task ID 与原所属 Session 保留，新聊天 Session 通过 task_sessions 关联，Task 与对话仍各自有生命周期。打开/恢复不自动运行或重播任务，向等待 Worker 补充目标使用现有 task_resume；独立会话的模型可以查询关联任务并继续处理用户请求。
+
+2026-09-07 执行中进入 Task Session：Enter session 不再要求先清空队列或等待用户重试。记录切换目标并暂停原会话队列，请求前台在当前模型/工具返回后停止后续调用；后台持久 Task 不取消。前台回执归档后自动恢复目标会话，原草稿、附件和队列留在原会话，目标队列恢复为暂停。正在执行的阻塞调用仍需返回或超时，不强杀。原会话邮箱通知不带入新会话。若目标会话被另一窗口占用，保留原会话并报告占用。
+
+2026-09-07 二级命令提前补全：输入 /swi 时同时显示 /switch 和 /switch setup、list、reload、master、expert 等完整候选，无需先输入空格。/node、/skills、/mode、/fast 的静态子命令采用同样行为；仅输入 / 的首页顺序不变。已有空格后的参数补全保持有效，生成候选不执行命令、不访问模型或动态会话/设备目录。
+
+2026-09-08：run_python 回执在输入框上方显示实际退出码、停止原因及最多六行 stdout/stderr 预览，长输出保留 /details；退出零不标记目标成功。read_file 显示文件与行号，active 工作登记显示 acceptance pending，尚未执行的验收不显示为操作失败。工具调用前的模型进度文字保留，中文并行输入的 PTY 验证通过。
+
+2026-09-08 异步工具与停止：模型工具沿用前台 worker，Node 控制台及定时 slash 同样通过 worker 执行，普通 slash 工具通过后台线程执行；隐藏 Key、模型选择和明确确认菜单保留独占终端交互。活动执行或已有队列时，独立输入“停止”／“停下”／stop 或 /cancel-turn 直接置取消事件并暂停队列，即使普通提交正在等待工具也不排队；引文、粘贴块和附件不作为控制口令。Esc（先关闭补全／面板）、Ctrl-C（先清空草稿）保持既有语义。中断不会清空旧队列，/queue resume 显式续接；不支持协作取消的调用仍需返回，不能凭异步调度宣称副作用已停止。Python 使用 SIGINT 并保留真实退出回执。
+
+2026-09-08 前台执行中新建任务：/task 目标 与 /tasks 同样允许在已有前台工作时提交；创建独立持久 Task 和聊天 Session，不中断前台，不混入追加消息队列。普通追加消息仍作为当前工作补充，异步工具不等于自动创建 Task。验证 test_interactive.test_create_multiple_tasks_while_foreground_is_running：两个任务、独立 Session、前台 Future 保留；后台服务使用替身，未运行任务。
+
+2026-09-08：`/model` 选择后接推理档位菜单，可 Tab/上下键选 `/reasoning` 参数。档位依据、缓存和未知能力处理见 [模型切换](MODEL_SWITCH.md)；不再补全所有可能档位。中文流式输入 PTY 验证选模型→选 high→继续输入。
+
+2026-09-08 更新：独立 `/reasoning` 命令及补全已移除。`/model` 两步选择模型、强度，完成自动关闭菜单，恢复普通输入框且保留对话上下文。默认 placeholder 为 `Ask LoopROS to do anything about Robot`；上下键回溯用户 prompt（多行首尾触发），面板翻页保留 PageUp/PageDown，排队输入取回改为 Alt＋↑。
+
+2026-09-08 输入占位文字采用浅灰色 `#9e9e9e`，仅在输入为空时显示；输入首个字符立即隐藏，清空后恢复，不进入提交内容。复用 PromptSession 原生 placeholder 条件；`test_slash_terminal` 的真实 PTY 验证浅灰颜色、中文输入覆盖、清空恢复和流式期间并行输入均通过。运行中的旧终端需正常退出后重新打开加载样式。

@@ -1,7 +1,19 @@
 __pycache__/
 *.pyc
 artifacts/
+/website/
+/rust/target/
+/firmware/**/build/
+/firmware/**/.pio/
+/firmware/**/*.bin
+/firmware/**/*.elf
+/firmware/**/*.a
+/firmware/**/*.map
+/firmware/**/secrets.h
+/firmware/**/sdkconfig
+/firmware/**/sdkconfig.old
 .venv/
+.venv-embedded/
 MUJOCO_LOG.TXT
 config.local.json
 .env
@@ -42,6 +54,7 @@ reference/
 !/launcher.py
 !/model_switch.py
 !/release_client.py
+!/release_manifest.py
 !/release_runtime.py
 
 # Local device inspection script, not an approved distribution tool.

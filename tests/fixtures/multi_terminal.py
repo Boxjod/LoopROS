@@ -3,8 +3,10 @@ import sys
 import time
 from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from terminal.app import main
-from terminal.llm import QwenClient
+from launcher import _bootstrap
+_bootstrap(legacy=False)
+from loop_robot.terminal.app import main
+from loop_robot.terminal.llm import QwenClient
 
 
 def complete(self, messages, tools, on_event=None, stop_event=None):

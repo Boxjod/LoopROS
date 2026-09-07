@@ -7,8 +7,8 @@ import shlex
 import subprocess
 import tempfile
 
-from terminal.skills import _resolve, read, discover, _frontmatter
-from terminal.home import loop_home
+from loop_robot.terminal.skills import _resolve, read, discover, _frontmatter
+from loop_robot.terminal.home import loop_home
 
 
 def package(name, platform=None):
@@ -49,7 +49,7 @@ def package(name, platform=None):
     if not isinstance(cwd,str) or (cwd != '.' and not Path(cwd).is_absolute()):
         raise ValueError('cwd must be . (package snapshot) or an absolute path')
     # Reuse the process environment/credential validator, without executing.
-    from toolchain.process_node import validate_spec
+    from loop_robot.toolchain.process_node import validate_spec
     validate_spec(dict(argv=['skill-entry'],cwd=str(root), **{k:spec[k] for k in ('env','env_names','remote') if k in spec}))
     digest = hashlib.sha256()
     for key, value in sorted(files.items()):
@@ -105,7 +105,7 @@ def materialize(value):
 
 def save_profile(profile_name, name, title):
     """Explicit operator export, never label an unverified profile as successful."""
-    from toolchain.process_node import read_profile
+    from loop_robot.toolchain.process_node import read_profile
     profile=read_profile(profile_name);spec=profile['spec']
     target=_resolve(loop_home()/'skills',name).parent
     if target.exists(): raise ValueError('Skill already exists; use a new name')

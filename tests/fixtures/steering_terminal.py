@@ -5,9 +5,11 @@ import sys
 import time
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from terminal.app import App
-from terminal.config import load_config
-from terminal.interactive import Terminal
+from launcher import _bootstrap
+_bootstrap(legacy=False)
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.interactive import Terminal
 
 app = App(load_config(), Path(sys.argv[1]))
 count = 0

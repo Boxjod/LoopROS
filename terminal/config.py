@@ -2,7 +2,7 @@ import json
 import os
 from pathlib import Path
 from urllib.parse import urlsplit
-from terminal.home import initialize, loop_home, runtime_state_dir
+from loop_robot.terminal.home import initialize, loop_home, runtime_state_dir
 
 ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STATE_DIR = runtime_state_dir(ROOT)
@@ -65,10 +65,12 @@ def load_config(path=None):
         if not source.exists():
             continue
         for key, value in json.loads(source.read_text(encoding="utf-8")).items():
+            if key == 'endpoints' and source == loop_home() / 'config.json':
+                continue  # Local plaintext keys are resolved separately, never copied into model context.
             if key not in config:
                 raise ValueError("unknown config section: " + key)
             config[key].update(value)
-    from core.resources import validate_policy
+    from loop_robot.core.resources import validate_policy
     config["resources"] = validate_policy(config.get("resources", {}))
     validate_provider(config["llm"])
     config["expert"] = dict(config["llm"])  # Accept legacy files without a second provider.

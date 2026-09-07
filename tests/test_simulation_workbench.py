@@ -13,10 +13,10 @@ class SimulationTests(unittest.TestCase):
     def setUp(self):
         try: import mujoco, numpy, h5py
         except ImportError: self.skipTest('simulation/dataset extras missing')
-        from toolchain.simulation import SimulationWorkbench
+        from loop_robot.toolchain.simulation import SimulationWorkbench
         self.temp=tempfile.TemporaryDirectory()
         self.service=SimulationWorkbench(self.temp.name)
-        self.instance=self.service.call('sim_create',{'backend':'mujoco','scene':str(ROOT/'examples/simulation_workbench.xml')})['instance']
+        self.instance=self.service.call('sim_create',{'backend':'mujoco','scene':str(ROOT/'assets/simulation/simulation_workbench.xml')})['instance']
 
     def tearDown(self):
         if hasattr(self,'service'): self.service.close();self.temp.cleanup()
@@ -47,7 +47,7 @@ class SimulationTests(unittest.TestCase):
 
     def test_record_alignment_failure_label_and_action_padding(self):
         import numpy as np,h5py
-        from toolchain.sim_dataset import action_chunk
+        from loop_robot.toolchain.sim_dataset import action_chunk
         self.cameras()
         self.call('sim_task',task={'name':'reach','variation':2,'seed':17,'horizon':3,
             'success':[{'kind':'position','body':'wrist','target':[3,3,3],'tolerance':.01}]})
@@ -84,7 +84,7 @@ class SimulationTests(unittest.TestCase):
 
     def test_move_remove_and_incomplete_episode(self):
         import numpy as np
-        from toolchain.sim_dataset import action_chunk
+        from loop_robot.toolchain.sim_dataset import action_chunk
         self.call('sim_edit',operation='move',config={'name':'cube','position':[1,0,1]})
         np.testing.assert_allclose(self.call('sim_inspect')['bodies']['cube'],[1,0,1])
         self.cameras()
@@ -105,7 +105,7 @@ class SimulationTests(unittest.TestCase):
         try:
             from gymnasium.utils.env_checker import check_env
         except ImportError: self.skipTest('Gymnasium missing')
-        from toolchain.sim_gym import SimulationEnv
+        from loop_robot.toolchain.sim_gym import SimulationEnv
         engine=self.service.entry(self.instance)['engine']
         env=SimulationEnv(engine,{'name':'reach','horizon':2,'success':[{'kind':'position','body':'wrist','target':[5,5,5],'tolerance':.1}]})
         check_env(env,skip_render_check=True)
@@ -118,7 +118,7 @@ class SimulationTests(unittest.TestCase):
 class PermissionAndBridgeTests(unittest.TestCase):
     def test_temporal_aggregation_keeps_zero_actions(self):
         import numpy as np
-        from toolchain.sim_dataset import TemporalActions
+        from loop_robot.toolchain.sim_dataset import TemporalActions
         buffer=TemporalActions(2,decay=0)
         buffer.add(0,[[1,1],[0,0]])
         buffer.add(1,[[2,4]])
@@ -130,8 +130,8 @@ class PermissionAndBridgeTests(unittest.TestCase):
     def test_actual_tcp_transport_runs_engine_on_owner_thread(self):
         import threading
         import concurrent.futures
-        from toolchain.sim_isaac_host import RuntimeBridge,NetworkBridge
-        from toolchain.sim_isaac_client import IsaacSimulationClient
+        from loop_robot.toolchain.sim_isaac_host import RuntimeBridge,NetworkBridge
+        from loop_robot.toolchain.sim_isaac_client import IsaacSimulationClient
         owner=threading.get_ident()
         class Engine:
             def inspect(self):
@@ -155,8 +155,8 @@ class PermissionAndBridgeTests(unittest.TestCase):
             finally:server.close()
 
     def test_gate_before_simulation_and_no_self_approval(self):
-        from terminal.permissions import PermissionGate
-        from terminal.simulation import call_service
+        from loop_robot.terminal.permissions import PermissionGate
+        from loop_robot.terminal.simulation import call_service
         class Service:
             def call(self,*args): raise AssertionError('Must not execute')
         with tempfile.TemporaryDirectory() as d:
@@ -167,7 +167,7 @@ class PermissionAndBridgeTests(unittest.TestCase):
             with self.assertRaises(PermissionError): call_service(Service(),gate,'sim_record',{'instance':'x','actions':[[]],'cameras':['head']})
 
     def test_rpc_auth_ownership_and_duplicate_mutation(self):
-        from toolchain.sim_isaac_host import RuntimeBridge
+        from loop_robot.toolchain.sim_isaac_host import RuntimeBridge
         class Engine:
             def inspect(self): return {'time':0}
             def close(self): pass
@@ -182,7 +182,7 @@ class PermissionAndBridgeTests(unittest.TestCase):
     def test_numpy_transport_roundtrip(self):
         try: import numpy as np
         except ImportError: self.skipTest('numpy missing')
-        from toolchain.sim_isaac_client import encode,decode
+        from loop_robot.toolchain.sim_isaac_client import encode,decode
         source={'depth':np.array([[1.,float('inf')]],dtype=np.float32),'seg':np.array([[3]],dtype=np.uint32)}
         result=decode(json.loads(json.dumps(encode(source),allow_nan=False)))
         np.testing.assert_array_equal(source['depth'],result['depth'])
@@ -196,7 +196,7 @@ class MCPTests(unittest.IsolatedAsyncioTestCase):
             from mcp.client.stdio import stdio_client
         except ImportError: self.skipTest('MCP extra missing')
         import sys
-        from terminal.permissions import PermissionGate
+        from loop_robot.terminal.permissions import PermissionGate
         with tempfile.TemporaryDirectory() as d:
             gate=PermissionGate(Path(d)/'permissions.sqlite');gate.set_mode('plan')
             params=StdioServerParameters(command=sys.executable,args=['-c','from launcher import main; raise SystemExit(main())','mcp','--state-dir',d],cwd=str(ROOT),env={'MUJOCO_GL':'egl'})

@@ -8,9 +8,9 @@ from unittest.mock import patch
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
-from terminal.app import App
-from terminal.config import load_config
-from terminal.interactive import Terminal
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.interactive import Terminal
 
 class CliEdges(unittest.IsolatedAsyncioTestCase):
     @asynccontextmanager
@@ -91,7 +91,7 @@ class CliEdges(unittest.IsolatedAsyncioTestCase):
             def broken(path):
                 started.set();release.wait(2);raise ValueError('bad image')
             try:
-                with patch('terminal.interactive.attachment',side_effect=broken):
+                with patch('loop_robot.terminal.interactive.attachment',side_effect=broken):
                     pipe.send_text('/attach missing.png\r');await asyncio.sleep(.2)
                     self.assertTrue(started.is_set())
                     pipe.send_text('next draft');await asyncio.sleep(.1)

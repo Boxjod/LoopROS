@@ -12,7 +12,7 @@ def validate(output):
     from playwright.sync_api import sync_playwright
     output=Path(output);output.mkdir(parents=True,exist_ok=True)
     with tempfile.TemporaryDirectory(prefix='loop-web-browser-') as state:
-        server=subprocess.Popen([sys.executable,'-m','terminal.web_workbench','--port','0','--state-dir',state],
+        server=subprocess.Popen([sys.executable,'-m','loop_robot.terminal.web_workbench','--port','0','--state-dir',state],
                                 cwd=ROOT,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True)
         try:
             line=server.stdout.readline().strip()

@@ -10,7 +10,7 @@ import threading
 import time
 import uuid
 
-from terminal.llm import ChatAgent, QwenClient
+from loop_robot.terminal.llm import ChatAgent, QwenClient
 
 def _schema(name, description, fields):
     return {"type": "function", "function": {"name": name, "description": description,
@@ -31,7 +31,7 @@ AGENT_TOOLS = [
 
 
 def agent_worker(connection, definition, config, key, task, schemas):
-    from release_runtime import runtime_session
+    from loop_robot.release_runtime import runtime_session
     with runtime_session():
         _agent_worker(connection, definition, config, key, task, schemas)
 
@@ -74,7 +74,7 @@ def _agent_worker(connection, definition, config, key, task, schemas):
         connection.close()
 
 
-from core.resources import ResourceBusy
+from loop_robot.core.resources import ResourceBusy
 
 
 class AgentRuntime:
@@ -128,7 +128,7 @@ class AgentRuntime:
             if len(self.records) >= 4096:
                 raise RuntimeError("Session agent record budget reached (4096)")
             agent_id = uuid.uuid4().hex[:12]
-            from terminal.titles import excerpt
+            from loop_robot.terminal.titles import excerpt
             record = {"reference": "@" + str(self.next_sequence), "title": excerpt(task, 48),
                       "message_log": [], "delivered": 0, "role": role, "task": task, "state": "queued", "result": None,
                       "process": None, "pipe": None, "lease": None, "started": None,

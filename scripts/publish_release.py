@@ -7,8 +7,11 @@ import os
 import shlex
 import shutil
 import subprocess
-import tempfile
+import sys
 import uuid
+
+sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+from release_manifest import validate_manifest
 
 
 def inventory(bundle):
@@ -22,19 +25,18 @@ def inventory(bundle):
         if local.is_symlink() or not local.is_file() or hashlib.sha256(local.read_bytes()).hexdigest() != digest:
             raise ValueError('Bundle hash/type mismatch: ' + name)
         sums[name] = digest
-    metadata = json.loads((bundle / 'latest.json').read_text())
+    metadata = validate_manifest(json.loads((bundle / 'latest.json').read_text()))
     version = metadata['version']
-    import re
-    if not re.fullmatch(r'\d+\.\d+\.\d+', version):
-        raise ValueError('Invalid release version')
     allowed = {'latest.json', 'versions/' + version + '/latest.json', 'bootstrap.pyz',
-               'install.sh', 'uninstall.sh', 'install.ps1', 'index.html',
+               'install.sh', 'uninstall.sh', 'install.ps1',
                'loop_ros-' + version + '-py3-none-any.whl'}
-    website_assets = {'style.css', 'site.js', 'favicon.png', 'logo.png', 'install.html', 'zh-CN.html'}
-    if set(sums) not in (allowed, allowed | (website_assets - {"zh-CN.html"}), allowed | website_assets):
+    if set(sums) != allowed:
         raise ValueError('Public bundle differs from the publication whitelist')
     if metadata['wheel'] not in sums or metadata['sha256'] != sums[metadata['wheel']]:
         raise ValueError('Manifest/wheel hash mismatch')
+    pinned = validate_manifest(json.loads((bundle / 'versions' / version / 'latest.json').read_text()), version)
+    if pinned != metadata:
+        raise ValueError('Versioned manifest differs from latest.json')
     return metadata, sums
 
 
@@ -104,6 +106,8 @@ def main():
         subprocess.run(['scp', '-q', str(args.bundle / name), args.host + ':' + shlex.quote(remote)], check=True)
     helper = staging + '/publish_release.py'
     subprocess.run(['scp', '-q', str(Path(__file__).resolve()), args.host + ':' + shlex.quote(helper)], check=True)
+    subprocess.run(['scp', '-q', str(Path(__file__).resolve().parents[1] / 'release_manifest.py'),
+                    args.host + ':' + shlex.quote(staging + '/release_manifest.py')], check=True)
     command = ['python3', helper, '--local', '--bundle', staging + '/bundle', '--destination', args.destination]
     subprocess.run(ssh + [' '.join(shlex.quote(part) for part in command)], check=True)
     print('Published ' + metadata['version'] + '; verified server staging: ' + staging)

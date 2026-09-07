@@ -6,10 +6,10 @@ from pathlib import Path
 from types import SimpleNamespace
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config
-from toolchain.model_assets import snapshot
-from toolchain.viewer_control import SimulationControl
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.toolchain.model_assets import snapshot
+from loop_robot.toolchain.viewer_control import SimulationControl
 
 
 class SimulatorControlTests(unittest.TestCase):
@@ -81,7 +81,7 @@ class SimulatorControlTests(unittest.TestCase):
                 snapshot(root/'scene.xml')
 
     def test_closed_viewer_cannot_acknowledge_control(self):
-        from terminal.viewer import SimulatorViewer
+        from loop_robot.terminal.viewer import SimulatorViewer
         with tempfile.TemporaryDirectory() as directory:
             viewer = SimulatorViewer('.', directory)
             self.assertFalse(viewer.command(action='pause')['executed'])

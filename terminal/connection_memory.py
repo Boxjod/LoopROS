@@ -1,5 +1,5 @@
 """Interpret explicit connection receipts, not prose, ports or process exit codes."""
-from core.tasks import assess
+from loop_robot.core.tasks import assess
 
 
 def observation(result):

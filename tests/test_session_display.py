@@ -1,6 +1,6 @@
 import unittest
 
-from terminal.session_display import history_lines
+from loop_robot.terminal.session_display import history_lines
 
 
 class SessionDisplayTests(unittest.TestCase):

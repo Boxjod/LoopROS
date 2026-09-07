@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config
-from terminal.permissions import PermissionGate
-from terminal.conversation_context import context
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.permissions import PermissionGate
+from loop_robot.terminal.conversation_context import context
 
 
 class SettingsTests(unittest.TestCase):
@@ -102,11 +102,11 @@ class SettingsTests(unittest.TestCase):
         self.assertEqual(self.app.tool('carrier_list', {})['carriers'][0]['carrier_id'], 'arm')
 
     def test_active_work_blocks_changes_before_persistence(self):
-        with patch('terminal.settings.idle', side_effect=ValueError('active work')):
+        with patch('loop_robot.terminal.settings.idle', side_effect=ValueError('active work')):
             with self.assertRaises(ValueError):
                 self.change('config', {})
         self.assertEqual(self.app.permissions.snapshot()['mode'], 'sim')
-        with patch('terminal.task_service.status', return_value={'process_alive': True}):
+        with patch('loop_robot.terminal.task_service.status', return_value={'process_alive': True}):
             with self.assertRaises(ValueError):
                 self.change('config', {})
         self.assertFalse((Path(self.temp.name) / 'home/config.json').exists())
@@ -128,7 +128,7 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.app.tool('settings_update', args)
         request = next(iter(self.app.permissions.requests()))
-        with patch('terminal.task_service.status', return_value={'process_alive':True}), patch.object(self.app.viewer,'open') as opened:
+        with patch('loop_robot.terminal.task_service.status', return_value={'process_alive':True}), patch.object(self.app.viewer,'open') as opened:
             result = json.loads(self.app.dispatch('/approve ' + request))
         self.assertEqual(result['mode'],'real')
         self.assertEqual(result['real_hardware'],'driver_required')
@@ -140,12 +140,12 @@ class SettingsTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.app.tool('settings_update',args)
         request = next(iter(self.app.permissions.requests()))
-        with patch('terminal.task_service.status', return_value={'process_alive':True}):
+        with patch('loop_robot.terminal.task_service.status', return_value={'process_alive':True}):
             with self.assertRaisesRegex(ValueError,'retained'):
                 self.app.dispatch('/approve ' + request)
         self.assertFalse((Path(self.temp.name)/'home/config.json').exists())
         self.assertEqual(self.app.permissions.requests()[request]['args'],args)
-        with patch('terminal.task_service.status', return_value={'process_alive':False}):
+        with patch('loop_robot.terminal.task_service.status', return_value={'process_alive':False}):
             result = json.loads(self.app.dispatch('/approve ' + request))
         self.assertTrue(result['saved'])
         self.assertNotIn(request,self.app.permissions.requests())

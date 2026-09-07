@@ -20,7 +20,7 @@ After obtaining the source folder, run inside it:
 
 Python 3.8+ is enough to launch the installer. It reuses uv from PATH or `~/.local/bin`, or downloads Astral’s official standalone installer there without editing shell profiles. uv creates `.venv` with Python 3.12, downloading that interpreter if needed, and installs dependencies with `uv pip`. System pip/venv packages are not required. Scripts do not replace system Python or request administrator access. `LOOP_PYTHON` can select an explicit interpreter path. An existing usable Python 3.10+ project venv takes precedence otherwise. Broken/older environments are preserved with an instruction to move them aside before retrying. Add `--check` for a read-only environment check; it does not test downloads. PowerShell Bypass affects only that new process, not permanent policy; inspect the local script first. Hosted uv bootstrap and update commands are documented in [RELEASES](RELEASES.md).
 
-The [English introduction page](../website/index.html) includes platform selection and command copying. Open that file directly in a browser; no server is required. Do not expose the project root (which may contain local configuration/state) through a public file server. See [website notes](../website/README.md).
+The privately maintained introduction website includes platform selection and command copying. Its source is backed up separately on the server and is not part of the CLI distribution. Do not expose the project root (which may contain local configuration/state) through a public file server. See [release boundaries](RELEASES.md).
 
 ## Installed workstation
 

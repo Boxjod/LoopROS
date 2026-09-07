@@ -6,12 +6,12 @@ import subprocess
 import sys
 import threading
 import time
-from core.tasks import TaskStore
-from terminal.task_supervisor import load_policy
+from loop_robot.core.tasks import TaskStore
+from loop_robot.terminal.task_supervisor import load_policy
 
 
 def policy_path(state):
-    from terminal.config import user_config_file
+    from loop_robot.terminal.config import user_config_file
     local=Path(state)/'task_runtime.json'
     return local if local.exists() else user_config_file('task_runtime.json')
 
@@ -30,23 +30,57 @@ def status(state):
     heartbeat=store.meta('heartbeat') or 0
     return {'process_alive':alive,'heartbeat_fresh':alive and time.time()-heartbeat<5,
             'pid':owner.get('pid'),'config':str(policy_path(state)), 'database':str(store.path),
-            'stop_requested':bool(store.meta('stop_requested'))}
+            'stop_requested':bool(store.meta('stop_requested')),
+            'model_credentials':store.meta('model_credentials') if alive else None}
+
+
+def refresh_model(app, supervisor, store):
+    """Share the selected profile and saved endpoint key; never change a running worker."""
+    if not supervisor.running:
+        from loop_robot.terminal.home import saved_key
+        config = app.providers.get(app.providers.selected()['master'])
+        previous = app.client.config
+        if (previous['base_url'].rstrip('/'), previous['api_key_env']) != (config['base_url'].rstrip('/'), config['api_key_env']):
+            app.client.key = None
+        app.client.config = config
+        app.client.key = saved_key(config)
+        supervisor.provider = [config['base_url'].rstrip('/'), config['model'], config.get('protocol', 'openai')]
+    available = bool(app.client.key)
+    state = {'available': available, 'model': app.client.config['model'],
+             'source': 'shared_profile', 'checked_at': time.time()}
+    store.meta('model_credentials', state)
+    if available:
+        for task in store.list(limit=None):
+            reason = task['feedback'].get('reason', '')
+            if (task['state'] == 'waiting_input'
+                    and task['spec'].get('provider') in (None, supervisor.provider)
+                    and reason.startswith(('Model credentials unavailable;', 'Shared model credential unavailable in this supervisor;'))):
+                store.update(task['id'], 'waiting_input', {**task['feedback'],
+                    'reason': 'Shared model credential is available. Task remains paused; explicitly resume to execute.',
+                    'credential_restored': True})
+    return available
 
 
 def start(app):
-    from terminal.app import TOOLS
+    from loop_robot.terminal.app import TOOLS
     app.permissions.check('spawn_agent',{'role':'TaskSupervisor'})
     config=load_policy(policy_path(app.state_dir),{t['function']['name'] for t in TOOLS})
     if os.environ.get("LOOP_TASK_AUTOSTART")=="0":
         return {**status(app.state_dir),"autostart_disabled":True}
+    from loop_robot.terminal.home import loop_home, save_key
+    key = app.client.resolved_key()
+    if key:
+        save_key(app.client.config, key)
     current=status(app.state_dir)
     if current['process_alive']: return current
     store=TaskStore(app.state_dir/'tasks.sqlite');store.meta('stop_requested',False)
-    argv=[sys.executable,'-m','terminal.task_service','--state-dir',str(app.state_dir.resolve())]
+    argv=[sys.executable,'-m','loop_robot.terminal.task_service','--state-dir',str(app.state_dir.resolve())]
     env=dict(os.environ)
-    # Session-only credentials remain in the child environment, never argv/config/ledger.
-    if app.client.key: env[app.client.config['api_key_env']]=app.client.key
-    from terminal.config import ROOT
+    env['LOOP_HOME'] = str(loop_home().resolve())
+    # One persisted endpoint-bound credential is shared by foreground and tasks.
+    # Avoid freezing it into the long-lived supervisor's environment.
+    env.pop(app.client.config['api_key_env'], None)
+    from loop_robot.terminal.config import ROOT
     with (app.state_dir/'task_service.log').open('ab') as log:
         subprocess.Popen(argv,cwd=ROOT,env=env,stdin=subprocess.DEVNULL,stdout=log,stderr=log,start_new_session=True)
     deadline=time.monotonic()+5
@@ -64,19 +98,21 @@ def stop(state):
 
 def main():
     import argparse
-    from terminal.app import App, TOOLS, lock_terminal
-    from terminal.config import load_config
-    from terminal.task_supervisor import TaskSupervisor
+    from loop_robot.terminal.app import App, TOOLS, lock_terminal
+    from loop_robot.terminal.config import load_config
+    from loop_robot.terminal.task_supervisor import TaskSupervisor
     parser=argparse.ArgumentParser();parser.add_argument('--state-dir',type=Path,required=True);args=parser.parse_args()
     state=args.state_dir;state.mkdir(parents=True,exist_ok=True)
     with (state/'task_service.lock').open('a+b') as lock:
-        try: lock_terminal(lock)
-        except BlockingIOError: return
+        from loop_robot.release_runtime import state_startup
+        with state_startup(state):
+            try: lock_terminal(lock)
+            except BlockingIOError: return
         config=load_policy(policy_path(state),{t['function']['name'] for t in TOOLS})
         app=App(load_config(),state,background=True)
         app.runtime.close()  # TaskSupervisor owns its own independent subprocess broker.
         store=TaskStore(state/'tasks.sqlite')
-        argv=[sys.executable,'-m','terminal.task_service','--state-dir',str(state)]
+        argv=[sys.executable,'-m','loop_robot.terminal.task_service','--state-dir',str(state)]
         started=Path('/proc/self/stat').read_text().rsplit(')',1)[1].split()[19] if sys.platform.startswith('linux') else None
         store.meta('owner',{'pid':os.getpid(),'argv':argv,'started':started})
         done=threading.Event()
@@ -108,14 +144,15 @@ def main():
         try:
             while not store.meta('stop_requested'):
                 poll_os_events()
+                credentials_available = refresh_model(app, supervisor, store)
                 app.enforce_node_permissions(close_viewer=False)
                 if app.permissions.snapshot()['mode']=='plan':
                     for agent in list(supervisor.running): supervisor.runtime.cancel(agent)
                     supervisor.poll(launch=False)
-                elif not app.client.resolved_key():
+                elif not credentials_available:
                     for task in store.list():
                         if task['state'] in ('queued','retry_wait'):
-                            store.update(task['id'],'waiting_input',{'reason':'Model credentials unavailable; configure the current provider and resume the task'})
+                            store.update(task['id'],'waiting_input',{'reason':'Shared model credential unavailable in this supervisor; inspect current profile and user-home loading. Tasks do not require separate API keys.'})
                 else:
                     supervisor.poll()
                 time.sleep(.2)
@@ -127,6 +164,6 @@ def main():
 
 
 if __name__=='__main__':
-    from release_runtime import runtime_session
+    from loop_robot.release_runtime import runtime_session
     with runtime_session():
         main()

@@ -4,8 +4,8 @@ import json
 from pathlib import Path
 import re
 from urllib.parse import unquote, urlparse
-from terminal.files import schema
-from terminal.media import IMAGE_TYPES
+from loop_robot.terminal.files import schema
+from loop_robot.terminal.media import IMAGE_TYPES
 
 REFERENCE_TOOLS=[schema('read_url','Read a public webpage or image URL with bounded download and redirect checks. Image pixels go through the configured visual model route.',{'url':{'type':'string'}},['url'])]
 URL=re.compile(r'https?://[^\s<>\'"）)]+')
@@ -38,7 +38,7 @@ def extract(text, root):
 
 
 def read_url(url):
-    from terminal.web import request, clean_html
+    from loop_robot.terminal.web import request, clean_html
     result=request(url,binary=True)
     body=result.pop('body_bytes');kind=result['content_type']
     if kind in IMAGE_TYPES.values():

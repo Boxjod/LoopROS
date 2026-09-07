@@ -6,11 +6,11 @@ import time
 import unittest
 from unittest.mock import Mock, patch
 
-from terminal.app import App
+from loop_robot.terminal.app import App
 from model_fixture import call
-from terminal.config import load_config, ROOT
-from terminal.viewer import SimulatorViewer
-from toolchain.scenes import default_scene, compile_scene, physics_check, generate_scene
+from loop_robot.terminal.config import load_config, ROOT
+from loop_robot.terminal.viewer import SimulatorViewer
+from loop_robot.toolchain.scenes import default_scene, compile_scene, physics_check, generate_scene
 
 
 class ViewerTests(unittest.TestCase):
@@ -31,7 +31,7 @@ class ViewerTests(unittest.TestCase):
     def test_missing_dependency_installs_fixed_packages(self):
         with tempfile.TemporaryDirectory() as d:
             viewer = SimulatorViewer(ROOT, d)
-            with patch('terminal.viewer.subprocess.run', side_effect=[
+            with patch('loop_robot.terminal.viewer.subprocess.run', side_effect=[
                 Mock(returncode=1), Mock(returncode=0), Mock(returncode=0, stdout='3.12.0\n')]) as run:
                 _, version, installed = viewer.ensure_installed()
                 self.assertTrue(installed)

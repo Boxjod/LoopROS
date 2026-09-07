@@ -4,7 +4,7 @@ import os
 from pathlib import Path
 import sqlite3
 import uuid
-from terminal.titles import conversation_title
+from loop_robot.terminal.titles import conversation_title
 
 
 class SessionStore:
@@ -47,7 +47,7 @@ class SessionStore:
         if not self.exclusive or identity == self._locked_session:
             return
         import hashlib
-        from terminal.platform_support import lock_terminal
+        from loop_robot.terminal.platform_support import lock_terminal
         directory = self.path.parent / 'session-locks'
         directory.mkdir(parents=True, exist_ok=True)
         path = directory / (hashlib.sha256(identity.encode()).hexdigest() + '.lock')
@@ -99,7 +99,7 @@ class SessionStore:
         self.provider = self.identity(config)
         self.session_id = self.session_id or uuid.uuid4().hex[:12]
         self._claim(self.session_id)
-        from terminal.session_task import SessionTask
+        from loop_robot.terminal.session_task import SessionTask
         task = SessionTask(task, identity=self.session_id, history=history).snapshot()
         data = {'task': task, 'session_id':self.session_id, 'summaries':list(summaries), 'provider': self.identity(config), 'history': history, 'queue': list(queue),
                 'draft': draft, 'attachments': list(attachments), 'composer': composer, 'token_usage': dict(token_usage or {}),
@@ -174,7 +174,7 @@ class SessionStore:
         if data.get('task'):
             task = data['task']
             lines += ['## Task', '', 'State: ' + task['state'], '', task['goal'], '', *['- ' + step for step in task['plan']], '', task['progress'], '', task['next_step'], '']
-        from terminal.turn_summary import display
+        from loop_robot.terminal.turn_summary import display
         if data.get('summaries'):
             lines += ['## Turn summaries', ''] + [display(summary) for summary in data['summaries']]
         directory = self.path.parent / 'exports'
@@ -193,7 +193,7 @@ class SessionStore:
                             (identity,json.dumps(self.identity(config)))).fetchone()
         if not row: raise ValueError('Session not found for the current provider/model')
         data = json.loads(row[0])
-        from terminal.session_task import SessionTask
+        from loop_robot.terminal.session_task import SessionTask
         data['task'] = SessionTask(data.get('task'), identity=identity, history=data.get('history', [])).snapshot()
         return data
 
@@ -226,7 +226,7 @@ class SessionStore:
             if row:
                 return row[0]
             identity = uuid.uuid4().hex[:12]
-            from terminal.session_task import SessionTask
+            from loop_robot.terminal.session_task import SessionTask
             work = SessionTask(identity=identity)
             work.update({'goal':task['spec']['goal'], 'state':'active'})
             data = {'session_id':identity, 'provider':provider, 'history':[], 'queue':[],

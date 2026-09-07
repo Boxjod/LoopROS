@@ -62,6 +62,23 @@ class ToolDisplay:
                                   and r.get('verdict') in ('fail', 'inconclusive')), None)
             if data.get('error'):
                 summary = 'Error: ' + shorten(data.get('message') or data['error'], 150)
+            elif name == 'run_python' and data.get('executed'):
+                summary = 'Process exit: ' + str(data.get('returncode'))
+                if data.get('stop_reason'):
+                    summary += ' · ' + str(data['stop_reason'])
+                lines = []
+                for channel in ('stdout', 'stderr'):
+                    value = data.get(channel)
+                    if isinstance(value, str) and value.strip():
+                        lines.extend((channel + ': ' if channel == 'stderr' else '') + line
+                                     for line in value.splitlines() if line.strip())
+                self.preview = [shorten(line, 180) for line in lines[:6]]
+                if len(lines) > 6 or data.get('truncated'):
+                    self.preview.append('… more output in /details' + (' ' + str(event_id) if event_id is not None else ''))
+            elif name in ('session_task_update', 'session_task_read') and data.get('state') in ('active', 'running'):
+                summary = 'Work active · acceptance pending'
+                if data.get('check_diagnostics'):
+                    summary = 'Work active · acceptance fields need correction'
             elif data.get('_reused'):
                 summary = 'Reused unchanged local result: '+shorten(data.get('path') or data.get('name') or name)
             elif data.get('written') is True and isinstance(data.get('diff'),str):
@@ -103,5 +120,9 @@ class ToolDisplay:
                 summary = 'Weather data retrieved'
             elif name == 'web_fetch':
                 summary = 'Page retrieved' + (' · truncated' if data.get('truncated') else '')
+            elif name in ('read_file', 'skill_read') and data.get('path'):
+                summary = 'Read ' + shorten(data['path'], 110)
+                if data.get('start_line') is not None:
+                    summary += ' · lines {}–{}'.format(data['start_line'], data.get('end_line'))
         details = f' · /details {event_id}' if event_id is not None else ''
         return shorten(summary, 170) + elapsed + details

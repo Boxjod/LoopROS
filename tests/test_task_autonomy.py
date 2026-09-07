@@ -5,10 +5,10 @@ import tempfile
 import time
 import unittest
 from unittest.mock import patch
-from core.tasks import TaskStore
-from terminal.app import App, TOOLS
-from terminal.config import load_config, ROOT
-from terminal.task_supervisor import TaskSupervisor, load_policy
+from loop_robot.core.tasks import TaskStore
+from loop_robot.terminal.app import App, TOOLS
+from loop_robot.terminal.config import load_config, ROOT
+from loop_robot.terminal.task_supervisor import TaskSupervisor, load_policy
 
 
 def coding_worker(pipe, definition, config, key, task, schemas):

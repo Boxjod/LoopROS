@@ -9,16 +9,16 @@ from prompt_toolkit.document import Document
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
-from terminal.app import App, HELP
-from terminal.config import load_config
-from terminal.completion import SlashCompleter
-from terminal.interactive import Terminal
+from loop_robot.terminal.app import App, HELP
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.completion import SlashCompleter
+from loop_robot.terminal.interactive import Terminal
 
 
 class SlashWorkflowTests(unittest.IsolatedAsyncioTestCase):
     def test_stream_records_tier_without_changing_text(self):
         import io
-        from terminal.llm import read_stream
+        from loop_robot.terminal.llm import read_stream
         tiers = []
         result = read_stream(io.BytesIO(b'data: {"service_tier":"priority","choices":[{"delta":{"content":"OK"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n'),
                              lambda *args: None, on_tier=tiers.append)
@@ -48,7 +48,7 @@ class SlashWorkflowTests(unittest.IsolatedAsyncioTestCase):
                     received.append(text)
                     return 'OK'
                 app.agent.reply = reply
-                with patch('terminal.setup.discover_models', return_value=rows) as discover:
+                with patch('loop_robot.terminal.setup.discover_models', return_value=rows) as discover:
                     task = asyncio.create_task(terminal.run())
                     try:
                         await asyncio.sleep(.2)
@@ -60,6 +60,12 @@ class SlashWorkflowTests(unittest.IsolatedAsyncioTestCase):
                         pipe.send_text('model-b\r')
                         await asyncio.sleep(.3)
                         self.assertEqual(app.client.config['model'],'model-b')
+                        self.assertEqual(terminal.input.text, '/model model-b ')
+                        pipe.send_text('default\r')
+                        await asyncio.sleep(.3)
+                        self.assertEqual(terminal.input.text, '')
+                        self.assertIsNone(terminal.action_panel)
+                        self.assertIsNone(terminal.input.buffer.complete_state)
                         pipe.send_text('/fast\r')
                         await asyncio.sleep(.3)
                         self.assertEqual(app.client.request_service_tier, 'priority')

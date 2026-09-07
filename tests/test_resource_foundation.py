@@ -3,10 +3,10 @@ import tempfile
 import sys
 import unittest
 from unittest.mock import patch
-from core.resources import ResourceManager, ResourceBusy
+from loop_robot.core.resources import ResourceManager, ResourceBusy
 from test_resource_admission import Monitor
-from terminal.services import PolicyServices
-from toolchain.resources import ModelPool, ModelSpec
+from loop_robot.terminal.services import PolicyServices
+from loop_robot.toolchain.resources import ModelPool, ModelSpec
 
 
 class FoundationTests(unittest.TestCase):
@@ -38,7 +38,7 @@ class FoundationTests(unittest.TestCase):
         services.close()
         self.assertEqual(self.resources.status()['reservations_by_workload'], {})
         self.monitor.value['available_ram_mb'] = 1024
-        with patch('terminal.services.subprocess.Popen') as launch:
+        with patch('loop_robot.terminal.services.subprocess.Popen') as launch:
             with self.assertRaises(ResourceBusy): services.start('a')
             launch.assert_not_called()
 
@@ -57,7 +57,7 @@ class FoundationTests(unittest.TestCase):
         self.assertEqual(self.resources.status()['reservations_by_workload'], {})
 
     def test_node_lifecycle_uses_shared_budget(self):
-        from core.nodes import NodeDefinition, NodeRuntime
+        from loop_robot.core.nodes import NodeDefinition, NodeRuntime
         from test_nodes import HeartbeatNode, validate, resource
         nodes = NodeRuntime({'fixture':NodeDefinition(HeartbeatNode, validate, resource)}, self.path / 'nodes', admission=self.resources)
         self.addCleanup(nodes.close)
@@ -70,9 +70,9 @@ class FoundationTests(unittest.TestCase):
         self.assertNotIn('blocked', nodes.records)
 
     def test_common_tool_and_python_rejection_before_execution(self):
-        from terminal.app import App
-        from terminal.config import load_config
-        from terminal.conversation_context import COMMON
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
+        from loop_robot.terminal.conversation_context import COMMON
         import hashlib
         app = App(load_config(), self.path / 'app')
         self.addCleanup(app.close)
@@ -87,7 +87,7 @@ class FoundationTests(unittest.TestCase):
         app.permissions.set_mode('sim');app.permissions.set_rule('run_python', 'allow')
         script = self.path / 'test.py';script.write_text('print(123)')
         self.monitor.value['available_ram_mb'] = 1024
-        with patch('terminal.python_runner.subprocess.Popen') as launch:
+        with patch('loop_robot.terminal.python_runner.subprocess.Popen') as launch:
             with self.assertRaises(ResourceBusy):
                 app.tool('run_python', dict(path=str(script), expected_sha256=hashlib.sha256(script.read_bytes()).hexdigest()))
             launch.assert_not_called()

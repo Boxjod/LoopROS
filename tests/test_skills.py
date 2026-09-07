@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config
-from terminal.skills import discover, prompt, read, write
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.skills import discover, prompt, read, write
 
 
 class SkillsModuleTests(unittest.TestCase):

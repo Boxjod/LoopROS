@@ -6,10 +6,10 @@ import time
 import unittest
 from unittest.mock import patch
 
-from core.nodes import NodeDefinition, NodeRuntime
-from core.store import EventStore
-from terminal.app import App
-from terminal.config import load_config
+from loop_robot.core.nodes import NodeDefinition, NodeRuntime
+from loop_robot.core.store import EventStore
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
 
 
 class HeartbeatNode:
@@ -57,9 +57,9 @@ def wait_for(predicate, timeout=6):
 
 
 def pty_receive_factory(config):
-    from toolchain.node_workers import SerialReceiveNode
+    from loop_robot.toolchain.node_workers import SerialReceiveNode
     original_open = os.open
-    with patch('toolchain.serial_port.Path.resolve', return_value=Path('/dev/ttyACM999')), patch('toolchain.serial_port.os.open', side_effect=lambda path, flags: original_open(config['pty'], flags)):
+    with patch('loop_robot.toolchain.serial_port.Path.resolve', return_value=Path('/dev/ttyACM999')), patch('loop_robot.toolchain.serial_port.os.open', side_effect=lambda path, flags: original_open(config['pty'], flags)):
         service = SerialReceiveNode(config)
     service.port.path = config['pty']
     return service

@@ -4,10 +4,12 @@ from pathlib import Path
 import sys
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from terminal.app import App
-from terminal.config import load_config
-from terminal.home import loop_home
-from terminal.interactive import Terminal
+from launcher import _bootstrap
+_bootstrap(legacy=False)
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.home import loop_home
+from loop_robot.terminal.interactive import Terminal
 
 def main():
     app = App(load_config(), Path(sys.argv[1]))
@@ -16,7 +18,7 @@ def main():
     folder.mkdir(exist_ok=True)
     (folder/'console.json').write_text(json.dumps({'cwd':str(folder),'argv':[sys.executable,'-u','-c',
         'print("READY",flush=True); print("CHILD="+input(),flush=True); import time; time.sleep(60)']}))
-    from toolchain.offline_skill import save_profile
+    from loop_robot.toolchain.offline_skill import save_profile
     save_profile('console', 'offline-console', '离线控制台')
     def forbidden(*args, **kwargs):
         raise AssertionError('Process console must not call the model')

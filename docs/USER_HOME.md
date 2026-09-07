@@ -5,7 +5,7 @@ All default installations use `Path.home() / ".loop"`: `/home/<user>/.loop` on L
 ```text
 .loop/
   config.json        Optional global defaults, no API keys
-  credentials.json   Created only by an explicit key-save command
+  config.json        Runtime settings plus plaintext URL/key entries in endpoints
   agents.json        Optional user Agent definitions (replaces packaged registry)
   task_runtime.json  Optional user task policy (state-specific policy takes precedence)
   AGENTS.md          Optional user instructions for Master
@@ -18,11 +18,11 @@ The directory and harness/skills folders are initialized on configuration load; 
 
 ## Credentials
 
-Text tasks share the current model and credentials; image requests may use a vision model at the same endpoint (see CODING_AGENT.md); `/expert-key` is a legacy alias of `/key`. In the terminal, `/key save` or `/expert-key save` requests hidden input and saves it atomically. `/key` and `/expert-key` without `save` remain session-only. Never paste a key into chat or supply it as a command argument.
+Text tasks share the current model and credentials; image requests may use a vision model at the same endpoint (see CODING_AGENT.md); `/expert-key` is a legacy alias of `/key`. In the terminal, `/key` or `/expert-key` requests hidden input and atomically saves the shared endpoint credential. The optional `save` spelling remains compatible. Never paste a key into chat or supply it as a command argument.
 
 Precedence: session key → named environment variable → saved credential. Saved credentials are bound to the exact API base URL (ignoring a trailing slash) and environment-variable name, not the model name. Switching endpoints does not reuse saved credentials from the previous endpoint. Environment variables remain operator-controlled; use different variable names for unrelated providers.
 
-Credentials are local plaintext, not encrypted or stored in an OS keychain. New POSIX home directories use mode 0700; credential files use 0600, and overly broad credential-file permissions are rejected on read. Windows requires a private user directory protected by OS ACLs; POSIX mode checks do not apply there. Do not share or commit this directory. To revoke a leaked key, revoke it with the provider; deleting a local file alone does not revoke it.
+Credentials are local plaintext, not encrypted or stored in an OS keychain. New POSIX home directories use mode 0700; credential files use 0600, and key-save writes atomically replace config.json with mode 0600. Windows requires a private user directory protected by OS ACLs; POSIX mode checks do not apply there. Do not share or commit this directory. To revoke a leaked key, revoke it with the provider; deleting a local file alone does not revoke it.
 
 ## Configuration and harness
 
@@ -48,7 +48,7 @@ Personal customization belongs to the Loop user directory, not the installed Pyt
 | Task policy | `STATE/task_runtime.json` → `~/.loop/task_runtime.json` → packaged default | Copy user overrides; state-specific policy has priority; restart the supervisor explicitly after edits |
 | User instructions | `~/.loop/AGENTS.md`, `~/.loop/harness/*.md` | Copy; reloaded on the next model call |
 | Skills | `~/.loop/skills/<name>/SKILL.md` plus optional `scripts/`, `references/`, `assets/` | Copy the entire package; use relative paths for supporting files |
-| Credentials | `~/.loop/credentials.json` or external environment variables | Private transfer only; POSIX 0600; environment variables must be set again on the new device |
+| Credentials | `~/.loop/config.json` (`endpoints`) or external environment variables | Private transfer only; POSIX 0600; environment variables must be set again on the new device |
 | Model profiles and selection | `STATE/providers.sqlite` | Copy after closing Loop and loop-switch; saved selections take priority over config defaults |
 | Permission settings | `STATE/permissions.sqlite` | Copy only when those same user-selected rules are intended on the new device |
 | History, learning and task records | Remaining `STATE/` contents | Copy after stopping all writers; do not resume device tasks automatically |
@@ -56,7 +56,7 @@ Personal customization belongs to the Loop user directory, not the installed Pyt
 `STATE` is the explicit `--state-dir`, otherwise `LOOP_STATE_DIR` (legacy `LOOPER_STATE_DIR`), otherwise `artifacts/terminal` for a source checkout or `${XDG_STATE_HOME:-~/.local/state}/loop-ros` for an installed package. `loop-switch --state-dir` must select the same state directory as `loop`. A user-selected `LOOP_HOME` does not implicitly move STATE.
 
 1. On the old device, stop persistent tasks/Nodes and close Loop and loop-switch before copying SQLite databases. Record the chosen user/state paths. Copy any external `--config` or deployment files separately; they are not automatically collected.
-2. Install Loop on the new device. Transfer the user directory and STATE privately, keeping directory structure, Skill supporting files and SQLite companion files together. Restore POSIX home permissions to 0700 and `credentials.json` to 0600. If the destination already has settings, keep separate backup directories and choose which copy to use; do not merge SQLite files or overwrite existing credentials blindly.
+2. Install Loop on the new device. Transfer the user directory and STATE privately, keeping directory structure, Skill supporting files and SQLite companion files together. Restore POSIX home permissions to 0700 and `config.json` to 0600. If the destination already has settings, keep separate backup directories and choose which copy to use; do not merge SQLite files or overwrite existing credentials blindly.
 3. To keep both sets of data under one portable directory, place the transferred state in `~/.loop/state` and configure **both** variables before starting Loop or loop-switch:
 
    ```sh
@@ -98,3 +98,10 @@ The three maintained simulation templates under configs/skills are distribution 
 Workspace-specific auxiliary scripts and robot records stay in `<workspace>/user_projects/<project>/` (optionally `robots/<model>/`), separate from portable home tools/Skills and internal runtime state. Include this ignored local directory when migrating user work; do not upload it with Loop ROS source. See [generated code storage](GENERATED_CODE.md).
 
 Multiple CLI terminals can share STATE. Profiles, permissions, conversation history, tasks, learning and resource leases remain in STATE. Additional foreground runtimes use STATE/terminals/<slot>/ for timers, Nodes, viewer/scenes and service/Agent logs; every launch/restart starts a fresh conversation, including the first runtime slot; use /resume to explicitly restore saved history, drafts and paused queues. Session locks prevent simultaneous editing of one conversation. Copy the whole state tree during migration, including runtime slots; do not copy only the root databases. Exit and reopen older terminals after upgrading. See [multi-terminal behavior](TERMINAL.md#多终端共享状态目录2026-09-07).
+
+
+2026-09-07：URL 与 Key 统一明文保存到 `config.json` 的 `endpoints` 数组，每项为 `base_url`、`api_key_env`、`api_key`。运行配置仍使用 llm/profile 选择；Key 按 URL 与环境变量名绑定，模型/超时等设置更新保留 endpoints。运行时配置、settings_read 输出和模型上下文不携带 endpoints。环境变量和会话临时 Key 优先级不变。
+
+旧 credentials.json 在匹配 Key 首次使用/保存时原子迁移到 config.json，写入成功后删除旧文件。未匹配到 URL 的旧项临时以 legacy_id 保留在同一配置，避免丢失其他 profile 的 Key；对应 profile 使用时转换成 URL 项。无需再维护独立凭据文件。已经运行的旧版本进程须重开，才能读取新存储位置。
+
+2026-09-08：/key 默认写入当前 endpoint 的共享 Key，主对话、子 Agent 和后台 Task 复用，不再创建 Task 专用 Key。已保存值优先于环境变量；显式内存凭据仅保留内部兼容。启动监督器时固定同一 LOOP_HOME，并将可用的当前凭据保存到统一入口，不把 Key 固化进后台环境。空闲监督器刷新所选 profile 与 Key，正在执行的 worker 保留其配置；换服务地址不继承旧地址凭据。状态接口仅公开 available、model、source 和检查时间。旧缺凭据反馈可清除，任务仍等待显式恢复。

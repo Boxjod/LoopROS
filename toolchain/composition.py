@@ -12,8 +12,8 @@ import shutil
 import uuid
 import xml.etree.ElementTree as ET
 
-from toolchain.model_assets import snapshot, safe_path
-from toolchain.scenes import compile_scene, default_scene, chair_scene, _vector
+from loop_robot.toolchain.model_assets import snapshot, safe_path
+from loop_robot.toolchain.scenes import compile_scene, default_scene, chair_scene, _vector
 
 PROMPT = '''
 仅返回以下组合编辑格式；不要添加objects、table、needs_expert等旧格式顶层字段：
@@ -77,7 +77,7 @@ def state(spec):
     data = mujoco.MjData(model)
     if model.nkey:
         mujoco.mj_resetDataKeyframe(model, data, 0)
-    from toolchain.viewer_motion import repair_invalid_home
+    from loop_robot.toolchain.viewer_motion import repair_invalid_home
     repair_invalid_home(mujoco,model,data)
     return model, data
 

@@ -3,14 +3,14 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from terminal.tool_groups import ToolGroups
-from terminal.app import App
-from terminal.config import load_config
+from loop_robot.terminal.tool_groups import ToolGroups
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
 
 
 class ToolGroupTests(unittest.TestCase):
     def test_details_preserve_recorded_metrics_after_reopen(self):
-        from terminal.session import SessionStore
+        from loop_robot.terminal.session import SessionStore
         with tempfile.TemporaryDirectory() as folder:
             path=Path(folder)/'transcript.sqlite'
             store=SessionStore(path)
@@ -27,7 +27,7 @@ class ToolGroupTests(unittest.TestCase):
 
     def test_model_references_unchanged_read_without_repeating_content(self):
         from types import SimpleNamespace
-        from terminal.llm import ChatAgent
+        from loop_robot.terminal.llm import ChatAgent
         requests=[]
         replies=iter([{'tool_calls':[{'id':str(i),'type':'function','function':{'name':'read_file','arguments':'{"path":"file.py"}'}}]} for i in range(2)]+[{'content':'done'}])
         def complete(messages,tools):

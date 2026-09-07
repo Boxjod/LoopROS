@@ -6,7 +6,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.home import loop_home, looper_home, runtime_state_dir
+from loop_robot.terminal.home import loop_home, looper_home, runtime_state_dir
 
 
 class BrandingTests(unittest.TestCase):
@@ -69,7 +69,7 @@ class BrandingTests(unittest.TestCase):
     def test_home_compatibility(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
-            with patch.dict(os.environ, {}, clear=True), patch("terminal.home.Path.home", return_value=root):
+            with patch.dict(os.environ, {}, clear=True), patch("loop_robot.terminal.home.Path.home", return_value=root):
                 self.assertEqual(looper_home(), root / ".loop")
                 (root / ".looper").mkdir()
                 (root / ".looper/config.json").write_text("{}")

@@ -10,7 +10,7 @@ import sys
 import tempfile
 import time
 import uuid
-from terminal.files import schema
+from loop_robot.terminal.files import schema
 
 TOOLS = [schema('run_python',
     'Actually run an existing workspace .py file with this Loop Python, without a shell. Use the current inspected sha256. Syntax is checked locally before launch; a separate python_check call is unnecessary for normal execution. Returns stdout, stderr, exit code and cancellation/timeout evidence. Page stdout_path/stderr_path with read_file for long output instead of rerunning. Runs with host user privileges, not a sandbox. Prefer feetech_scan/read for servo diagnostics.',
@@ -21,9 +21,9 @@ NAMES = {'run_python'}
 
 
 def run(app, args, _trusted_path=None):
-    from terminal.coding import resolve
-    from core.store import EventStore
-    from core.contracts import Episode, Review, record
+    from loop_robot.terminal.coding import resolve
+    from loop_robot.core.store import EventStore
+    from loop_robot.core.contracts import Episode, Review, record
     if not isinstance(args,dict) or set(args)-{'path','expected_sha256','arguments','timeout_s'}:
         raise ValueError('Unexpected Python execution arguments')
     path=_trusted_path if _trusted_path is not None else resolve(app,args.get('path',''),write=True)
@@ -57,7 +57,8 @@ def run(app, args, _trusted_path=None):
         with tempfile.TemporaryFile() as output, tempfile.TemporaryFile() as errors:
             try:
                 process=subprocess.Popen(command,cwd=app.workspace_root,env=env,stdin=subprocess.DEVNULL,
-                                         stdout=output,stderr=errors,start_new_session=os.name=='posix')
+                                         stdout=output,stderr=errors,start_new_session=os.name=='posix',
+                                         creationflags=subprocess.CREATE_NEW_PROCESS_GROUP if os.name=='nt' else 0)
                 while process.poll() is None:
                     if app.stop_event.is_set():reason='cancelled'
                     elif time.monotonic()-started>=timeout:reason='timeout'
@@ -67,9 +68,21 @@ def run(app, args, _trusted_path=None):
             finally:
                 if process is not None:
                     if os.name=='posix':
-                        try:os.killpg(process.pid,signal.SIGKILL)
+                        try:os.killpg(process.pid,signal.SIGINT)
                         except ProcessLookupError:pass
-                    elif process.poll() is None:process.kill()
+                    elif process.poll() is None:
+                        process.send_signal(signal.CTRL_BREAK_EVENT)
+                    # Preserve ownership and the resource lease until actual
+                    # exit. Cancellation is not evidence of stopped hardware.
+                    warned = False
+                    interrupt_at = time.monotonic()
+                    while process.poll() is None:
+                        if not warned and time.monotonic() - interrupt_at >= 10:
+                            warned = True
+                            emit = getattr(getattr(app, 'agent', None), 'on_event', None)
+                            if emit:
+                                emit('Warning', 'Python PID {} has not exited after interrupt; still tracked, no forced termination.'.format(process.pid))
+                        time.sleep(.025)
                     process.wait()
             output_sizes = {'stdout':os.fstat(output.fileno()).st_size, 'stderr':os.fstat(errors.fileno()).st_size}
             output.seek(0);errors.seek(0)
@@ -89,13 +102,11 @@ def run(app, args, _trusted_path=None):
         result[channel+'_file_truncated'] = output_sizes[channel] > len(raw)
     report=folder/(identifier+'.json')
     report.write_text(json.dumps(result,ensure_ascii=False,indent=2));report.chmod(0o600)
-    store=EventStore(folder/'evidence.sqlite')
-    try:
-        store.append('episode',record(Episode(identifier,1,'python-execution','host',
-            actions=[{'tool':'run_python','path':str(path),'sha256':digest}],observations=[{'report':str(report)}])))
+    with EventStore(folder/'evidence.sqlite') as store:
+        episode=Episode(identifier,1,'python-execution','host',
+            actions=[{'tool':'run_python','path':str(path),'sha256':digest}],observations=[{'report':str(report)}])
         review=Review('pass' if result['returncode']==0 and reason is None else 'inconclusive',
                       1. if result['returncode']==0 and reason is None else 0.,
                       'Process exit evidence only; exit zero does not prove the user goal or physical success')
-        store.append('review',record(review))
-    finally:store.close()
+        store.append_episode_review(episode,review)
     return {**result,'report':str(report),'review':record(review)}

@@ -111,3 +111,5 @@ Worker 可在缺少初始 checks 时通过 `task_feedback.checks` 提出验收�
 2026-09-07 等待反馈修正：worker 的 needs_input 原因保存为 feedback.reason，终端优先展示具体缺口，review 仍独立报告验收状态。缺少 checks 且未提供新信息时拒绝原样 resume，不重置尝试预算、不重新排队；可补充 checks 或具体新信息后恢复。task_submit 仍允许先提交目标，再由 worker 定义验收。test_task_supervisor 验证拒绝前后任务与事件不变、补充信息后可恢复。
 
 2026-09-07：TaskWorker 的 strict_tools 令模型可见 schema 与执行目录一致，元工具也经 App.tool 分发到共享权限门禁，不再无条件插入随后被拒的 agents_status 等工具。新增任务会话关联以及已有会话任务的启动迁移只写本地对话记录，不重排或执行任务。后台进程须重新启动加载新的工具目录。
+
+2026-09-08 共享模型凭据：监督器与主对话使用相同用户目录和当前 profile 的 endpoint Key；不按 Task 另配。空闲时刷新所选 profile/Key，活动 worker 不切换服务，任务原 provider 绑定仍核对。/tasks 的服务状态中 model_credentials.available 为当前读取结果，不包含 Key。恢复凭据后旧 credentials unavailable 反馈改为已恢复但仍暂停，不自动执行旧目标；源码／凭据存储迁移前启动的监督器须正常重启以载入新读取实现。

@@ -1,6 +1,6 @@
 """Compact presentation batches; execution and raw receipts stay independent."""
 from collections import Counter
-from terminal.tool_display import ToolDisplay
+from loop_robot.terminal.tool_display import ToolDisplay
 
 
 class ToolGroups:

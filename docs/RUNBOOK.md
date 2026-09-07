@@ -1,5 +1,41 @@
 # 已验证操作
 
+## 2026-09-08：0.0.3 核心与发行整改候选
+
+实现及原始问题见 [core 发行审查](research/core-release-review.md)。统一 loop_robot 包导入，模拟策略移入 toolchain，MockBody 留在 examples；Episode／Review 原子写入复用。process Node 使用 SIGINT 正常退出，超时及 runtime 关闭后仍跟踪未退出进程并保留资源。源码迁移覆盖所有终端运行槽，启动与迁移互斥。builder 拒绝漏件并安装实际 wheel 验证 `/status`，bootstrap 使用相同源码快照；发布器统一校验两份 manifest。CI 和本地 pre-push 检查索引／待上传历史中的私有路径。
+
+版本为 0.0.3，Rust manifest／lock 同步版本。最终本地包 `artifacts/release-0.0.3-final-candidate/`：8 文件，wheel 602703 字节，SHA-256 `968829465025dc59fb8e11d5248cc22ce65df498fba1715a737c321d111d6f93`。构建命令：`UV_OFFLINE=1 .venv/bin/python scripts/build_release.py --url https://loopmaster.box2ai.com/LoopROS --output artifacts/release-0.0.3-final-candidate`；输出目录须不存在，重建须用新目录。
+
+独立 `artifacts/optimization-0.0.3/test-env` 使用声明的 test／feetech extras，113 项核心／发行检查、328 项运行时检查、34 项中文 PTY 与发行联合检查、8 项补充边界检查通过（有重叠，不能直接相加）。真实 wheel 安装和 bootstrap／shell 校验通过；实际旧 0.0.2 更新器成功安装 0.0.3，回滚／切回、更新控制器保留、卸载保留配置／用户 Skill／SQLite 通过，传输为本地文件替身。日志与回执统一位于 [optimization-0.0.3](../artifacts/optimization-0.0.3/)。
+
+保留原工作区改动，仅将必要新维护源码明确加入索引；未提交／推送／服务器发布，未迁移用户当前安装或启动设备／仿真。Linux 之外原生平台和固件运行未作本轮验收。源码公开仍需审查内部操作文档内容。
+
+2026-09-08 输入框 placeholder 调整：Ask LoopROS to do anything about Robot 使用浅灰色，输入立即隐藏、清空恢复。`PYTHONPATH=tests LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest tests.test_slash_terminal -q` 通过，真实 PTY 核对颜色与中文流式并行输入；定向 diff 检查通过。
+
+2026-09-08 精选 Codex 工程工作约定：更新 configs/workflow_harness.md，并备份／同步本机 ~/.loop/harness/workflow.md。来源与取舍见 [Coding Agent](CODING_AGENT.md#精选工程工作约定2026-09-08)。工作流／Skills 18 项现有测试通过；本机实际加载核对确认 workflow 仅一份、个人机器人 Task 偏好保留、未超上下文预算。无服务重启，无设备动作；未评估线上模型效果。
+
+2026-09-08 ROS 2／ROS 1 工程接入：新增独立 ROS host、多模态有界摘要、原生前台 ROS 程序启动／SIGINT 停止、地图 JSON 导出，接入 Node 权限和资源准入。ROS host 使用 ROS 环境自身的解释器；默认 ROS 2，兼容 ROS 1。入口与配置见 [ROS_RUNTIME](ROS_RUNTIME.md)。
+
+验证：`PYTHONPATH=tests LOOP_TEST_ROS1=1 .venv/bin/python -m unittest tests.test_ros_runtime tests.test_ros1_integration tests.test_nodes.NodeRuntimeTests tests.test_process_nodes tests.test_resource_foundation -v` 当次 22 项通过；后补准入绑定失败回归及原关节缓冲兼容两项通过，合计 24 项。日志：artifacts/terminal/validation/ros-runtime.log、ros-runtime-extra.log。Noetic 原生测试使用独立 localhost master、夹具关节／latched 地图发布者，验证消息、导出栅格及 SIGINT 后 PID 消失。Python 3.8 host 编译、三份配置校验和定向 diff 检查通过。新增启动准入事件初次回归因父进程未保留同步对象导致 spawn 失败，已保存在 Node 记录中并复验。未启动机器人、MuJoCo、真实 SLAM；本机未安装 ROS 2，DDS 通信仍待验证。
+
+2026-09-08 官网顶部遗漏 ESP32-C3 入口：双语平台选择器新增独立按钮，展示固件构建命令与开发预览状态，链接下方配置／刷写段；切换时隐藏 CLI 仿真复选项并更新后续操作提示，返回 Linux 恢复。避免残留 --terminal-only 参数，JS/CSS 带版本参数。
+
+验证：`node --test tests/website.test.cjs` 2 项通过；`scripts/validate_install_website.py` 本地与线上双语 Chrome 验证 ESP32-C3 选择、三种 Linux 板卡命令、1440／390／320 像素布局通过。已独立发布并备份源码，原有版本下载保持不变，回执见 DEPLOYMENT；未修改核心或操作设备。
+
+2026-09-08 Rust 端侧核心与官网安装指南：独立 Rust workspace 已实现 no_std 核心、回执验收状态机、仿真反馈循环、C ABI、离线 host 夹具；ESP32-C3 用 Arduino C++ 调用核心并直接连接远端模型 API。核心不含操作系统／SDK依赖；完整 Python CLI、SQLite、Skills 与跨终端运行基础层继续保留在宿主。源码入口和边界见 [RUST_CORE](RUST_CORE.md)。
+
+验证：`python scripts/validate_rust_core.py` 通过 8 项 Rust 单测、格式／Clippy、host／RISC-V／Cortex-M0+ 库构建、真正 C++ ABI 链接执行与 host 夹具。`artifacts/embedded-tools-venv/bin/pio run -d firmware/esp32 -e esp32c3` 成功生成固件；静态 RAM 21084 字节、应用 Flash 573648 字节，firmware.bin 598176 字节。esptool 镜像 checksum/hash 有效，ELF 包含 11 个 Rust 核心符号。未刷写、未验证板上 Wi-Fi／模型响应／运动；其他 ESP 和 AVR 型号未适配。工具链缺 pip、宏重名、旧链接器 ISA 属性问题的修复记录见 RUST_CORE。
+
+官网两个语言的安装流程已上线，`node --test tests/website.test.cjs` 两项通过，`scripts/validate_install_website.py` 本地／线上真实 Chrome 检查三种板卡命令和三个窗口宽度通过。原有发布下载字节保持不变；源码已通过 `scripts/backup_website.py` 私有备份且远端哈希一致。地址与回执见 [DEPLOYMENT](DEPLOYMENT.md)。没有发布新的 CLI／固件版本或把 website 放回 Git。
+
+2026-09-08 精简发行：wheel／构建源码快照排除 website 与 examples；两个被运行时引用的默认场景迁入 assets/simulation，本地工作台与 Three.js 许可证迁入 assets/workbench。官网本地源码保留且移出 Git 索引，版本构建不再调用网站导出，发布白名单拒绝混入网站文件。线上网站与已发布版本不变，服务器源码备份见 DEPLOYMENT。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_public_source test_releases test_updates test_platform_support -q` 21 项通过；`test_web_workbench test_simulation_workbench` 13 项通过；新增资源断言后 `test_web_workbench test_toolchain test_robotics` 15 项中 14 项通过、1 项可选 Mink 跳过。`node --test tests/website.test.cjs` 2 项通过，独立网站导出成功。精简候选 `artifacts/release-slim-final-candidate-20260908/` 为 8 文件、592221 字节，wheel 578585 字节；解包到临时目录、项目外运行 --version 和 web --help 成功，资源清单包含场景／工作台且无 website/examples。回执 `artifacts/release-slim-validation-20260908.json`。候选沿用源码版本号，仅本地验证，禁止覆盖已发布的 0.0.2；未发布、未操作真机或现有窗口。
+
+2026-09-08 工具调用间歇报格式错误：移除流式解析和执行循环中单次响应最多 4 个调用的限制；保留响应大小、调用索引校验、逐工具取消／介入与既有权限门禁。JSON 损坏、缺少结束标记、非法调用索引和字段异常分别诊断，不再统一提示切换 API 类型。截图累计 5 calls 不能证明当时单次响应触发限制；本地替身已复现旧报错并验证修复，未获得该次服务端原始响应。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_stream_completion test_model_connection test_token_budget test_tool_continuation test_foreground_completion -q`，39 项通过。新增覆盖 1／5／12 个调用的乱序索引与参数分片、各执行一次、完整回传后继续回答，以及失败诊断脱敏且不自动重发。未调用线上模型；运行中的 CLI 需正常退出重开加载源码。
+
 2026-09-07 启动统一新建 Session：首个窗口和附加窗口每次启动／重启均生成并保存新会话，不自动载入历史、草稿、附件、队列或旧累计用量。历史通过 /resume 显式恢复，恢复队列仍暂停；旧 checkpoint-only 记录在打开库时先归档，避免新会话第一次保存覆盖唯一历史。新会话在菜单使用前持久化，避免恢复命令补全后才出现同名空白会话而产生歧义。
 
 验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_interactive test_session_resume test_multi_terminal test_multi_terminal_render test_session_render test_composer_render -q` 38 项通过，日志 artifacts/terminal/validation/fresh-session-startup.log。覆盖连续两次重启 ID 独立、旧历史／草稿／队列保留、旧检查点归档、显式恢复用量与历史、双终端中文流式输入、任务面板以及真实 PTY 重启不自动带入图片、手动恢复图片。旧自动恢复测试改为显式 /resume；任务面板测试等待 Esc 完整处理，保留原操作验收。`git diff --check` 通过；没有操作用户设备、服务或现有窗口。
@@ -818,3 +854,123 @@ SessionStore 新增 task_sessions 关联表。新 Task 建立独立会话但不�
 验证：Task监督器/Session恢复/任务导航/workflow/中文PTY共33项通过；设置与coding及PTY27项通过；多终端6项通过。包含子进程使用不在旧列表中的 agents_status 经统一分发成功，定时 Worker 不继承该工具；独立会话的恢复、父会话隔离和provider隔离。两次测试入口错误已修正（缺 tests 导入路径或不存在的测试名）；无真实模型调用或运动验收。
 
 运行生效：旧任务已注册聊天会话 e54a5f708d93，任务仍 waiting_input。确认监督器无 running/queued/retry_wait、无启用自动规则、子进程仅 resource_tracker 后，按现有权限检查重启监督器：PID 68331 → 952117，新心跳正常。没有恢复旧任务、启动机器人或播放轨迹。前台 CLI 仍需重新打开加载会话界面代码。
+
+### 2026-09-07 主会话 Working 时进入 Task Session
+
+修正 Enter session 沿用普通 /resume 前置限制导致的拒绝。现在记录待切换目标，暂停原队列并请求当前前台调用边界收尾；poll 保存最终回执后、启动下一工作前执行切换。直接恢复目标快照，不通过临时清空旧队列再运行 slash 的方式切换，避免覆盖原草稿与队列。后台任务状态不改。
+
+验证：任务导航、真实 PTY 在 Working 时进入并返回、原会话中文草稿及队列保存共6项通过；未发送设备命令。等待当前调用返回/超时仍是必要边界，修复没有把前台会话对象与正在执行的工具并发切换。
+
+### 2026-09-07 URL/Key 合并配置
+
+按用户要求将保存的 Key 与 URL 合入 ~/.loop/config.json endpoints；settings_read 隐去该区，运行配置不携带 Key，settings_update(config) 保留已有 endpoint 项。兼容迁移 credentials.json，只有配置原子写入后才移除旧文件。21 项 home/providers/settings 回归通过，覆盖双 endpoint 迁移、不串 Key、保留原模型配置和0600。用户实际4项 Key 已全部关联 URL 迁移完成，未回显内容，旧 credentials.json 已不存在。现有旧版本进程需重开读取新位置；未更换 profile、启动机器人或调用付费模型。
+
+### 2026-09-07 一级命令前缀即可显示二级命令
+
+SlashCompleter 在 /swi 等一级前缀下复用静态子命令候选，并显示完整 /switch setup；保留父命令入口和 / 首页。验证覆盖替换位置、完整子命令选择、说明文本与中文流式输入 PTY，不调用模型或配置向导。
+
+
+## 2026-09-07：发布 0.0.2 与真实更新验证
+
+用户授权上传到既有 release server。构建冻结版本0.0.2并审计 Git 跟踪/忽略清单、wheel、发布文件白名单；用户项目/Skills/凭据/运行日志未上传。发布器补齐已有工作台公开资源白名单；凭据转入用户config.json后补齐普通文件读取禁用，并添加回归。PTY旧测试按已实现的Task Session进入/关闭语义更新，验证关闭不取消任务。
+
+验证：发行回归74项通过；补充57项中原先1项PTY旧预期失败，更新预期后的发布/PTY定向13项全部通过。隔离wheel安装/import smoke通过。发布后19个清单文件经HTTPS逐项校验通过；真实旧版安装→检查→升级→无更新→回滚→再升级以及独立源码migrate均通过，状态路径与用户Skill保留。证据集中在 artifacts/release-validation-0.0.2；详细SHA/服务器目录见DEPLOYMENT。安装包595009字节，全部20个文件1416503字节。发布较慢原因是逐文件独立SSH/SCP连接；本次未更换传输协议。git diff --check通过。
+
+未迁移本机正在使用的用户安装、未重启机器人/模型服务、未推送GitHub。发布后并行源码修改不进入已冻结wheel，后续修改须新版本。
+
+
+## 2026-09-07：未完成执行目标的提前收尾
+
+前台模型无工具调用时原本直接return，现接入当前回合显式执行合同的completion_gate。未验收且无实际执行停止时继续同一循环，保留原回执/失败/取消边界；通过检查由运行时标记complete。未完成合同的流式收尾先缓冲，普通问答和历史合同不会自动继续；waiting_input需明确缺口，任务元数据改写不计进展。基础提示要求执行请求登记最小结果检查，不扩泛化前置审查。未操作机器人、未改后台任务状态或自动发布新wheel；现有0.0.2不包含此后源码变更。
+
+验证：test_foreground_completion、test_read_loop_reasoning、test_tool_continuation、test_workflow_harness、test_coding_agent、test_steering、test_stream_completion、test_steering_render共53项通过（含真实本地Python执行、中文PTY介入）；最后补自动complete状态后test_foreground_completion与test_workflow_harness再次通过。日志见 artifacts/terminal/validation/foreground-completion*.log。模型是否正确登记目标/检查仍需实际模型验收，不把确定性替身与本地程序测试当真机端到端成功。
+
+
+## 2026-09-07：工具调用移到对话记录
+
+按用户要求移除输入框下常驻工具进度行；工具开始立即在对话输出命令与时间，返回立即显示紧邻的结果与修改预览。分组回执和Ctrl-O／tools手动详情保留，flush不重复输出单次调用。没有增加鼠标或光标重定位逻辑。
+
+验证：test_tool_groups_terminal、test_tool_groups、test_tool_display、test_composer_render、test_steering_render共9项通过（18.573秒），含真实PTY中文草稿、工具在当前输入框上方、下方无进度条、详情滚轮/键盘/开关与会话导航。旧测试误将历史用户行当编辑行、对话工具行当详情行，修正定位后通过；中间尝试的重定位代码已撤回。git diff --check通过，日志 artifacts/terminal/validation/tools-in-transcript.log。本次源码修改未发布到服务器。
+
+
+2026-09-08 执行空转与可读回执：核对本地事件 27263–27305，确认 Host 检查成功、验收字段虚构、重复读取后模型 API 60 秒超时。修正验收 schema/诊断、重叠分页进展判断、带工具调用的进度显示、Python 输出预览，并增加每轮一次模型超时续接。
+
+工作目录为 LoopROS 根目录。验证命令：`PYTHONPATH=tests:. .venv/bin/python -m unittest tests.test_foreground_completion tests.test_read_loop_reasoning tests.test_tool_display tests.test_workflow_harness tests.test_tool_continuation tests.test_stream_completion tests.test_steering`，49 项通过；首次缺少 tests 的 PYTHONPATH 导致 model_fixture 导入失败，修正入口后通过。`PYTHONPATH=tests:. .venv/bin/python -m unittest tests.test_tool_groups_terminal.ToolGroupsTerminalTests.test_stdout_and_progress_above_parallel_chinese_draft tests.test_terminal_render.TerminalRenderTests.test_chinese_stream_queue_and_editing`，2 项通过，覆盖 24/40/80 列中文输入与 100 列 stdout 同屏。API 使用替身、实际 Python 与 PTY 使用临时状态目录，未触发设备操作。运行中的旧窗口需正常退出重开以载入代码；不自动恢复或重放旧任务。
+
+
+2026-09-08 异步工具与即时停止：独立输入“停止”／“停下”／stop 直接发出取消事件，绕过活动工具与忙碌提交的普通队列；保留旧队列的暂停状态。Node 控制台、定时 slash 和普通工具命令后台调度，配置命令保留 UI SQLite 线程归属，隐藏输入与确认菜单保持交互边界。Python 取消改用 SIGINT，等待实际退出后释放资源，10 秒仍未退出报告 PID 并继续跟踪，禁止自动升级强杀。
+
+验证：`PYTHONPATH=tests:. .venv/bin/python -m unittest tests.test_python_runner tests.test_interactive tests.test_steering tests.test_tool_groups_terminal.ToolGroupsTerminalTests.test_typed_stop_interrupts_live_python_instead_of_queueing tests.test_nodes tests.test_slash_terminal tests.test_resource_foundation`，49 项通过；真实子进程 SIGINT 清理、忽略中断保持跟踪、中文停止不排队的真实 PTY、忙碌命令取消、引用边界、队列保留、节点和资源回归均通过。最初测试夹具遗漏 aliases 初始化，补齐后通过；扩大后台调度时发现 /reasoning 的 UI SQLite 跨线程错误，将配置命令恢复到原 UI 边界后全组通过。`git diff --check` 通过。没有中断用户现有进程或运行设备；Windows CTRL_BREAK_EVENT 原生行为尚未实测。新开终端加载修改。
+
+2026-09-08 修复前台执行时 /task 目标 被入口白名单拦截：补充 /task 到活动期间允许命令和后台分发，保留显式新建 Task 与普通追加消息的区别。`PYTHONPATH=tests:. .venv/bin/python -m unittest tests.test_interactive.InteractionTests.test_create_multiple_tasks_while_foreground_is_running tests.test_task_scope -q` 5 项通过，核实两条独立任务及关联聊天 Session，前台保持运行；使用临时数据库与后台服务替身。初次测试误用 task_link 参数，改为核对持久关联后通过。`git diff --check` 通过。
+
+
+2026-09-08 后台统一 API Key：实际监督器 PID 952117 在凭据存储迁移前已启动；当前用户配置可读取所选 profile 的 Key，旧服务却留下三条 credentials unavailable 反馈。用户明确统一一个 API Key 后，/key 默认保存到当前 endpoint 的 config.json，主对话／子 Agent／Task 共用；后台启动固定同一 LOOP_HOME，避免把 Key 缓存在长期进程环境，空闲时刷新 profile 与凭据。共享凭据读取状态只保存布尔值、模型、来源标签和时间，原任务 provider 绑定仍保留。
+
+验证命令：`PYTHONPATH=tests:. .venv/bin/python -m unittest tests.test_shared_task_credentials tests.test_home tests.test_task_supervisor tests.test_user_portability -q`，24 项通过。覆盖保存共享 Key、更新、地址隔离、活动 worker 不切换、0600、旧错误恢复但任务不自动执行。测试日志中的 Model unavailable 来自既有故障注入 worker，测试整体通过。`git diff --check` 通过。
+
+实际维护：确认没有 running/queued/retry_wait Task，且没有启用的定时／触发规则后，通过监督器正常退出标记重启，未发强杀信号。最终 PID 1183588，heartbeat_fresh=true、model_credentials.available=true，三条历史凭据反馈已更新，所有 Task 状态保持不变。没有重新输入或回显 Key，没有执行机器人／ACT／Host 任务，没有做远端模型认证请求。此验证证明后台凭据可读和状态保持；不把读取成功当成云端认证或设备验收。旧前台窗口新开后加载 /key 共享存储行为。
+
+### 2026-09-08 减少工具循环重复检索
+
+落地有界逐轮证据、重复读取摘要合并、超预算最新对话预览及复用 active 工作记录，详见 [Token优化报告](research/token-accounting-and-efficiency.md#14-2026-09-08-首轮优化落地)。两组相关回归53项、39项通过（有重叠），没有付费模型或设备调用。效果边界：已验证所需证据可见、原历史完整、协议配对、预算与学习摘要隔离；真实任务调用降幅尚未对照测量。
+
+
+## 2026-09-08：精简底部状态栏
+
+移除Ready、queued计数、Session Tokens与固定Ctrl-V image；Context保留，Working仅运行时显示，附件计数仅非零显示，粘贴提示用/paste。累计Token仍保存，终端粘贴键不改。test_token_budget、test_tool_groups_terminal、test_composer_render通过，含真实PTY中文编辑与底部字段检查；日志artifacts/terminal/validation/compact-footer.log。源码修改未发布。
+
+
+## 2026-09-08：启动失败优先选择已有配置
+
+401等连接失败后先列保存的profile，可选择复用、重试、新建或取消；不自动切换服务地址，不直接索要新Key。修正过时的环境Key优先提示，与resolved_key的显式Key→保存Key→环境回退顺序一致。原连接/Fast探测次数未改变。24项测试通过，含真实PTY本地HTTP401恢复，未调用外部模型。日志artifacts/terminal/validation/startup-profiles.log；源码尚未发布。
+
+## 2026-09-08：重复模型配置及连接状态
+
+setup 新建和恢复菜单按已知相同 URL＋Key 合并到最新项，选择引用随之迁移；连接结果带时间持久化并按配置/凭据变化失效，显示默认项。未知历史显示 untested。33 项 setup/startup/model connection/Fast/providers 测试通过，含本地 HTTP 与 PTY；修正测试的用户目录隔离及旧的临时 Key 断言。源码改动，未发布。
+
+验证异常：首次运行旧 test_providers 时，该测试未隔离用户目录，/expert-key 将一个现有 endpoint 的 Key 覆写为测试字符串。已删除该测试凭据、隔离后重跑通过；没有找到原 Key 的备份，不能宣称已恢复，需重新保存受影响 endpoint 的 Key。未将其他地址的凭据复制过来。
+
+## 2026-09-08：模型请求递增退避
+
+ChatAgent 每次模型请求最多 5 次尝试，2/4/8/16 秒等待可取消，保留已执行工具回执。401/403/404 不重试；400 等错误允许有限重试，不能保证修复固定参数错误。22 项 foreground completion/model connection/Fast 测试通过，覆盖真实 QwenClient 的模拟 HTTP 400 传输链路；没有调用外部模型或机器人。源码未发布。
+
+## 2026-09-08：工作站重新安装
+
+按用户要求执行 `.venv/bin/python scripts/install.py` 成功，重新安装当前 checkout 的 editable loop-ros 0.0.2，复用现有依赖和虚拟环境，保留用户配置与运行数据。`/tmp` 下 `/home/boxjod/.local/bin/loop --version` 验证入口；未启动交互会话、模型请求或机器人。
+
+## 2026-09-08：配置列表清理为两个平台
+
+用户明确只保留 Qwen 和 88byt：本地 providers.sqlite 删除 13 条旧记录，保留最新 Qwen 与当前 88byt /v1 配置及默认引用，没有修改凭据。重开 ProviderStore 验证仍为两条，外键检查通过。新建/恢复按 URL 合并，包括缺 Key 的旧项；初始化不再复活已删除默认项。27 项 setup/providers/PTY startup 测试通过；未联网检测模型。
+
+## 2026-09-08：减少重复推理与成功后查证
+
+通用提示要求简洁决策、验收充分即收尾；compact task 保留短 stdout/stderr，标注截断及省略，提供当前 turn 的实际检查结果。16 项 foreground completion 测试通过，包括短输出保留、截断、相同文字的新请求不继承旧验收。未调用真实模型或机器人；源码重启生效，未发布。
+
+## 2026-09-08：清空配置后重新安装
+
+再次执行 `.venv/bin/python scripts/install.py` 成功，项目外 `loop --version` 为 0.0.2。安装后只读检查：已保存凭据 0、模型覆盖配置 0、provider 记录 0；会话保留。未启动交互配置向导或请求外部模型。内置供应商默认值仍由发行配置提供，不等于用户旧 URL/Key 恢复。
+
+## 2026-09-08：选模型后选择推理档位
+
+`/model` 选完接 `/reasoning` 菜单，能力枚举优先使用当前 URL/协议/Key 的 /models 响应，五分钟内存缓存，换连接失效；无元数据用 MODEL_SWITCH 中已核实官方条目，未知仅 default。模型切换清除旧档位，设置沿用当前 profile 权限及持久化入口。40 项测试通过，含真实 PTY 的模型→high→中文流式并行输入；追加目录元数据及模型切换检查后定向测试通过。没有用户凭据变更或收费推理请求；源码重启生效。
+
+## 2026-09-08：模型菜单收尾及输入恢复
+
+移除独立 /reasoning 命令，改为 /model MODEL_ID EFFORT 两步菜单；选择完成关闭面板且不残留配置回执/命令草稿，保留当前对话历史、摘要和 token 统计。普通上下键在文本边界回溯非 slash 用户输入，Alt＋↑ 取回队列；placeholder 更新为用户指定文本。24 项测试通过（11.933s），含真实 PTY 中文流式输入、上下历史、选完清空面板，以及配置切换保留 history/summary 的验证。没有修改真实模型配置或调用模型/机器人；源码重启生效。
+
+## 2026-09-08：全部连接失败直接新建配置
+
+恢复菜单全部 profile 为有效 failed 状态时直接进入 quick_setup；passed/untested 保留选择。setup/startup/model connection 共 25 项测试通过（以 /tmp/loop-all-failed.log 为准），包含不再读失败列表选择及有可用配置时保留列表。没有改动用户配置、运行中的 Loop 或调用真实模型/机器人。
+
+## 2026-09-08：新配置向导返回已有配置
+
+quick_setup 提供 s 返回已保存配置；此入口跳过“全部失败自动新建”的跳转，复用 Key，支持取消。26 项 setup/startup/model connection 测试通过，覆盖全部失败仍可选回旧地址、无目录请求/凭据输入。没有修改用户配置或操作运行中的 Loop。
+
+## 2026-09-08：内置进程与内存管理
+
+新增 core/processes 请求策略、toolchain/process_control Linux/pidfd适配、terminal/process_control 门禁和共享资源入口；process_inspect/process_stop 对模型和 /node 离线命令开放。本地/SSH检查端口实际占用者、启动身份、RSS及可用RAM，按明确选择的 INT/TERM/KILL/升级序列执行并核对端口释放。ProcessNode 子命令退出后主状态显示 exited，不再仅据监督心跳显示 running；远端服务状态仍须直接检查。
+
+ResourceManager.control_lease 与现有 leases 同账本固定记账，内存压力不阻断诊断/回收。用户 Skill 保存 ~/.loop/skills/process-management/SKILL.md，通过 skill-creator quick_validate；未放入 Git 暂存或发行包。
+
+52 项 process_control/process_nodes/resource_foundation/resource_admission/control/coding_agent 测试通过（7.378s），覆盖真实临时进程和 socket、RSS、pidfd身份校验、SIGINT不退出、TERM升级、直接KILL、端口仍占用、权限、资源紧张和SSH替身。Jetson、实机使能及设备停止未实测；没有启动、停止或重启机器人。验证日志 artifacts/terminal/validation/process-management.log。当前源码重启 Loop 生效，未发布。

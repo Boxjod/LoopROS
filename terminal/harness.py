@@ -2,9 +2,9 @@
 from pathlib import Path
 import hashlib
 import re
-from terminal.files import schema
-from terminal.home import loop_home
-from terminal.coding import atomic_text
+from loop_robot.terminal.files import schema
+from loop_robot.terminal.home import loop_home
+from loop_robot.terminal.coding import atomic_text
 
 HARNESS_TOOLS = [
     schema('harness_read','Read Loop user instructions: AGENTS.md or harness/NAME.md. Omit path to list them.', {'path':{'type':'string'}}, []),
@@ -30,7 +30,7 @@ def tool(app,name,args):
     if name=='harness_read':
         if set(args)!={'path'}: raise ValueError('harness_read takes path only')
         if args['path'] == 'harness/workflow.md' and not path.exists():
-            from terminal.config import ROOT
+            from loop_robot.terminal.config import ROOT
             return {'path': args['path'], 'content': (ROOT / 'configs/workflow_harness.md').read_text(encoding='utf-8'),
                     'sha256': None, 'inherited_default': True}
         data=path.read_bytes()

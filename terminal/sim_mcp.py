@@ -8,7 +8,7 @@ from pathlib import Path
 def make_server(service,permissions):
     from mcp.server import Server
     from mcp.types import Tool, TextContent
-    from terminal.simulation import TOOLS,call_service
+    from loop_robot.terminal.simulation import TOOLS,call_service
     server=Server('loop-simulation')
 
     @server.list_tools()
@@ -27,8 +27,8 @@ def make_server(service,permissions):
 
 
 def main(argv=None):
-    from terminal.config import DEFAULT_STATE_DIR
-    from terminal.home import loop_home
+    from loop_robot.terminal.config import DEFAULT_STATE_DIR
+    from loop_robot.terminal.home import loop_home
     parser=argparse.ArgumentParser(description='Loop robotics simulation MCP server (stdio)')
     parser.add_argument('--state-dir',type=Path,default=DEFAULT_STATE_DIR)
     parser.add_argument('--isaac-config',type=Path,default=loop_home()/'isaac-bridge.json')
@@ -37,8 +37,8 @@ def main(argv=None):
         from mcp.server.stdio import stdio_server
     except ImportError as exc:
         raise RuntimeError('Install Loop optional dependencies: pip install "loop-ros[mcp,sim,dataset]"') from exc
-    from terminal.permissions import PermissionGate
-    from toolchain.simulation import SimulationWorkbench
+    from loop_robot.terminal.permissions import PermissionGate
+    from loop_robot.toolchain.simulation import SimulationWorkbench
     args.state_dir.mkdir(parents=True,exist_ok=True)
     gate=PermissionGate(args.state_dir/'permissions.sqlite')
     service=SimulationWorkbench(args.state_dir/'simulation',args.isaac_config)

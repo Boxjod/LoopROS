@@ -5,10 +5,10 @@ import shutil
 import tempfile
 import unittest
 from unittest.mock import patch
-from terminal.app import App
-from terminal.config import load_config
-from terminal.session import SessionStore
-from terminal.session_task import SessionTask
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.session import SessionStore
+from loop_robot.terminal.session_task import SessionTask
 from model_fixture import call
 
 
@@ -138,7 +138,7 @@ class WorkflowTests(unittest.TestCase):
         self.assertTrue(inherited['inherited_default'])
         self.app.permissions.set_rule('harness_write', 'allow')
         self.app.tool('harness_write', {'path': 'harness/workflow.md', 'content': 'Custom workflow: inspect evidence before completion.'})
-        from terminal.conversation_context import context
+        from loop_robot.terminal.conversation_context import context
         prompt = context(self.app, '')['system_prompt']
         self.assertIn('Custom workflow', prompt)
         self.assertNotIn('After two equivalent failures', prompt)
@@ -157,7 +157,7 @@ class SessionTaskInteractionTests(unittest.IsolatedAsyncioTestCase):
         from prompt_toolkit.application import create_app_session
         from prompt_toolkit.input import create_pipe_input
         from prompt_toolkit.output import DummyOutput
-        from terminal.interactive import Terminal
+        from loop_robot.terminal.interactive import Terminal
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'LOOP_HOME': directory + '/home'}), create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 app = App(load_config(), Path(directory) / 'state')

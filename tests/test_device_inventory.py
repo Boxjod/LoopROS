@@ -4,9 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from terminal.app import App
-from terminal.config import load_config
-from terminal.control import list_devices
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.control import list_devices
 from model_fixture import call
 
 
@@ -28,7 +28,7 @@ class DeviceInventoryTests(unittest.TestCase):
             try:
                 for denied in (False,True):
                     app.permissions.set_rule('devices','deny' if denied else 'allow')
-                    with patch('terminal.app.list_devices',return_value=inventory) as scan, patch.object(app.serial,'open') as opened, patch.object(app.client,'complete',side_effect=[call('load_toolset',name='robotics'),call('devices'),{'content':'Inventory checked.'}]) as model:
+                    with patch('loop_robot.terminal.app.list_devices',return_value=inventory) as scan, patch.object(app.serial,'open') as opened, patch.object(app.client,'complete',side_effect=[call('load_toolset',name='robotics'),call('devices'),{'content':'Inventory checked.'}]) as model:
                         app.agent.reply('读取我的机械臂')
                         self.assertEqual(scan.call_count,0 if denied else 1)
                         opened.assert_not_called()
@@ -43,7 +43,7 @@ class DeviceInventoryTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             app=App(load_config(),d)
             try:
-                with patch('terminal.app.list_devices') as scan, patch.object(app.client,'complete',return_value={'content':'Code review'}):
+                with patch('loop_robot.terminal.app.list_devices') as scan, patch.object(app.client,'complete',return_value={'content':'Code review'}):
                     self.assertEqual(app.agent.reply('write code to list connected devices'),'Code review')
                     scan.assert_not_called()
             finally:app.close()

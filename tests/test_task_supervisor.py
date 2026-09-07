@@ -4,9 +4,9 @@ import tempfile
 import time
 import unittest
 from types import SimpleNamespace
-from core.tasks import TaskStore, assess
-from terminal.task_supervisor import TaskSupervisor, load_policy
-from terminal.config import ROOT
+from loop_robot.core.tasks import TaskStore, assess
+from loop_robot.terminal.task_supervisor import TaskSupervisor, load_policy
+from loop_robot.terminal.config import ROOT
 
 
 def worker(pipe,definition,config,key,task,schemas):
@@ -40,7 +40,7 @@ def worker(pipe,definition,config,key,task,schemas):
 
 class TaskSupervisorTests(unittest.TestCase):
     def test_manual_inherits_catalog_and_dispatches_through_shared_gate(self):
-        from terminal.files import schema
+        from loop_robot.terminal.files import schema
         from unittest.mock import Mock
         dispatch = Mock(return_value={'value':1})
         supervisor = TaskSupervisor(self.store, self.policy,
@@ -220,7 +220,7 @@ class TaskSupervisorTests(unittest.TestCase):
         self.supervisor.fire_events();self.assertEqual(len(self.store.list()),3)
 
     def test_invalid_policy_and_failed_receipt(self):
-        from terminal.app import TOOLS
+        from loop_robot.terminal.app import TOOLS
         policy=load_policy(ROOT/'configs/task_runtime.json',{t['function']['name'] for t in TOOLS})
         self.assertEqual(policy['max_workers'],108)
         self.assertEqual(policy['max_replans'],3)
@@ -240,12 +240,12 @@ class TaskSupervisorTests(unittest.TestCase):
         self.assertEqual(assess(checks,[{'tool':'observe','result':{'value':True,'error':'bad'}}])['verdict'],'fail')
 
     def test_only_explicit_submission_creates_persistent_task(self):
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         from unittest.mock import patch
         app=App(load_config(),self.path/'app')
         try:
-            with patch('terminal.task_service.start',return_value={'process_alive':True}) as start, patch.object(app.client,'complete',return_value={'content':'Need more evidence.'}):
+            with patch('loop_robot.terminal.task_service.start',return_value={'process_alive':True}) as start, patch.object(app.client,'complete',return_value={'content':'Need more evidence.'}):
                 app.agent.reply('修复机器人控制代码')
                 start.assert_not_called()
                 store=TaskStore(app.state_dir/'tasks.sqlite')

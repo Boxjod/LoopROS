@@ -4,8 +4,8 @@ from pathlib import Path
 import re
 import shlex
 import uuid
-from core.deployment import Deployment
-from terminal.files import schema
+from loop_robot.core.deployment import Deployment
+from loop_robot.terminal.files import schema
 
 HELP = '''/carrier list                         Show deployment and carrier capabilities
 /carrier status ID                    Inspect current instance and command receipts
@@ -158,12 +158,12 @@ def bind(state, deployment):
     if existing and (existing.deployment_id, existing.host_id) != (deployment.deployment_id, deployment.host_id):
         raise ValueError('State directory belongs to another deployment/host; choose a separate state directory')
     if (existing is None or existing.manifest != deployment.manifest) and (Path(state) / 'tasks.sqlite').exists():
-        from terminal.task_service import status
+        from loop_robot.terminal.task_service import status
         if status(state)['process_alive']:
             raise ValueError('Stop the task supervisor before changing deployment bindings')
     if existing and existing.manifest == deployment.manifest:
         return
-    from terminal.coding import atomic_text
+    from loop_robot.terminal.coding import atomic_text
     from types import SimpleNamespace
     atomic_text(SimpleNamespace(state_dir=Path(state)), path,
                 json.dumps({'host_id': deployment.host_id, 'manifest': deployment.manifest}, ensure_ascii=False, indent=2))

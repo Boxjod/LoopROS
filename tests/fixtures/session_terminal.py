@@ -4,9 +4,11 @@ import sys
 import time
 from pathlib import Path
 sys.path.insert(0,str(Path(__file__).resolve().parents[2]))
-from terminal.app import App
-from terminal.config import load_config
-from terminal.interactive import Terminal
+from launcher import _bootstrap
+_bootstrap(legacy=False)
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.interactive import Terminal
 app=App(load_config(),Path(sys.argv[1]))
 def complete(messages,tools,on_event=None,stop_event=None):
     answer='已记录你的机器人问题，当前是对话答复。'

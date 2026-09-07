@@ -124,14 +124,14 @@ def write(directory, name, description, content, app=None, expected_sha256=None)
     value=json.dumps(description,ensure_ascii=False)
     text='---\nname: {}\ndescription: {}\n---\n\n{}'.format(name,value,content)
     if app is not None:
-        from terminal.coding import atomic_text
+        from loop_robot.terminal.coding import atomic_text
         return {'name':name, **atomic_text(app,path,text,expected_sha256,require_hash=True), 'reload':'next model call'}
     path.write_text(text,encoding='utf-8')
     return {'name': name, 'path': str(path)}
 
 
 def tool(app, name, args):
-    from terminal.home import loop_home
+    from loop_robot.terminal.home import loop_home
     directory = loop_home() / 'skills'
     if name in ('skill_read', 'skill_list'):
         app.permissions.check(name, args)
@@ -150,7 +150,7 @@ def tool(app, name, args):
         path = (root / relative).resolve()
         if not path.is_relative_to(root):
             raise ValueError('Resource escapes skill package')
-        from terminal.files import read_file
+        from loop_robot.terminal.files import read_file
         result = read_file(str(path), args.get('offset'), args.get('limit'))
         resources = []
         # Bounded shallow listing; deeper resources can be read by exact path.

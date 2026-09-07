@@ -5,8 +5,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
-from terminal.connection_memory import fallback
-from terminal.learning import Learning
+from loop_robot.terminal.connection_memory import fallback
+from loop_robot.terminal.learning import Learning
 
 
 class ConnectionMemoryTests(unittest.TestCase):
@@ -63,7 +63,7 @@ class ConnectionMemoryTests(unittest.TestCase):
         self.assertIsNone(fallback(self.learning, self.result('192.168.19.1', False)))
 
     def test_foreground_nested_output_and_immediate_feedback(self):
-        from terminal.app import App
+        from loop_robot.terminal.app import App
         result = {'returncode': 0, 'output': self.result('192.168.1.19')}
         source = self.learning.record_turn({'request': '检查 Jetson'},
             [('tool', 'tool_run({"name":"probe"})'), ('result', json.dumps(result))], task_id='front',

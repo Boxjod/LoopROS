@@ -1,0 +1,20 @@
+[workspace]
+members = ["core", "ffi", "host"]
+resolver = "2"
+
+[workspace.package]
+# Must match ../_version.py, enforced by the validation entrypoint. No separate
+# Rust product release is published from this development workspace.
+version = "0.0.3"
+edition = "2021"
+rust-version = "1.82"
+publish = false
+
+[profile.release]
+opt-level = "s"
+lto = true
+codegen-units = 1
+panic = "abort"
+
+[profile.dev]
+panic = "abort"

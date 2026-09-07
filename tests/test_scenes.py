@@ -5,7 +5,7 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from toolchain.scenes import compile_scene, generate_scene, physics_check, validate_scene
+from loop_robot.toolchain.scenes import compile_scene, generate_scene, physics_check, validate_scene
 
 
 SPEC = {"objects": [
@@ -50,7 +50,7 @@ class SceneTests(unittest.TestCase):
 
     def test_simple_route(self):
         primary, expert = Client(SPEC), Client(SPEC, "gpt-6-astra")
-        with tempfile.TemporaryDirectory() as root, patch("toolchain.scenes.physics_check", return_value={"compiled": True}):
+        with tempfile.TemporaryDirectory() as root, patch("loop_robot.toolchain.scenes.physics_check", return_value={"compiled": True}):
             result = generate_scene("红方块和蓝球", primary, expert, root)
             self.assertTrue(Path(result["scene"]).is_file())
             self.assertEqual((primary.calls, expert.calls), (1, 0))
@@ -59,7 +59,7 @@ class SceneTests(unittest.TestCase):
         for explicit in (True, False):
             primary = Client({**SPEC, "needs_expert": True})
             expert = Client(SPEC, "gpt-6-astra")
-            with tempfile.TemporaryDirectory() as root, patch("toolchain.scenes.physics_check", return_value={}):
+            with tempfile.TemporaryDirectory() as root, patch("loop_robot.toolchain.scenes.physics_check", return_value={}):
                 result = generate_scene("复杂布局", primary, expert, root, explicit)
                 self.assertFalse(result["expert_used"])
                 self.assertEqual(expert.calls, 0)
@@ -109,7 +109,7 @@ class SceneTests(unittest.TestCase):
             self.assertEqual(json.loads(Path(result['scene']).with_name('scene.json').read_text())['objects'], valid['objects'])
 
     def test_fenced_json_and_bounded_failure(self):
-        from toolchain.scenes import parse_scene, SceneGenerationError
+        from loop_robot.toolchain.scenes import parse_scene, SceneGenerationError
         self.assertEqual(parse_scene('```json\n' + json.dumps(SPEC) + '\n```'), SPEC)
         client = Client(SPEC)
         with tempfile.TemporaryDirectory() as root, patch.object(client, 'complete', return_value={'content': '{'}) as complete:
@@ -123,7 +123,7 @@ class SceneTests(unittest.TestCase):
 
     def test_missing_expert_and_cancellation_do_not_retry(self):
         import threading
-        from toolchain.scenes import SceneGenerationError
+        from loop_robot.toolchain.scenes import SceneGenerationError
         client = Client(SPEC)
         with tempfile.TemporaryDirectory() as root, patch.object(client, 'complete', side_effect=RuntimeError('Missing expert key')) as complete:
             with self.assertRaises(SceneGenerationError) as error:

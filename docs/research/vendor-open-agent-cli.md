@@ -69,3 +69,21 @@
 - [完整目录树 API](https://api.github.com/repos/anthropics/claude-code/git/trees/ab9b2cf7bb9e4f98ff264c07a22e46d83c29c558?recursive=1)
 
 验证：仅在线只读核对与项目报告归档，未安装、运行或修改 Claude Code，也未把其内容复制进 Loop ROS。
+
+
+## 2026-09-08 Loop ROS 执行回路与输出对照
+
+问题：用户提供的 Codex 输出完成 Host 检查后推进到轨迹回放，Loop ROS 多次读取后超时。此次依据用户粘贴记录、本地 transcript 和既有 Codex 源码副本定位，不做云端产品能力或模型性能排名。
+
+已核实事实：本地 conversation.sqlite 事件 27263/27264 的验收参数使用了未支持的 id/description；27265 改为工具实际上没有的 output.host_ready/output.trajectory_completed。27272 的检查耗时 0.901 秒、退出码 0、stdout 含三帧状态及两个监听端口；27294 再次得到相同输出。27303 读取回放脚本，27305 记录 Model API timed out after 60s。此轮未见轨迹执行调用；超时来源为模型请求，不能归因为机器人连接失败。用户设备地址、脚本内容与完整状态保留在原本地记录，不复制进发行文档。
+
+| 参考行为 | Loop ROS 约定与实现 | 直接验证 |
+| --- | --- | --- |
+| 计划描述步骤，执行回执另行核对 | 保留当前目标登记；checks 可先为空，依据实际字段定义，拒绝 run_python.output；缺字段诊断不冒充设备故障 | test_foreground_completion |
+| 从已取得证据继续推进 | 保留同一轮工具回执；完整文件之后的子页不再重置停滞计数 | test_read_loop_reasoning |
+| 工具前说明新进展、命令后展示实际输出 | 释放带调用的进度文字；显示进程退出码与 stdout/stderr 预览，保留详情和中文草稿 | test_tool_display、test_tool_groups_terminal 的 PTY |
+| 延续工作而不是重新开始 | 本轮新增模型请求超时最多重试一次，工具不重放；这是本项目处理策略，不声称复刻 Codex 重试实现 | test_foreground_completion |
+
+本地源码参考：[Codex plan schema](../../reference/Agentic/codex/codex-rs/core/src/tools/handlers/plan_spec.rs) 明确声明 step/status；[提示词参考](../../reference/Agentic/codex/codex-rs/core/gpt_5_2_prompt.md) 的计划章节要求按阶段推进，并避免用计划填充简单任务。源码版本沿用本报告副本清单。Codex 示例中的后台命令等待与 Loop ROS 的受限 Python runner 仍有能力差异，此次未添加通用 Shell/PTY 执行器。
+
+推断与边界：验收字段虚构、重复读取和进展隐藏会加重空转感，更多模型轮次增加遇到网络/API 超时的机会；仅凭记录不能确定服务端超时根因，也不能保证同一模型经修改后每次都选择正确动作。验证使用本地 Python 执行、离线模型替身和真实终端 PTY；没有调用真实模型、SSH 或机器人，也没有复现真机轨迹。模型配置与现有运行窗口未修改。

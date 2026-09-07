@@ -126,7 +126,7 @@ class PortableSerialPort:
         self.lock = threading.RLock()
 
     def _present(self):
-        from toolchain.serial_discovery import inventory
+        from loop_robot.toolchain.serial_discovery import inventory
         return next((item for item in inventory()['devices'] if item['node'] == self.path), None)
 
     def status(self):
@@ -138,7 +138,7 @@ class PortableSerialPort:
                     'motor_model': None, 'motor_identified': False}
 
     def open(self, port, baud):
-        from toolchain.serial_discovery import inventory
+        from loop_robot.toolchain.serial_discovery import inventory
         if type(baud) is not int or baud not in (9600, 19200, 38400, 57600, 115200, 230400, 460800, 921600):
             raise ValueError('Unsupported baud rate')
         entry = next((item for item in inventory()['devices'] if item['node'] == port), None)

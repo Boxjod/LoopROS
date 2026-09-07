@@ -1,5 +1,5 @@
 """Offline FK/Jacobian/dynamics from the exact verified scene snapshot."""
-from toolchain.model_assets import snapshot
+from loop_robot.toolchain.model_assets import snapshot
 
 
 def analyze(scene, operation, body=None, qpos=None, qvel=None, qacc=None, world_wrench=None):

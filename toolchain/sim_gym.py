@@ -2,7 +2,7 @@
 import gymnasium as gym
 import numpy as np
 
-from toolchain.sim_tasks import validate_task, evaluate
+from loop_robot.toolchain.sim_tasks import validate_task, evaluate
 
 
 class SimulationEnv(gym.Env):

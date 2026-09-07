@@ -5,7 +5,7 @@ from pathlib import Path
 import subprocess
 import time
 import threading
-from core.resources import DEFAULTS, ResourceManager, validate_policy
+from loop_robot.core.resources import DEFAULTS, ResourceManager, validate_policy
 
 
 class HostMonitor:

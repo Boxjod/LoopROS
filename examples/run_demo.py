@@ -6,11 +6,14 @@ import sys
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from launcher import _bootstrap
+_bootstrap(legacy=False)
 
-from core.contracts import TaskSpec, record
-from core.loop import Loop
-from core.plugins import FeedbackMaster, MockBody, NumericalReviewer
-from core.store import EventStore
+from loop_robot.core.contracts import TaskSpec, record
+from loop_robot.toolchain.feedback import Loop
+from loop_robot.toolchain.feedback import FeedbackMaster, NumericalReviewer
+from examples.mock_body import MockBody
+from loop_robot.core.store import EventStore
 
 
 def main():

@@ -27,8 +27,9 @@ jobs:
               assert os.environ['REF_NAME'] == 'v' + __version__, 'Tag/version mismatch'
           PY
       - run: python scripts/install.py --terminal-only
+      - run: python scripts/check_public_source.py
       - name: Release and CLI regressions
-        run: PYTHONPATH=tests .venv/bin/python -m unittest test_releases test_updates test_install test_uninstall test_platform_support test_branding test_terminal -q
+        run: PYTHONPATH=tests .venv/bin/python -m unittest test_public_source test_releases test_updates test_install test_uninstall test_platform_support test_branding test_terminal -q
       - name: Build public bundle
         run: .venv/bin/python scripts/build_release.py --url https://loopmaster.box2ai.com/LoopROS --output artifacts/public
       - uses: actions/upload-artifact@v4

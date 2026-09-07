@@ -77,7 +77,7 @@ from toolchain.sim_mujoco import MujocoSimulation
 from toolchain.sim_gym import SimulationEnv
 from toolchain.sim_dataset import action_chunk, TemporalActions
 
-engine = MujocoSimulation('examples/simulation_workbench.xml')
+engine = MujocoSimulation('assets/simulation/simulation_workbench.xml')
 env = SimulationEnv(engine, {
     'name': 'reach', 'horizon': 100,
     'success': [{'kind': 'position', 'body': 'wrist',
@@ -94,6 +94,6 @@ Isaac 可将 `IsaacSimulationClient` 作为同一 Env 的 engine；单个 host �
 
 ## Website 可视化操作
 
-`loop web` 提供本地三维工作台：场景树、物体创建／选择／位置编辑、机器人导入、关节输入与有界步进、相机配置与真实快照、任务设置及 HDF5 采集下载。默认 `http://127.0.0.1:8768/workbench.html`。详细布局与边界见 [website README](../website/README.md)。网页实例由该服务持有，刷新页面可找回仍存活的实例；不与其他 CLI/MCP 会话共享场景所有权。
+`loop web` 提供本地三维工作台：场景树、物体创建／选择／位置编辑、机器人导入、关节输入与有界步进、相机配置与真实快照、任务设置及 HDF5 采集下载。默认 `http://127.0.0.1:8768/workbench.html`。详细布局与边界见 [工作台 README](../assets/workbench/README.md)。网页实例由该服务持有，刷新页面可找回仍存活的实例；不与其他 CLI/MCP 会话共享场景所有权。
 
 网页侧审批是操作者单独点击的 API，不暴露为模型或 MCP 工具；仍经同一 PermissionGate 检查当前规则。静态网站只提供标注的样例布局，不会偷偷连接 localhost。Isaac 页面布局仅使用可用包围盒；实际渲染通过相机查看。右侧尚非自然语言 Agent 对话。

@@ -5,16 +5,18 @@ import json
 
 ROOT = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(ROOT))
+from launcher import _bootstrap
+_bootstrap(legacy=False)
 
-from core.contracts import TaskSpec, record
-from core.loop import Loop
-from core.plugins import FeedbackMaster, NumericalReviewer
-from core.store import EventStore
-from toolchain.mujoco_sim import MujocoBody
+from loop_robot.core.contracts import TaskSpec, record
+from loop_robot.toolchain.feedback import Loop
+from loop_robot.toolchain.feedback import FeedbackMaster, NumericalReviewer
+from loop_robot.core.store import EventStore
+from loop_robot.toolchain.mujoco_sim import MujocoBody
 
 
 def main():
-    body = MujocoBody(Path(__file__).parent / "two_joint.xml",
+    body = MujocoBody(Path(__file__).resolve().parents[1] / "assets/simulation/two_joint.xml",
                       {"j1": "a1", "j2": "a2"})
     store = EventStore(":memory:")
     try:

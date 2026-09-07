@@ -2,7 +2,7 @@
 import json
 import sys
 import mujoco
-from toolchain.model_assets import snapshot
+from loop_robot.toolchain.model_assets import snapshot
 
 content, assets, digest = snapshot(sys.argv[1])
 model = mujoco.MjModel.from_xml_string(content.decode(), assets=assets)

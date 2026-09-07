@@ -4,21 +4,21 @@ import tempfile
 import unittest
 from unittest.mock import patch
 import zipfile
-from terminal.household_assets import convert, install, search
-from toolchain.composition import primitive, state
-from toolchain.viewer_control import SimulationControl
+from loop_robot.terminal.household_assets import convert, install, search
+from loop_robot.toolchain.composition import primitive, state
+from loop_robot.toolchain.viewer_control import SimulationControl
 
 class HouseholdTests(unittest.TestCase):
     def test_search_excludes_description_only_wardrobe_hits(self):
         rows=[{'name':'Shoes','owner':'GoogleResearch','description':'wardrobe'},
               {'name':'Wardrobe','owner':'OpenRobotics'}]
-        with patch('terminal.model_library.fetch',return_value=json.dumps(rows).encode()):
+        with patch('loop_robot.terminal.model_library.fetch',return_value=json.dumps(rows).encode()):
             self.assertEqual([m['model'] for m in search('衣柜')],['Wardrobe'])
 
     def test_archive_rejects_path_traversal(self):
         out=io.BytesIO()
         with zipfile.ZipFile(out,'w') as archive: archive.writestr('../escaped.obj','x')
-        with tempfile.TemporaryDirectory() as directory, patch('terminal.model_library.fetch',side_effect=[b'{}',out.getvalue()]):
+        with tempfile.TemporaryDirectory() as directory, patch('loop_robot.terminal.model_library.fetch',side_effect=[b'{}',out.getvalue()]):
             with self.assertRaises(ValueError): install(directory,'https://fuel.gazebosim.org/1.0/GoogleResearch/models/test')
 
     def test_sdf_rejects_articulation_and_nonidentity_pose(self):

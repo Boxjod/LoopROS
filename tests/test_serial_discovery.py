@@ -2,8 +2,8 @@ import sys
 import types
 import unittest
 from unittest.mock import Mock, patch
-from terminal.control import list_devices
-from toolchain.serial_port import SerialPort
+from loop_robot.terminal.control import list_devices
+from loop_robot.toolchain.serial_port import SerialPort
 
 
 class PortableSerialTests(unittest.TestCase):

@@ -3,7 +3,7 @@ import threading
 import unittest
 from types import SimpleNamespace
 
-from terminal.llm import ChatAgent
+from loop_robot.terminal.llm import ChatAgent
 
 
 def call(index, step):

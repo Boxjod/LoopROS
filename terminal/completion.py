@@ -5,12 +5,13 @@ from prompt_toolkit.completion import Completer, Completion
 
 
 class SlashCompleter(Completer):
-    def __init__(self, help_text, sessions=None, permissions=None, models=None, agents=None, roles=None):
+    def __init__(self, help_text, sessions=None, permissions=None, models=None, agents=None, roles=None, reasoning=None):
         self.sessions = sessions
         self.permissions = permissions
         self.models = models
         self.agents = agents
         self.roles = roles
+        self.reasoning = reasoning
         self.commands = {}
         for line in help_text.splitlines():
             if line.startswith('/'):
@@ -36,13 +37,12 @@ class SlashCompleter(Completer):
         if document.cursor_position != len(prefix) or '\n' in prefix or '\r' in prefix:
             return
         parts = prefix.split()
-        if parts and parts[0] == '/reasoning' and len(parts) <= 2:
-            from terminal.config import REASONING_EFFORTS
-            word = parts[1] if len(parts) == 2 else ''
-            if len(parts) == 2 or prefix.endswith(' '):
-                for value in ('default', *REASONING_EFFORTS):
-                    if value.startswith(word): yield Completion(value, start_position=-len(word))
-                return
+        if parts and parts[0] == '/model' and (len(parts) == 3 or len(parts) == 2 and prefix.endswith(' ')):
+            word = parts[2] if len(parts) == 3 else ''
+            for value in (self.reasoning() if self.reasoning else ('default',)):
+                if value.startswith(word):
+                    yield Completion(value, start_position=-len(word))
+            return
         if parts and parts[0] == '/node' and (len(parts) == 1 and prefix.endswith(' ') or len(parts) == 2 and not prefix.endswith(' ')):
             word = parts[1] if len(parts) == 2 else ''
             for verb in ('profiles', 'start', 'use', 'status', 'logs', 'send', 'stop', 'list', 'help'):
@@ -61,7 +61,7 @@ class SlashCompleter(Completer):
                 for verb in ('list','inspect','run','status','logs','stop','save'):
                     if verb.startswith(parts[1]): yield Completion(verb,start_position=-len(parts[1]))
             elif parts[1] in ('inspect','run','status','logs','stop'):
-                from toolchain.offline_skill import catalog
+                from loop_robot.toolchain.offline_skill import catalog
                 typed = ' '.join(parts[2:])
                 for row in catalog():
                     if typed.casefold() in row['title'].casefold():
@@ -136,3 +136,11 @@ class SlashCompleter(Completer):
                 continue
             if name.startswith(prefix):
                 yield Completion(name, start_position=-len(prefix), display_meta=description)
+                # Discover static subcommands while the user is still typing
+                # the parent command; keep bare / unchanged and avoid dynamic
+                # profile/session/catalog lookups for unrelated prefixes.
+                if prefix != '/' and name in ('/switch', '/node', '/skills', '/mode', '/fast'):
+                    from prompt_toolkit.document import Document
+                    for child in self.get_completions(Document(name + ' '), complete_event):
+                        yield Completion(name + ' ' + child.text, start_position=-len(prefix),
+                                         display_meta=child.display_meta)

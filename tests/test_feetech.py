@@ -6,10 +6,10 @@ import threading
 import unittest
 from pathlib import Path
 from unittest.mock import patch
-from toolchain.feetech import Bus, PositionLimits, packet, scan
-from terminal.app import App
+from loop_robot.toolchain.feetech import Bus, PositionLimits, packet, scan
+from loop_robot.terminal.app import App
 from model_fixture import call
-from terminal.config import load_config
+from loop_robot.terminal.config import load_config
 
 class FakeSerial:
     def __init__(self, model=777, echo=False, corrupt=False, drop_write=False):
@@ -84,7 +84,7 @@ class FeetechTests(unittest.TestCase):
         with tempfile.TemporaryDirectory() as d:
             app=App(load_config(),d)
             try:
-                with patch('terminal.feetech.feetech.scan',return_value={'motors':[{'id':1,'baudrate':1000000,'model_number':777,'model':'sts3215'}],'scan_complete':True,'verdict':'pass'}):
+                with patch('loop_robot.terminal.feetech.feetech.scan',return_value={'motors':[{'id':1,'baudrate':1000000,'model_number':777,'model':'sts3215'}],'scan_complete':True,'verdict':'pass'}):
                     self.assertTrue(Path(app.tool('feetech_scan',{'port':'/test'})['report']).exists())
                     real=app.tool
                     def dispatch(name,args):
@@ -101,7 +101,7 @@ class FeetechTests(unittest.TestCase):
 
 class ReferenceLoopTests(unittest.TestCase):
     def test_identical_web_fetch_is_not_executed_again(self):
-        from terminal.llm import ChatAgent
+        from loop_robot.terminal.llm import ChatAgent
         from types import SimpleNamespace
         import json
         call={'tool_calls':[{'id':'c','function':{'name':'web_fetch','arguments':'{"url":"https://pypi.org/project/pyserial/"}'}}]}

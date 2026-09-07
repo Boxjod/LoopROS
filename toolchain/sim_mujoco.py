@@ -2,7 +2,7 @@
 import hashlib
 from pathlib import Path
 
-from toolchain.sim_cameras import camera_config, calibration, identifier, vector
+from loop_robot.toolchain.sim_cameras import camera_config, calibration, identifier, vector
 
 EMPTY = '<mujoco><option timestep="0.002"/><visual><global offwidth="1024" offheight="1024"/></visual><worldbody><light pos="0 0 3"/><geom name="floor" type="plane" size="5 5 .1" rgba=".3 .3 .3 1"/></worldbody></mujoco>'
 
@@ -15,7 +15,7 @@ class MujocoSimulation:
         import numpy as np
         self.mj, self.np = mujoco, np
         if scene:
-            from toolchain.model_assets import snapshot
+            from loop_robot.toolchain.model_assets import snapshot
             if (Path(scene).parent/'.loop-assets.json').exists():
                 xml, assets, _ = snapshot(scene)
                 self.spec = mujoco.MjSpec.from_string(xml.decode(), include=assets, assets=assets)
@@ -98,7 +98,7 @@ class MujocoSimulation:
         elif operation in ('robot','asset'):
             if set(config)-{'name','path','position'} or not config.get('path'):
                 raise ValueError('robot requires local MJCF path, name and optional position')
-            from toolchain.composition import child_asset
+            from loop_robot.toolchain.composition import child_asset
             if (Path(config['path']).parent/'.loop-assets.json').exists():
                 child = child_asset(config['path'], name)
             else:
@@ -157,7 +157,7 @@ class MujocoSimulation:
 
     def inspect(self):
         m, d, mj = self.model, self.data, self.mj
-        from toolchain.composition import geom_bounds
+        from loop_robot.toolchain.composition import geom_bounds
         bounds = {}
         for i in range(1,m.nbody):
             ids = [g for g in range(m.ngeom) if m.geom_bodyid[g] == i and m.geom_type[g] != mj.mjtGeom.mjGEOM_PLANE]

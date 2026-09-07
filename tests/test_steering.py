@@ -3,7 +3,7 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import Mock
 
-from terminal.llm import ChatAgent
+from loop_robot.terminal.llm import ChatAgent
 
 
 def call(identity, name):
@@ -69,7 +69,7 @@ class SteeringTests(unittest.TestCase):
 
 class SteeringQueueTests(unittest.IsolatedAsyncioTestCase):
     async def test_pause_clear_media_and_fifo(self):
-        from terminal.interactive import Terminal
+        from loop_robot.terminal.interactive import Terminal
         terminal = SimpleNamespace(paused=True, command_busy=False, pending_command=None, timer=None,
             app=SimpleNamespace(stop_event=SimpleNamespace(is_set=lambda: False)), ui=Mock(),
             queue=deque([('补充目标', [('photo', [{'type': 'image_url', 'image_url': {'url': 'test'}}])]), ('后续', [])]))

@@ -1,7 +1,7 @@
 """Render saved model history without recording events or executing tools."""
-from terminal.markdown import BoldText
-from terminal.tool_display import ToolDisplay
-from terminal.colors import paint, tool_call, tool_result
+from loop_robot.terminal.markdown import BoldText
+from loop_robot.terminal.tool_display import ToolDisplay
+from loop_robot.terminal.colors import paint, tool_call, tool_result
 
 
 def safe_text(value):

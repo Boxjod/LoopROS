@@ -34,7 +34,7 @@ class SimulationControl:
         self.paused, self.speed = False, 1.0
         self.reset()
         try:
-            from toolchain.viewer_motion import Motion
+            from loop_robot.toolchain.viewer_motion import Motion
         except ModuleNotFoundError:
             from viewer_motion import Motion
         self.motion=Motion(mujoco,model,data)
@@ -45,7 +45,7 @@ class SimulationControl:
         else:
             self.mj.mj_resetData(self.model, self.data)
         try:
-            from toolchain.viewer_motion import repair_invalid_home
+            from loop_robot.toolchain.viewer_motion import repair_invalid_home
         except ModuleNotFoundError:
             from viewer_motion import repair_invalid_home
         repair_invalid_home(self.mj,self.model,self.data)

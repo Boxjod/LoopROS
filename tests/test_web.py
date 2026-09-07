@@ -6,11 +6,11 @@ import tempfile
 import unittest
 from unittest.mock import patch, Mock
 
-from terminal import web
-from terminal.app import App, TOOLS
-from terminal.config import load_config
-from terminal.llm import ChatAgent
-from terminal.protocols import encode
+from loop_robot.terminal import web
+from loop_robot.terminal.app import App, TOOLS
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.llm import ChatAgent
+from loop_robot.terminal.protocols import encode
 
 
 def page(body, kind="text/html", url="https://example.com"):
@@ -128,7 +128,7 @@ class WebTests(unittest.TestCase):
             app = App(load_config(Path(root) / "missing"), root)
             try:
                 app.permissions.set_mode("plan")
-                with patch("terminal.app.web_dispatch", return_value={"title": "Example", "source_url": "https://example.com"}) as fetch:
+                with patch("loop_robot.terminal.app.web_dispatch", return_value={"title": "Example", "source_url": "https://example.com"}) as fetch:
                     app.tool("web_fetch", {"url": "https://example.com"})
                     app.scheduled_tool("web_fetch", {"url": "https://example.com"})
                     app.permissions.set_rule("web_fetch", "deny")
@@ -141,7 +141,7 @@ class WebTests(unittest.TestCase):
                     request_id = next(iter(app.permissions.requests()))
                     app.permissions.approve(request_id, app.tool)
                     self.assertEqual(fetch.call_count, 3)
-                    client = Mock()
+                    client = Mock(config={})
                     client.complete.side_effect = [
                         {"tool_calls": [{"id": "web1", "function": {"name": "web_fetch", "arguments": '{"url":"https://example.com"}'}}]},
                         {"content": "来源：https://example.com"}]

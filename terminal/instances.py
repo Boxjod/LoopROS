@@ -1,7 +1,8 @@
 """Lease a foreground runtime slot while keeping shared state in one directory."""
 from itertools import count
 from pathlib import Path
-from terminal.platform_support import lock_terminal
+from loop_robot.terminal.platform_support import lock_terminal
+from loop_robot.release_runtime import runtime_directories, state_startup
 
 
 class TerminalInstance:
@@ -11,6 +12,10 @@ class TerminalInstance:
         self.stream = None
 
     def __enter__(self):
+        with state_startup(self.state_dir):
+            return self._acquire()
+
+    def _acquire(self):
         for number in count(1):
             directory = self.state_dir if number == 1 else self.state_dir / 'terminals' / str(number)
             directory.mkdir(parents=True, exist_ok=True)
@@ -27,7 +32,7 @@ class TerminalInstance:
             return self
 
     def others_active(self):
-        paths = [self.state_dir / 'terminal.lock', *self.state_dir.glob('terminals/*/terminal.lock')]
+        paths = [directory / 'terminal.lock' for directory in runtime_directories(self.state_dir)]
         for path in paths:
             if path.parent == self.runtime_dir:
                 continue

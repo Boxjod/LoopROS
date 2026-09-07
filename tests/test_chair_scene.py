@@ -6,10 +6,10 @@ import unittest
 from unittest.mock import patch
 import xml.etree.ElementTree as ET
 
-from terminal.app import App
+from loop_robot.terminal.app import App
 from model_fixture import call
-from terminal.config import load_config
-from toolchain.scenes import chair_scene, compile_scene, save_chair_scene
+from loop_robot.terminal.config import load_config
+from loop_robot.toolchain.scenes import chair_scene, compile_scene, save_chair_scene
 
 
 class ChairSceneTests(unittest.TestCase):
@@ -53,7 +53,7 @@ class ChairSceneTests(unittest.TestCase):
             app = App(load_config(), directory)
             try:
                 app.scene('生成一个椅子')
-                with patch('toolchain.scenes.generate_scene', side_effect=ValueError('unsupported requested chair')):
+                with patch('loop_robot.toolchain.scenes.generate_scene', side_effect=ValueError('unsupported requested chair')):
                     with self.assertRaises(ValueError):
                         app.scene('生成一个折叠椅')
                 with patch.object(app.viewer, 'open') as opened:

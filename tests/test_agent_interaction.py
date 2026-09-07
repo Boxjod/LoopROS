@@ -4,9 +4,9 @@ from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
-from terminal.app import App
-from terminal.config import load_config
-from terminal.command_display import format_command_result
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.command_display import format_command_result
 from test_agent_ipc import request_worker
 
 

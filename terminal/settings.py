@@ -3,10 +3,10 @@ import json
 from pathlib import Path
 import tempfile
 
-from terminal.files import schema
-from terminal.config import ROOT, user_config_file, validate_provider
-from terminal.home import loop_home
-from terminal.coding import atomic_text
+from loop_robot.terminal.files import schema
+from loop_robot.terminal.config import ROOT, user_config_file, validate_provider
+from loop_robot.terminal.home import loop_home
+from loop_robot.terminal.coding import atomic_text
 
 TARGETS = ['permissions', 'profiles', 'config', 'agents', 'task_runtime', 'deployment']
 TOOLS = [
@@ -19,7 +19,7 @@ NAMES = {t['function']['name'] for t in TOOLS}
 
 
 def paths(app):
-    from terminal.task_service import policy_path
+    from loop_robot.terminal.task_service import policy_path
     return {'config': loop_home() / 'config.json', 'agents': user_config_file('agents.json'),
             'task_runtime': policy_path(app.state_dir), 'deployment': app.state_dir / 'deployment.json'}
 
@@ -48,6 +48,8 @@ def read(app, target=None):
         return {'profiles': app.providers.list(), 'selected': app.providers.selected()}
     path = paths(app)[target]
     value = json.loads(path.read_text()) if path.exists() else None
+    if target == 'config' and isinstance(value, dict):
+        value = {k:v for k,v in value.items() if k != 'endpoints'}
     if value is not None:
         no_secrets(value)
     result = {'path': str(path), 'value': value}
@@ -61,10 +63,10 @@ def read(app, target=None):
 
 
 def idle(app):
-    from terminal.permissions import ApprovalPreconditionError
+    from loop_robot.terminal.permissions import ApprovalPreconditionError
     if any(r['state'] in ('running', 'queued') for r in app.runtime.records.values()):
         raise ApprovalPreconditionError('Wait for or cancel running subagents before changing configuration')
-    from terminal.task_service import status
+    from loop_robot.terminal.task_service import status
     if status(app.state_dir)['process_alive']:
         raise ApprovalPreconditionError('Stop the task supervisor before changing configuration')
 
@@ -108,8 +110,8 @@ def update(app, target, value):
                 raise ValueError('Unknown profile operation')
             return {'applied': True, **read(app, target)}
         if target == 'deployment':
-            from core.deployment import Deployment
-            from terminal.carriers import Carriers, bind, validate_bindings
+            from loop_robot.core.deployment import Deployment
+            from loop_robot.terminal.carriers import Carriers, bind, validate_bindings
             if set(value) != {'manifest', 'host_id'}:
                 raise ValueError('deployment requires manifest and host_id')
             if any(n['process_alive'] for n in app.nodes.status()['nodes']):
@@ -129,13 +131,18 @@ def update(app, target, value):
                 # Validate the replacement independently of existing user overrides.
                 validate_config(value)
             elif target == 'agents':
-                from terminal.agents import AgentRuntime
+                from loop_robot.terminal.agents import AgentRuntime
                 definitions = AgentRuntime.load_definitions(candidate, {'run_sim', 'generate_scene'})
                 path = loop_home() / 'agents.json'
             elif target == 'task_runtime':
-                from terminal.task_supervisor import load_policy
+                from loop_robot.terminal.task_supervisor import load_policy
                 load_policy(candidate, {t['function']['name'] for t in app.agent.tools} - NAMES)
                 path = app.state_dir / 'task_runtime.json'
+        if target == 'config':
+            from loop_robot.terminal.home import _key_config
+            entries = _key_config().get('endpoints')
+            if entries is not None:
+                encoded = json.dumps({**value, 'endpoints':entries}, ensure_ascii=False, indent=2) + '\n'
         receipt = atomic_text(app, path, encoded)
         if target == 'agents':
             app.runtime.definitions = definitions
@@ -153,7 +160,7 @@ def validate_config(value):
         if section in ('llm', 'expert'):
             validate_provider({**defaults['llm'], **fields})
         elif section == 'resources':
-            from core.resources import validate_policy
+            from loop_robot.core.resources import validate_policy
             validate_policy(fields)
         elif section == 'scene':
             if set(fields) - {'backend'} or fields.get('backend', 'mujoco') != 'mujoco':
@@ -163,7 +170,7 @@ def validate_config(value):
                 if name not in defaults['services'] or not isinstance(spec, dict) or not {'argv', 'cwd'} <= set(spec) or set(spec) - {'argv', 'cwd', 'resources'}:
                     raise ValueError('Services require pi05/act with argv and cwd')
                 if 'resources' in spec:
-                    from core.resources import validate_request
+                    from loop_robot.core.resources import validate_request
                     validate_request(spec['resources'])
                 if not isinstance(spec['argv'], list) or not all(isinstance(s, str) for s in spec['argv']) or not (spec['cwd'] is None or isinstance(spec['cwd'], str)):
                     raise ValueError('Invalid service argv/cwd')

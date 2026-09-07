@@ -16,6 +16,8 @@ jobs:
         with:
           python-version: ${{ matrix.python }}
       - run: python -m pip install -e .
+      - run: python scripts/check_public_source.py
+      - run: python -m unittest discover -s tests -p test_public_source.py -v
       - run: loop --version
       - run: loop ros --once /status
       - run: python -m unittest discover -s tests -p test_platform_support.py -v

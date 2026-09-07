@@ -4,12 +4,31 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.home import initialize, save_key, saved_key, harness_prompt, looper_home
-from terminal.config import load_config
-from terminal.app import App
+from loop_robot.terminal.home import initialize, save_key, saved_key, harness_prompt, looper_home
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.app import App
 
 
 class HomeTests(unittest.TestCase):
+    def test_migrate_keys_to_url_config_without_losing_other_keys(self):
+        import json
+        from loop_robot.terminal.home import credential_id
+        root = initialize()
+        first = {'base_url':'https://first.test/v1','api_key_env':'API_KEY'}
+        second = {**first,'base_url':'https://second.test/v1'}
+        (root/'config.json').write_text(json.dumps({'llm':{'model':'unchanged'}}))
+        old = root/'credentials.json'
+        old.write_text(json.dumps({credential_id(first):'test-first',credential_id(second):'test-second'}))
+        old.chmod(0o600)
+        self.assertEqual(saved_key(first),'test-first')
+        self.assertFalse(old.exists())
+        self.assertEqual(saved_key(second),'test-second')
+        self.assertIsNone(saved_key({**first,'base_url':'https://unknown.test'}))
+        data = json.loads((root/'config.json').read_text())
+        self.assertEqual(data['llm']['model'],'unchanged')
+        self.assertEqual({e['base_url'] for e in data['endpoints']},{first['base_url'],second['base_url']})
+        self.assertNotIn('endpoints',load_config(root/'absent'))
+
     def setUp(self):
         self.tmp = tempfile.TemporaryDirectory()
         self.env = patch.dict(os.environ, {"LOOPER_HOME": self.tmp.name})
@@ -28,7 +47,7 @@ class HomeTests(unittest.TestCase):
         self.assertEqual(saved_key(config), "test-only-secret")
         self.assertIsNone(saved_key(dict(config, base_url="https://other.example/v1")))
         if os.name != "nt":
-            self.assertEqual((root / "credentials.json").stat().st_mode & 0o777, 0o600)
+            self.assertEqual((root / "config.json").stat().st_mode & 0o777, 0o600)
 
     def test_global_config_harness_and_save_command(self):
         root = initialize()
@@ -41,7 +60,7 @@ class HomeTests(unittest.TestCase):
         app = App(config, root / "state")
         try:
             self.assertIn("Be concise.", app.agent.context_provider('hello')['system_prompt'])
-            with patch("terminal.app.getpass.getpass", return_value="test-only"):
+            with patch("loop_robot.terminal.app.getpass.getpass", return_value="test-only"):
                 self.assertIn("saved", app.dispatch("/key save"))
             self.assertEqual(saved_key(app.client.config), "test-only")
             with self.assertRaises(ValueError):

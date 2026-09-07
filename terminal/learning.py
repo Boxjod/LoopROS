@@ -2,11 +2,11 @@
 import json
 import re
 import uuid
-from core.experience import ExperienceStore
-from core.memory_layers import MemoryLayers, memory_provenance
-from core.tasks import assess
-from terminal.files import schema
-from terminal.memory_facts import extract
+from loop_robot.core.experience import ExperienceStore
+from loop_robot.core.memory_layers import MemoryLayers, memory_provenance
+from loop_robot.core.tasks import assess
+from loop_robot.terminal.files import schema
+from loop_robot.terminal.memory_facts import extract
 
 TOOLS = [
     schema('experience_search', 'Search task/session summaries, durable details/procedures, tool experiences and learning notes in the current workspace/provider. Historical observations are not current state.',
@@ -153,7 +153,7 @@ class Learning:
             steps = [r for r in receipts if r['tool'] not in IGNORE and not r['tool'].startswith('session_task_')]
             self.layers.procedure(self.scope(), self.clean({'id': task_id, 'spec': {'goal': task['goal'], 'checks': task['checks']}}, 4000),
                                   self.clean(steps, 2000), identity, verified)
-            from terminal.connection_memory import remember_success
+            from loop_robot.terminal.connection_memory import remember_success
             remember_success(self, receipts, task['checks'], identity, verified)
         return identity
 
@@ -178,7 +178,7 @@ class Learning:
         self.retain(identity, memories, task['spec'].get('session_id'), task['id'],
                     {'goal': task['spec']['goal'], 'state': task['state'], 'next_step': feedback.get('next_step', '')})
         self.layers.procedure(self.scope(), self.clean(task, 4000), self.clean(receipts, 2000), identity, verified)
-        from terminal.connection_memory import remember_success
+        from loop_robot.terminal.connection_memory import remember_success
         remember_success(self, receipts, task['spec'].get('checks', []), identity, verified)
         return identity
 

@@ -7,9 +7,11 @@ import sys
 import time
 from unittest.mock import patch
 sys.path.insert(0, str(Path(__file__).resolve().parents[2]))
-from terminal.app import App
-from terminal.config import load_config
-from terminal.interactive import Terminal
+from launcher import _bootstrap
+_bootstrap(legacy=False)
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.interactive import Terminal
 
 
 def agent_ui_worker(pipe, definition, config, key, task, schemas):
@@ -55,9 +57,9 @@ def main():
             time.sleep(.25)
         return '中文流式反馈'
     app.agent.reply = reply
-    rows = [{'id':'model-a','company':'A','date':'2026-09-01'}, {'id':'model-b','company':'B','date':'Unknown'}]
+    rows = [{'id':'model-a','company':'A','date':'2026-09-01'}, {'id':'model-b','company':'B','date':'Unknown','reasoning_efforts':['low','high']}]
     try:
-        with patch('terminal.setup.discover_models', return_value=rows):
+        with patch('loop_robot.terminal.setup.discover_models', return_value=rows):
             asyncio.run(Terminal(app).run())
     finally:
         app.close()

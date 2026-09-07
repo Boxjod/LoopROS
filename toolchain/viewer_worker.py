@@ -96,6 +96,8 @@ def main():
 
 if __name__ == '__main__':
     sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
-    from release_runtime import runtime_session
+    from launcher import _bootstrap
+    _bootstrap(legacy=False)
+    from loop_robot.release_runtime import runtime_session
     with runtime_session():
         main()

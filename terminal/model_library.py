@@ -43,7 +43,7 @@ def install(directory, model):
         # Reuse a pinned, fully verified install without requiring network access.
         installed = sorted((Path(directory) / model).glob('*/.loop-assets.json'), key=lambda p: p.stat().st_mtime, reverse=True)
         if installed:
-            from toolchain.model_assets import snapshot
+            from loop_robot.toolchain.model_assets import snapshot
             metadata = json.loads(installed[0].read_text())
             snapshot(installed[0].parent / 'scene.xml')
             return {**metadata, 'scene': str((installed[0].parent / 'scene.xml').resolve()), 'cached': True}
@@ -61,7 +61,7 @@ def install(directory, model):
             raise ValueError('Model exceeds the 300 MiB / 1500 file limit')
         destination = Path(directory) / model / listing['commit']
         manifest_path = destination / '.loop-assets.json'
-        from toolchain.model_assets import safe_path, snapshot
+        from loop_robot.toolchain.model_assets import safe_path, snapshot
         if manifest_path.exists():
             snapshot(destination / 'scene.xml')
             return {**json.loads(manifest_path.read_text()), 'scene': str((destination / 'scene.xml').resolve()), 'cached': True}
@@ -121,14 +121,14 @@ def search(directory, query, internet=True, before_web=None):
         result['matches']=[{'model':name,'source_url':'https://github.com/'+REPOSITORY+'/tree/'+listing['commit']+'/'+name,'local':False} for name in listing['models'] if term in name or all(token in name for token in term.split('_'))]
     except (OSError,ValueError) as exc: result['official_error']=str(exc)[:300]
     if not result['matches'] and internet:
-        from terminal.household_assets import search as household_search, SOURCES
+        from loop_robot.terminal.household_assets import search as household_search, SOURCES
         if before_web: before_web(query)
         result['searched'].append('official_fuel_household')
         result['sources']=SOURCES
         try: result['matches']=household_search(query)
         except (OSError,ValueError) as exc: result['household_error']=str(exc)[:300]
     if not result['matches'] and internet:
-        from terminal.web import dispatch
+        from loop_robot.terminal.web import dispatch
         if before_web: before_web(query)
         result['searched'].append('public_web')
         result['candidates']=dispatch('web_search',{'query':query+' MuJoCo MJCF model github mesh obj','limit':5}).get('results',[])
@@ -141,7 +141,7 @@ def install_public(directory, source):
     MJCF and OBJ/STL entrypoints only; no archives, Python, plugins or scripts.
     """
     from urllib.parse import urlsplit, unquote
-    from toolchain.model_assets import safe_path, snapshot
+    from loop_robot.toolchain.model_assets import safe_path, snapshot
     import xml.etree.ElementTree as ET
     url=urlsplit(source)
     parts=url.path.strip('/').split('/')
@@ -206,19 +206,19 @@ def install_public(directory, source):
 def resolve(directory, query, source=None, before_web=None):
     if source:
         if source.startswith('https://fuel.gazebosim.org/'):
-            from terminal.household_assets import install as install_fuel
+            from loop_robot.terminal.household_assets import install as install_fuel
             return install_fuel(directory,source)
         return install_public(directory,source)
     findings=search(directory,query,before_web=before_web)
     if findings['matches']:
         match=findings['matches'][0]
         if match.get('local'):
-            from toolchain.model_assets import snapshot
+            from loop_robot.toolchain.model_assets import snapshot
             snapshot(match['scene'])
             meta=json.loads(Path(match['scene']).with_name('.loop-assets.json').read_text())
             return {**meta,'scene':match['scene'],'cached':True}
         if match.get('provider')=='fuel':
-            from terminal.household_assets import install as install_fuel
+            from loop_robot.terminal.household_assets import install as install_fuel
             errors=[]
             for candidate in findings['matches']:
                 try: return install_fuel(directory,candidate['source_url'])

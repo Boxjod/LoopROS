@@ -4,11 +4,11 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
+from loop_robot.terminal.app import App
 from model_fixture import call
-from terminal.config import load_config, ROOT
-from toolchain.composition import compose, load_spec, state, geom_bounds
-from toolchain.model_assets import snapshot
+from loop_robot.terminal.config import load_config, ROOT
+from loop_robot.toolchain.composition import compose, load_spec, state, geom_bounds
+from loop_robot.toolchain.model_assets import snapshot
 
 
 class CompositionTests(unittest.TestCase):
@@ -56,7 +56,7 @@ class CompositionTests(unittest.TestCase):
                 compose({'move':[{'name':'cube','support':'table','position':[9,0,0]}]},d,current=second['scene'])
 
     def test_panda_real_assets_pose_and_incremental_addition(self):
-        from terminal.model_library import resolve
+        from loop_robot.terminal.model_library import resolve
         directory=ROOT/'artifacts/terminal/models'
         if not list((directory/'franka_emika_panda').glob('*/.loop-assets.json')):
             self.skipTest('Official Panda asset cache unavailable')

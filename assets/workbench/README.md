@@ -1,0 +1,11 @@
+# Local simulation workbench
+
+`workbench.html` adds an actual 3D layout viewer and local simulation controls. Open through `loop web` or, from source, `.venv/bin/python -m terminal.web_workbench`, then visit `http://127.0.0.1:8768/workbench.html`. Optional `--port`, `--state-dir`, `--isaac-config` arguments select the local runtime; MuJoCo requires the sim extra, dataset recording requires h5py. `loop web --help` does not start physics.
+
+The static exported page shows a labelled sample room and local-start instructions. The same page served by the local Python process can create actual MuJoCo/Isaac instances, build a room, import local models, select/move/remove bodies, step/reset physics, configure and capture cameras, define a position task, and record/download HDF5. The right panel is an operator control panel and receipt log; it is not an AI chat interface. Refreshing the page reconnects to the web service's existing instances; stopping that process closes its owned simulations. Instances are separate from other CLI/MCP processes and GUI windows.
+
+MuJoCo layout uses current simulator geometry and transforms; it does not reproduce textures. Isaac layout uses available authored bounding boxes and is explicitly marked approximate; robot meshes may be absent. The camera tab displays actual, timestamped simulator snapshots, with RGB/NPZ downloads and calibration; it is not a live video stream. Reference [simulation contract](../../docs/SIMULATION_WORKBENCH.md). Physics is advanced only through bounded operator actions. A room preset executes sequential additions; if one fails, completed additions remain visible and the failure is reported, without replaying the sequence automatically.
+
+The local stdlib HTTP server listens only on loopback, validates Host/Origin and same-origin action tokens, serves only whitelisted static assets and generated artifacts, and uses the existing PermissionGate. Operator-only one-time approval is available in a separate dialog. There is no browser API to execute arbitrary Python, change model credentials or grant persistent permissions. This local service is not a public multi-user web server. The static website does not automatically connect to localhost.
+
+Runtime assets ship independently of the private website source. [Three.js source and license](THIRD_PARTY.md).

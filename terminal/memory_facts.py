@@ -2,7 +2,7 @@
 import ipaddress
 import json
 import re
-from core.experience import terms
+from loop_robot.core.experience import terms
 
 
 def extract(text, receipts=()):

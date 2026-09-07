@@ -21,7 +21,7 @@ ALIASES={'衣柜':'wardrobe','柜子':'cabinet','橱柜':'cabinet','杯子':'mug
 
 
 def search(query):
-    from terminal.model_library import fetch
+    from loop_robot.terminal.model_library import fetch
     term=ALIASES.get(query.lower(),query.lower())
     rows=json.loads(fetch(API+'models?q='+quote(term)+'&per_page=100'))
     matches=[]
@@ -53,7 +53,7 @@ def convert(files):
     uri=visual.findtext('uri','')
     if uri.startswith('model://'):
         uri=uri[len('model://'):].split('/',1)[-1]
-    from toolchain.model_assets import safe_path
+    from loop_robot.toolchain.model_assets import safe_path
     uri=safe_path(uri)
     if uri not in files or Path(uri).suffix.lower() not in ('.obj','.stl'):
         raise ValueError('Fuel mesh must be an included OBJ/STL file')
@@ -81,8 +81,8 @@ def convert(files):
 
 
 def install(directory, source):
-    from terminal.model_library import fetch, LOCK
-    from toolchain.model_assets import safe_path, snapshot
+    from loop_robot.terminal.model_library import fetch, LOCK
+    from loop_robot.toolchain.model_assets import safe_path, snapshot
     url=urlsplit(source)
     parts=url.path.strip('/').split('/')
     if url.scheme!='https' or url.netloc!='fuel.gazebosim.org' or url.query or url.fragment or len(parts)!=4 or parts[0]!='1.0' or parts[2]!='models' or parts[1] not in ('GoogleResearch','OpenRobotics'):

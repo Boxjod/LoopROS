@@ -10,8 +10,8 @@ import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from unittest.mock import Mock
 
-from terminal.agents import AgentRuntime
-from terminal.llm import QwenClient
+from loop_robot.terminal.agents import AgentRuntime
+from loop_robot.terminal.llm import QwenClient
 
 
 def request_worker(pipe, definition, config, key, task, schemas):
@@ -129,7 +129,7 @@ class AgentIPCTests(unittest.TestCase):
             finally: runtime.close()
 
     def test_sender_binding_permissions_and_no_recursive_spawn(self):
-        from terminal.permissions import PermissionGate
+        from loop_robot.terminal.permissions import PermissionGate
         with tempfile.TemporaryDirectory() as directory:
             client = QwenClient({'base_url': 'http://127.0.0.1:1/v1', 'model': 'fixture', 'api_key_env': 'LOOP_IPC_TEST_KEY', 'timeout_s': 1})
             client.key = 'fixture'
@@ -168,8 +168,8 @@ class AgentIPCTests(unittest.TestCase):
     def test_app_dispatch_uses_same_permission_gate_for_parent_and_child(self):
         import os
         from unittest.mock import patch
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         with tempfile.TemporaryDirectory() as directory, patch.dict(os.environ, {'LOOP_HOME': directory + '/home'}):
             app = App(load_config(), Path(directory) / 'state')
             app.runtime.worker_target = request_worker

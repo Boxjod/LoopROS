@@ -1,7 +1,7 @@
 """Master API for persistent, supervised goals and named event triggers."""
-from core.tasks import TaskStore
-from terminal.task_supervisor import load_policy
-from terminal.task_service import policy_path
+from loop_robot.core.tasks import TaskStore
+from loop_robot.terminal.task_supervisor import load_policy
+from loop_robot.terminal.task_service import policy_path
 
 CHECK={'type':'object','properties':{'tool':{'type':'string'},'path':{'type':'string'},'equals':{},'arguments':{'type':'object'}},'required':['tool','path','equals'],'additionalProperties':False}
 
@@ -18,7 +18,7 @@ NAMES={s['function']['name'] for s in TASK_TOOLS}
 
 
 def dispatch(app,name,args):
-    from terminal.task_service import start,status
+    from loop_robot.terminal.task_service import start,status
     store=TaskStore(app.state_dir/'tasks.sqlite')
     if name=='task_status':
         if set(args)-{'task_id','scope'} or args.get('scope','session') not in ('session','all'): raise ValueError('task_status accepts task_id and scope=session|all')
@@ -32,7 +32,7 @@ def dispatch(app,name,args):
         if set(args)-{'goal','checks'}: raise ValueError('task_submit accepts goal and checks')
         spec={**args,'session_id':app.session_id,'origin':'manual','provider':[app.client.config['base_url'].rstrip('/'),app.client.config['model'],app.client.config.get('protocol','openai')]}
         result=store.submit(spec)
-        from terminal.session import SessionStore
+        from loop_robot.terminal.session import SessionStore
         conversations = SessionStore(app.state_dir/'conversation.sqlite')
         try:
             result['chat_session_id'] = conversations.ensure_task_session(app.client.config, result)
@@ -43,7 +43,7 @@ def dispatch(app,name,args):
         result=store.resume(args['task_id'],args.get('checks'),args.get('message'))
     elif name=='task_signal':
         if set(args)-{'name','payload'}: raise ValueError('Unexpected trigger fields')
-        from terminal.app import TOOLS
+        from loop_robot.terminal.app import TOOLS
         policy=load_policy(policy_path(app.state_dir),{t['function']['name'] for t in TOOLS})
         if not any(t['enabled'] and t['event']==args['name'] for t in policy['triggers']): raise ValueError('No enabled trigger is configured for this event')
         result={'signal_id':store.signal(args['name'],args.get('payload',{}))}
@@ -58,7 +58,7 @@ def resolve_reference(app, reference):
         return store.get(reference)['id']
     except ValueError:
         pass
-    from terminal.titles import task_title
+    from loop_robot.terminal.titles import task_title
     for tasks in (store.list(limit=None, session_id=app.session_id), store.list(limit=None)):
         matches = [task for task in tasks if task_title(task) == reference or task['spec']['goal'] == reference]
         if len(matches) == 1:

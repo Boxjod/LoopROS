@@ -2,7 +2,7 @@
 import hashlib
 import json
 import shlex
-from terminal.skills import schema
+from loop_robot.terminal.skills import schema
 
 TOOLS = [
     schema('skill_executables', 'Inspect offline executable Skills, readable titles, platform support, scripts and package hashes. Optional name inspects only that Skill; reuse an unchanged previously inspected hash without rereading every script. Does not execute.', {'name':{'type':'string'}}, []),
@@ -17,7 +17,7 @@ def node_name(name):
 
 
 def tool(app, name, args):
-    from toolchain.offline_skill import catalog, save_profile, inspect
+    from loop_robot.toolchain.offline_skill import catalog, save_profile, inspect
     fields={'skill_executables':set(),'skill_run':{'name','expected_sha256'},'skill_export':{'profile','name','title'}}
     if not isinstance(args,dict) or (set(args)-{'name'} if name=='skill_executables' else set(args)!=fields[name]): raise ValueError('Invalid executable Skill arguments')
     app.permissions.check(name,args)
@@ -33,7 +33,7 @@ def tool(app, name, args):
 
 
 def dispatch(app, tail):
-    from toolchain.offline_skill import inspect, resolve
+    from loop_robot.toolchain.offline_skill import inspect, resolve
     parts=shlex.split(tail)
     if not parts or parts==['list']:
         rows=app.tool('skill_executables',{})['skills']

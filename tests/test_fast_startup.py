@@ -5,11 +5,11 @@ import threading
 import unittest
 from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from types import SimpleNamespace
-from unittest.mock import patch
+from unittest.mock import Mock, patch
 
-from terminal.llm import QwenClient, ModelAPIError
-from terminal.setup import check_connection, ensure_setup
-from terminal.ui import welcome
+from loop_robot.terminal.llm import QwenClient, ModelAPIError
+from loop_robot.terminal.setup import check_connection, ensure_setup
+from loop_robot.terminal.ui import welcome
 
 
 class FastStartupTests(unittest.TestCase):
@@ -64,8 +64,8 @@ class FastStartupTests(unittest.TestCase):
                                   'protocol': protocol, 'timeout_s': 30}
                         client = QwenClient(dict(config))
                         client.key = 'test-key-never-print'
-                        app = SimpleNamespace(client=client)
-                        with patch('sys.stdout', new_callable=io.StringIO) as output, patch('terminal.setup.quick_setup') as setup:
+                        app = SimpleNamespace(client=client, providers=Mock())
+                        with patch('sys.stdout', new_callable=io.StringIO) as output, patch('loop_robot.terminal.setup.quick_setup') as setup:
                             self.assertTrue(ensure_setup(app, True))
                             setup.assert_not_called()
                         self.assertEqual(app.startup_fast_status, status)
@@ -115,7 +115,7 @@ class FastStartupTests(unittest.TestCase):
 
     def test_noninteractive_skips_probes_and_stale_status(self):
         app = SimpleNamespace(startup_fast_status='active')
-        with patch('terminal.setup.check_connection') as probe:
+        with patch('loop_robot.terminal.setup.check_connection') as probe:
             self.assertTrue(ensure_setup(app, False))
             probe.assert_not_called()
         self.assertIsNone(app.startup_fast_status)

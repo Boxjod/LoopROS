@@ -5,10 +5,10 @@ import time
 from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
-from core.experience import ExperienceStore
-from core.tasks import TaskStore
-from terminal.learning import Learning
-from terminal.task_supervisor import TaskSupervisor
+from loop_robot.core.experience import ExperienceStore
+from loop_robot.core.tasks import TaskStore
+from loop_robot.terminal.learning import Learning
+from loop_robot.terminal.task_supervisor import TaskSupervisor
 
 
 def recall_worker(pipe, definition, config, key, task, schemas):
@@ -164,8 +164,8 @@ class ExperienceTests(unittest.TestCase):
 
 class LearningAppTests(unittest.TestCase):
     def setUp(self):
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         self.temp = tempfile.TemporaryDirectory()
         self.root = Path(self.temp.name)
         self.env = patch.dict('os.environ', {'LOOP_HOME': str(self.root / 'home'), 'LOOP_TASK_AUTOSTART': '0'})
@@ -180,8 +180,8 @@ class LearningAppTests(unittest.TestCase):
         self.temp.cleanup()
 
     def test_real_tool_turn_new_app_recall_and_model_note_revision(self):
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         (self.root / 'example.txt').write_text('serial baud verification')
         call = {'id': 'read-1', 'type': 'function', 'function': {'name': 'read_file', 'arguments': json.dumps({'path': str(self.root / 'example.txt')})}}
         with patch.object(self.app.client, 'complete', side_effect=[{'content': '', 'tool_calls': [call]}, {'content': 'Read complete'}]):
@@ -212,7 +212,7 @@ class LearningAppTests(unittest.TestCase):
         self.assertEqual(self.app.tool('experience_search', {'query': 'serial baud'})['matches'], [])
 
     def test_conversation_only_memory_is_available_to_next_session_model(self):
-        from terminal.session_task import SessionTask
+        from loop_robot.terminal.session_task import SessionTask
         self.app.session_task = SessionTask(identity='first-session')
         with patch.object(self.app.client, 'complete', return_value={'content': '已记录地址，尚未验证连接'}) as complete:
             self.app.agent.reply('记住 Jetson 使用 ssh jetson@192.168.1.19 -p 22')
@@ -259,8 +259,8 @@ class LearningAppTests(unittest.TestCase):
         with self.assertRaises(ValueError): self.app.tool('skill_write', {**args, 'expected_sha256': old['sha256']})
 
     def test_corrupt_learning_database_does_not_prevent_startup_or_chat(self):
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         self.app.close()
         (self.root / 'state' / 'learning.sqlite').write_bytes(b'not a sqlite database')
         self.app = App(load_config(), self.root / 'state')

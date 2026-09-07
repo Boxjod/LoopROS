@@ -242,7 +242,7 @@ def generate_scene(description, primary, expert, directory, complex_task=False,
         return save_default_scene(directory, cube=False)
     prompt = SCENE_PROMPT
     if compose:
-        from toolchain.composition import PROMPT
+        from loop_robot.toolchain.composition import PROMPT
         prompt = "将用户请求转成单个组合编辑JSON，不输出解释、Markdown或XML。只使用下面的顶层字段。\n" + PROMPT + "\n当前场景物品：" + json.dumps(current_context or {},ensure_ascii=False)
     messages = [{"role": "system", "content": prompt}, {"role": "user", "content": description}]
     client = primary  # Legacy expert/complex_task arguments never select another provider.

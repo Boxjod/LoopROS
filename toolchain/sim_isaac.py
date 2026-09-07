@@ -3,7 +3,7 @@ import hashlib
 import math
 from pathlib import Path
 
-from toolchain.sim_cameras import camera_config, calibration, identifier, rotation, vector
+from loop_robot.toolchain.sim_cameras import camera_config, calibration, identifier, rotation, vector
 
 
 class IsaacSimulation:

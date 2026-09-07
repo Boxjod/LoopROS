@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 import uuid
-from terminal.platform_support import venv_python
+from loop_robot.terminal.platform_support import venv_python
 
 
 class ExistingViewer:
@@ -108,8 +108,8 @@ class SimulatorViewer:
                 'pid': self.process.pid if running else None, 'scene': str(self.scene) if self.scene else None}
 
     def open(self, scene, force=False):
-        from core.store import EventStore
-        from core.contracts import Episode, Review, record
+        from loop_robot.core.store import EventStore
+        from loop_robot.core.contracts import Episode, Review, record
         self.directory.mkdir(parents=True,exist_ok=True)
         store=EventStore(self.directory/'control.sqlite')
         before=self.status()
@@ -133,7 +133,7 @@ class SimulatorViewer:
     def _open(self, scene, force=False):
         with self.lock:
             try:
-                from toolchain.model_assets import snapshot
+                from loop_robot.toolchain.model_assets import snapshot
                 _, _, digest = snapshot(scene)
             except OSError:
                 digest = None
@@ -173,9 +173,9 @@ class SimulatorViewer:
             return {'window_open': False, 'error': 'Viewer failed to create a window; inspect the log', 'log': str(log)}
 
     def command(self, **args):
-        from core.store import EventStore
-        from core.contracts import Episode, Review, record
-        from toolchain.viewer_control import validate
+        from loop_robot.core.store import EventStore
+        from loop_robot.core.contracts import Episode, Review, record
+        from loop_robot.toolchain.viewer_control import validate
         validate(args)
         with self.lock:
             self.directory.mkdir(parents=True, exist_ok=True)
@@ -204,7 +204,7 @@ class SimulatorViewer:
                 store.close()
 
     def _command(self, **args):
-        from toolchain.viewer_control import validate
+        from loop_robot.toolchain.viewer_control import validate
         validate(args)
         with self.lock:
             if not self.status()['window_open']:

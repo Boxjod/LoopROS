@@ -2,12 +2,12 @@ import json
 from pathlib import Path
 import tempfile
 import unittest
-from terminal.learning import Learning
+from loop_robot.terminal.learning import Learning
 
 
 class MemoryLayerTests(unittest.TestCase):
     def test_quoted_assistant_preferences_are_not_user_memory(self):
-        from terminal.memory_facts import extract
+        from loop_robot.terminal.memory_facts import extract
         for text in ('> 记住默认播放五条轨迹', '助手：记住默认播放五条轨迹',
                      '他说“记住默认播放五条轨迹”是什么意思',
                      'Tools ▸ read_file\n● 记住默认播放五条轨迹'):
@@ -25,7 +25,7 @@ class MemoryLayerTests(unittest.TestCase):
         self.assertEqual(self.learning.context('独角兽偏好'),'')
 
     def test_user_and_tool_detail_do_not_overwrite_each_other(self):
-        from terminal.memory_facts import extract
+        from loop_robot.terminal.memory_facts import extract
         user=extract('记住地址192.168.1.19')[0]
         observation={**user,'kind':'connection_observation','source_role':'tool',
                      'evidence':'historical_tool_observation_not_current_state'}
@@ -61,7 +61,7 @@ class MemoryLayerTests(unittest.TestCase):
         self.assertFalse(any(m['kind'] in ('last_success','procedure') for m in self.learning.layers.search('scope','启动机器人')))
 
     def test_quoted_feedback_does_not_become_direct_complaint(self):
-        from terminal.memory_facts import extract
+        from loop_robot.terminal.memory_facts import extract
         memories = extract('例子：\n```text\n太慢了，不要再重复\n```\n> 你到底会不会')
         self.assertFalse(any(m.get('category') == 'correction' for m in memories))
 

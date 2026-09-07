@@ -1,6 +1,6 @@
 # Loop ROS release installation and updates
 
-The current source version is **0.0.2**, from [_version.py](../_version.py); the initial release number was **0.0.1**. `pyproject.toml` reads that value dynamically; package and CLI version displays use the same source. This source version bump does not establish a published release. Earlier 0.1.0/0.2.0 wheels were unpublished development candidates, not release history.
+The current source/candidate version is **0.0.3**, from [_version.py](../_version.py); the initial release number was **0.0.1**. `pyproject.toml` reads that value dynamically; package and CLI version displays use the same source. The last recorded hosted release is 0.0.2; see DEPLOYMENT for its exact wheel hash and validation. The 0.0.3 candidate is prepared locally and is not a server publication. Earlier 0.1.0/0.2.0 wheels were unpublished development candidates, not release history.
 
 Release base URL: `https://loopmaster.box2ai.com/LoopROS`, on the authorized server `8.134.90.171`. DNS, certificate dates and verified HTTPS access were checked on 2026-09-07. Publication and client validation receipts are recorded in [DEPLOYMENT](DEPLOYMENT.md); do not infer deployment solely from a local build.
 
@@ -52,11 +52,17 @@ Downloads require verified HTTPS, including redirects, and the wheel must match 
 ## Build and publish
 
 ```sh
-python3 scripts/build_release.py --url https://loopmaster.box2ai.com/LoopROS --output /absolute/new/public-bundle
+.venv/bin/python scripts/build_release.py --url https://loopmaster.box2ai.com/LoopROS --output /absolute/new/public-bundle
 python3 scripts/publish_release.py --bundle /absolute/new/public-bundle --host root@8.134.90.171 --destination /www/wwwroot/loopmaster.box2ai.com/LoopROS
 ```
 
-The builder uses uv, audits wheel inventory, and exports only the wheel, metadata, standalone bootstrap zipapp, platform scripts and the public introduction website and installation guide. Private project deployment/runbook documents are not included. The publisher checks an explicit file whitelist and all checksums locally and on the server, stages under `/root/workspaces/LoopROS/releases`, refuses overwriting changed versioned artifacts, and publishes `latest.json` last. Never republish changed code with the same released version number. No existing website root or nginx/TLS configuration needs replacement.
+The builder uses uv, audits wheel inventory, and exports only the wheel, metadata, standalone bootstrap zipapp, platform scripts. Website files and examples are excluded from wheel and release source snapshots. Only required default scenes (`assets/simulation`) and local workbench assets (`assets/workbench`, including its license) ship as runtime resources. Website source stays outside Git and is backed up privately on the server; website publishing is a separate operation. Private project deployment/runbook documents are not included. The publisher checks an explicit file whitelist and all checksums locally and on the server, stages under `/root/workspaces/LoopROS/releases`, refuses overwriting changed versioned artifacts, and publishes `latest.json` last. Never republish changed code with the same released version number. No existing website root or nginx/TLS configuration needs replacement.
+
+The release builder requires Python 3.11+ for standard-library TOML parsing (the normal source installer prepares 3.12). Runtime Python 3.10+ and the 3.8+ bootstrap remain supported. New runtime files must be explicitly reviewed into the index; the builder refuses untracked runtime source and missing declared data. It installs the actual wheel into a fresh environment and runs package imports and offline `--once /status` in a temporary user/state directory before exporting any bundle. Wheel and bootstrap bytes come from the same copied source snapshot. The publisher validates both latest manifests and requires identical contents.
+
+For Git source preparation, run `python3 scripts/check_public_source.py`. This workspace uses `.githooks/pre-push` via the repository-local `core.hooksPath`; the hook checks the index and outgoing commits for ignored/private user content. New checkouts may enable it with `git config --local core.hooksPath .githooks` after inspecting any existing hook configuration. These path checks do not certify the contents of internal deployment/research records; public source preparation remains separate from the wheel whitelist.
+
+Source migration checks the root runtime and every `terminals/*` slot, including terminal/service locks and viewer ownership. New terminal/service startup shares the state migration gate, so it cannot acquire a slot while migration holds that gate. Existing managed runtime leases remain independent and authoritative for installed releases.
 
 The [tag workflow](../.github/workflows/release.yml) checks `v<version>` against the single version source, runs release regressions, builds the bundle and attaches public artifacts to a GitHub Release on a tag event. It is configured, not an executed GitHub run; no repository/tag is created automatically by local builds. Server upload remains the explicit publisher command using existing SSH authorization.
 

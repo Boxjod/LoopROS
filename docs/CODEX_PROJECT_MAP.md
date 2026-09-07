@@ -2,9 +2,12 @@
 
 | 任务 | 权威文件／符号 | 验证 |
 | --- | --- | --- |
+| 0.0.3 核心／发行审查整改与候选验收 | [审查及进度](research/core-release-review.md)、[构建](../scripts/build_release.py)、[源码上传检查](../scripts/check_public_source.py)、[迁移锁](../release_runtime.py)、[模拟反馈](../toolchain/feedback.py) | test_public_source、test_updates、test_process_nodes、test_loop；独立 wheel 安装／status／旧版更新与回滚 |
 | 每次启动新会话／手动恢复／多个 loop 窗口与进程隔离 | [运行槽](../terminal/instances.py)、[CLI/App](../terminal/app.py)、[会话锁与回执](../terminal/session.py)、[Node所有权](../core/nodes.py)、[说明](TERMINAL.md#多终端共享状态目录2026-09-07) | test_interactive＋test_session_resume（重启新会话、旧检查点归档）；test_multi_terminal＋test_multi_terminal_render（真实双PTY中文流式／草稿／恢复）；test_nodes.NodeRuntimeTests |
 | 用户生成代码分类／项目与型号索引／根脚本迁移 | [存放规则](GENERATED_CODE.md)、[文件工具](../terminal/coding.py)、[模型上下文](../terminal/conversation_context.py)、[发行过滤](../scripts/build_release.py)；本地入口 user_projects/README.md | test_coding_agent、test_public_source；迁移哈希与AST、暂存索引检查 |
 | 用户Skills／未审工具禁止上传 | [.gitignore](../.gitignore)、[用户目录](USER_HOME.md)、[发行构建](../scripts/build_release.py) | test_public_source；git ls-files -ci --exclude-standard 应为空 |
+| 精简发行／官网源码私有备份／示例不入包 | [打包清单](../pyproject.toml)、[构建](../scripts/build_release.py)、[发布白名单](../scripts/publish_release.py)、[备份回执](DEPLOYMENT.md) | test_public_source、test_updates；实际 wheel 清单与项目外 --version／web --help |
+| Rust 端侧核心／ESP32 Arduino C++／C ABI／裸机交叉编译 | [范围与验证](RUST_CORE.md)、[Rust](../rust/README.md)、[固件](../firmware/esp32/README.md)、[验证入口](../scripts/validate_rust_core.py) | Rust 单测／Clippy、C++ ABI、RISC-V／Cortex-M0+ 构建、ESP32-C3 完整固件；无实机验收 |
 | Agent标题选择／消息回执／同伴结果／交互权限 | [运行时](../terminal/agents.py)、[补全](../terminal/completion.py)、[显示](../terminal/command_display.py)、[规范](AGENT_RUNTIME.md) | test_agent_terminal（真实PTY中文流式）、test_agent_interaction、test_agent_ipc、test_agents |
 | 无损压缩／上下文预算／Skill资源／Reader与监管线程 | [上下文视图](../terminal/context_window.py)、[Skills](../terminal/skills.py)、[Agent运行时](../terminal/agents.py)、[改进对照](research/agent-cli-capability-upgrade.md) | test_context_window、test_skills、test_agents、test_agent_ipc、test_slash_terminal、test_steering_render |
 | 厂商 CLI／harness 源码参考 | [调研与克隆记录](research/vendor-open-agent-cli.md)、[本地副本清单](../reference/Agentic/README.md) | Git origin、HEAD、工作区状态与对象完整性；未安装运行 |
@@ -25,20 +28,20 @@
 | 日常家具/GSO/Fuel下载、衣柜、鼠标拖拽 | [household_assets](../terminal/household_assets.py)、[worker](../toolchain/viewer_worker.py)、[说明](HOUSEHOLD_ASSETS.md) | test_household_assets；真实X11拖球/Control滑条/空格 |
 | 已授权服务器／暂存与上线边界 | [DEPLOYMENT](DEPLOYMENT.md) | root SSH已验证；最终HTTPS域名未确定 |
 | HTTPS发布／uv安装／update与回滚／版本管理 | [发布规范](RELEASES.md)、[builder](../scripts/build_release.py)、[client](../release_client.py) | test_releases＋test_updates；真实升级/回滚/卸载见 RUNBOOK；发布回执见 DEPLOYMENT |
-| 双语官网／GitHub README Docs／各系统安装与单独部署 | [英文网页](../website/index.html)、[中文网页](../website/zh-CN.html)、[双语 README](../README.zh-CN.md)、[网页导出](../scripts/build_website.py)、[网页发布](../scripts/publish_website.py)、[Shell](../scripts/install.sh)、[PowerShell](../scripts/install.ps1)、[安装说明](INSTALL.md) | Shell --check、JS语法／交互检查；Windows实机待验证 |
+| 双语官网／板卡安装指南／源码备份与单独部署 | 本地 website/（服务器私有备份）、[导出](../scripts/build_website.py)、[发布](../scripts/publish_website.py)、[备份](../scripts/backup_website.py)、[安装说明](INSTALL.md) | website.test.cjs、validate_install_website.py（双语／板卡命令／桌面手机）；Windows与ARM实机待验证 |
 | Loop ROS 品牌／loop ros／旧命令兼容 | [package](../pyproject.toml)、[installer](../scripts/install.py)、[App](../terminal/app.py) | test_branding＋项目外启动 |
 | 旧名称清理／目录改名／环境修复／状态迁移 | [检查及处理记录](../../projects/reports/12_loopros_legacy_name_audit.md)、[home](../terminal/home.py)、[USER_HOME](USER_HOME.md) | test_branding：状态路径兼容、回滚、优先级；pip check＋项目外启动 |
 | 跨平台安装与边界 | [平台规范](PLATFORMS.md)、[platform_support](../terminal/platform_support.py)、[安装](INSTALL.md) | test_platform_support；CI尚未执行 |
 | MHS 调研／设备契约与技能闭环建议 | [研究报告](../../projects/reports/08_mhs_insights_for_looper.md) | 官方披露＋本地代码对照；未接入 MHS |
-| 启动连接失败恢复／TLS证书／供应商与接口类型配置 | [setup](../terminal/setup.py)、[protocols](../terminal/protocols.py)、[向导](QUICK_SETUP.md) | test_model_connection＋test_setup＋test_setup_startup：本地 HTTP 401→PTY向导→Responses成功→退出 |
+| 启动连接检测／同 API 备选模型探测／失败恢复／重复配置合并／默认与测试状态／TLS证书／供应商与接口类型配置 | [setup](../terminal/setup.py)、[protocols](../terminal/protocols.py)、[向导](QUICK_SETUP.md) | test_model_connection＋test_setup＋test_setup_startup：本地 HTTP 401→PTY向导→Responses成功→退出 |
 | 真实终端评估／JSON折叠／计算回执／异步取消 | [评估](../../projects/reports/13_terminal_harness_evaluation.md)、[App](../terminal/app.py)、[ChatAgent](../terminal/llm.py)、[显示](../terminal/tool_display.py) | test_harness_behavior＋test_stream_completion＋中文PTY；Qwen真实对话记录 |
 | 电机SDK接入／全部执行授权 | [缺口与来源](../../projects/reports/14_motor_driver_integration_gap.md)、[权限](../terminal/permissions.py)、[机器人库清单](../terminal/robotics.py) | test_harness_behavior＋test_control＋test_robotics；真机型号待确认 |
 | 用户全局目录／API Key／harness／Skills及换设备迁移 | [home](../terminal/home.py)、[config](../terminal/config.py)、[约定](USER_HOME.md) | test_home＋test_user_portability：地址隔离、权限、加载、保存、用户覆盖及整包迁移 |
 | uv 引导／Python 3.8 安装／命令冲突备份切换／欢迎页 | [install](../scripts/install.py)、[package](../pyproject.toml)、[launcher](../launcher.py)、[UI](../terminal/ui.py)、[安装说明](INSTALL.md) | test_install＋test_platform_support；Python 3.8 引导与项目外 loop --version |
 | core常驻多进程／Loop Node／终端焦点切换 | [NodeRuntime](../core/nodes.py)、[节点插件](../toolchain/node_workers.py)、[终端](../terminal/nodes.py)、[NODES](NODES.md) | test_nodes＋test_node_terminal：真实进程／MuJoCo／PTY／崩溃与回收 |
 | 首问与最近问题标题／标题选择与任务显示 | [titles](../terminal/titles.py)、[SessionStore](../terminal/session.py)、[补全](../terminal/completion.py)、[终端](../terminal/interactive.py) | test_titles＋test_session_resume＋test_session_render：首末问题、重名稳定序号、标题带空格、中文 PTY 与 ID 隐藏 |
-| Session 内工作记录／自编工具／调试反馈 harness | [SessionTask](../terminal/session_task.py)、[自编工具](../terminal/user_tools.py)、[工作流](../configs/workflow_harness.md)、[说明](CODING_AGENT.md) | test_task_scope：会话归属、迁移、历史与通知隔离；test_workflow_harness：实际失败→修复→验收、可移植包、/new/恢复、重复失败限制；test_session_render：中文流式 PTY |
-| 修改最主要的反馈 loop | [Loop.run](../core/loop.py) | unittest |
+| Session 内工作记录／自编工具／精选工程工作约定 harness | [SessionTask](../terminal/session_task.py)、[自编工具](../terminal/user_tools.py)、[工作流](../configs/workflow_harness.md)、[说明](CODING_AGENT.md) | test_task_scope：会话归属、迁移、历史与通知隔离；test_workflow_harness：实际失败→修复→验收、可移植包、/new/恢复、重复失败限制；test_session_render：中文流式 PTY |
+| 修改模拟执行与反馈评审 | [Loop.run／NumericalReviewer](../toolchain/feedback.py)；core/loop.py 为兼容导出 | test_loop；真实仿真须单独授权与验收 |
 | 会话保存／恢复／Ctrl-C退出 | [SessionStore](../terminal/session.py)、[Terminal](../terminal/interactive.py) | test_interactive：清空再退出、检查点、0600、服务地址隔离 |
 | 工具JSON默认折叠／摘要耗时／详情查看 | [tool_display](../terminal/tool_display.py)、[SessionStore](../terminal/session.py)、[Terminal](../terminal/interactive.py) | test_tool_display＋test_terminal_render：摘要隐藏原文／details展开／中文并行输入 |
 | 输入框下方提示与任务面板／分隔线／slash回车执行／队列预览及↑编辑／滚动／拖入媒体／剪贴板PNG | [Terminal](../terminal/interactive.py)、[SlashCompleter](../terminal/completion.py)、[操作面板与命令排版](../terminal/command_display.py)、[media](../terminal/media.py)、[read_stream](../terminal/llm.py)、[规范](TERMINAL.md) | test_interactive＋test_terminal_render（中文流式／同时输入，pyte＋PTY）；API替身 |
@@ -46,7 +49,7 @@
 | 默认交互入口／shortcut | [启动器](../loop)、[App](../terminal/app.py)、[终端规范](TERMINAL.md) | test_terminal＋PTY |
 | 会话内修改模式／所有配置入口 | [settings](../terminal/settings.py)、[配置管理](CONTROL_SURFACE.md)、[用户目录](USER_HOME.md) | test_settings：工具循环、审批、持久化、Key 隔离、活动任务保护及各配置校验 |
 | 指令计数／权限／模拟控制 | [control](../terminal/control.py)、[PermissionGate](../terminal/permissions.py)、[规范](CONTROL_SURFACE.md) | test_control＋/commands |
-| 模型 API／前台工具总轮次不限（后台有限预算保留） | [llm](../terminal/llm.py)、[配置](../configs/config.example.json) | test_tool_continuation（超过旧72轮、取消、有限调用者）；API 替身测试，线上未测 |
+| 模型 API／响应解析诊断／单响应多工具／前台工具总轮次不限（后台有限预算保留） | [llm](../terminal/llm.py)、[配置](../configs/config.example.json) | test_stream_completion（分片多调用、错误分类）、test_model_connection、test_tool_continuation（超过旧72轮、取消、有限调用者）；API 替身测试，线上未测 |
 | 联网搜索／网页读取／城市天气与缺参数补问 | [web](../terminal/web.py)、[对话路由测试](../tests/test_weather_dialog.py)、[使用说明](WEB_TOOLS.md)、[工具分发](../terminal/app.py) | test_web＋test_weather_dialog；模型工具循环／换城／错误与权限；历史真实查询不等于当前模型验收 |
 | API／模型配置选择、自动探测与公司/日期排序、删除与子命令补全 | [探测与向导](../terminal/setup.py)、[独立程序](../model_switch.py)、[ProviderStore](../terminal/providers.py)、[规范](MODEL_SWITCH.md) | test_setup＋test_setup_startup＋test_providers＋test_completion；本地 HTTP/PTY 模型列表与编号选择 |
 | 默认桌面／MuJoCo窗口／自动补依赖 | [viewer](../terminal/viewer.py)、[窗口进程](../toolchain/viewer_worker.py)、[默认场景](../toolchain/scenes.py)、[App](../terminal/app.py) | test_viewer（过期心跳／恢复对话／能力检查）＋真实X11关窗重开；证据 artifacts/terminal/viewer/lifecycle_validation.json |
@@ -58,14 +61,14 @@
 | Master／并行子 Agent 进程与同伴发现/通信 | [AgentRuntime](../terminal/agents.py)、[角色定义](../configs/agents.json)、[规范](AGENT_RUNTIME.md) | test_agents＋test_agent_ipc：真实并行HTTP、双向Pipe消息、身份/权限、取消回收 |
 | pi0.5／ACT 服务调度 | [PolicyServices](../terminal/services.py) | 临时替身进程；实际模型未测 |
 | 公共对象 | [contracts](../core/contracts.py) | unittest |
-| 模拟本体／Master／评审器 | [plugins](../core/plugins.py) | unittest |
+| 模拟本体／Master／评审器 | [参考策略](../toolchain/feedback.py)、[示例本体](../examples/mock_body.py) | test_loop |
 | 保存证据 | [EventStore](../core/store.py) | demo＋SQLite 检查 |
 | 轨迹基础检查 | [trajectory](../toolchain/trajectory.py) | unittest |
 | 轨迹编辑／插值 | [trajectory](../toolchain/trajectory.py) | test_toolchain |
 | MuJoCo 物理执行／reset | [MujocoBody](../toolchain/mujoco_sim.py)、[demo](../examples/run_sim.py) | 可选环境 unittest＋run_sim |
 | Ego2MuJoCo 桥接 | [ego2mujoco](../toolchain/ego2mujoco.py) | 参数检查；全流程未跑 |
 | Mink FK／IK | [MinkKinematics](../toolchain/kinematics.py) | 可选环境 test_mink_fk_ik |
-| ROS 只读观察 | [ros](../toolchain/ros.py) | 缓冲测试；ROS 通信未跑 |
+| ROS 2／ROS 1 多模态观察、原生包启动、地图导出 | [ROS_RUNTIME](ROS_RUNTIME.md)、[ros_node](../toolchain/ros_node.py)、[ros_host](../toolchain/ros_host.py)、[原关节缓冲](../toolchain/ros.py) | test_ros_runtime；test_ros1_integration 原生回环；ROS 2 DDS／真机待验收 |
 | RAM／VRAM 模型池 | [ModelPool](../toolchain/resources.py) | 预算／活动保护／异常测试 |
 | 本机网络信息／已审核通用模块 | [说明](NETWORK_DISCOVERY.md)、[实现](../toolchain/network_discovery.py)、[专项测试](../tests/test_network_discovery.py) | test_network_discovery：只读参数、环境字段、失败隔离、导入无执行；用户2026-09-07审核通过 |
 | 工具链接入方式与边界 | [TOOLCHAIN](TOOLCHAIN.md) | 对照测试记录 |
@@ -97,7 +100,7 @@
 
 | 终端真实重排／三反引号代码块 | [交互渲染](../terminal/interactive.py)、[Markdown](../terminal/markdown.py)、[规范](TERMINAL.md) | test_resize_reflow.ResizeReflowTests（外置 xterm headless）、test_markdown_code、test_slash_terminal |
 
-| website 可视化仿真、相机快照、物体编辑与 HDF5 下载 | [工作台页面](../website/workbench.html)、[交互](../website/workbench.js)、[本地 HTTP 服务](../terminal/web_workbench.py)、[使用说明](../website/README.md) | test_web_workbench：真实 HTTP/MuJoCo/审批/跨站拦截；浏览器完整流程与移动布局；静态导出白名单 |
+| website 可视化仿真、相机快照、物体编辑与 HDF5 下载 | [工作台页面](../assets/workbench/workbench.html)、[交互](../assets/workbench/workbench.js)、[本地 HTTP 服务](../terminal/web_workbench.py)、[使用说明](../assets/workbench/README.md) | test_web_workbench：真实 HTTP/MuJoCo/审批/跨站拦截；浏览器完整流程与移动布局；静态导出白名单 |
 
 | 多行粘贴／图片折叠标签、连续退格整体删除、草稿恢复 | [Composer](../terminal/composer.py)、[输入事件](../terminal/interactive.py)、[SessionStore](../terminal/session.py)、[交互规范](TERMINAL.md) | test_composer、test_interactive、test_composer_render：实际 PTY 中文流式、多图、缩放、重启与附件回执 |
 
@@ -120,3 +123,23 @@
 记忆来源分层／写入与召回审核：`terminal/memory_facts.py`、`terminal/learning.py`、`core/memory_layers.py`、`core/experience.py` → `tests/test_memory_layers.py`、`tests/test_learning.py`、`tests/test_connection_memory.py`；约定见 [LEARNING](LEARNING.md)。
 
 | Task 独立聊天 Session／完整手动工具目录 | [SessionStore](../terminal/session.py)、[任务工具](../terminal/task_tools.py)、[执行器](../terminal/task_supervisor.py)、[交互终端](../terminal/interactive.py) | test_session_resume、test_task_supervisor、test_tool_groups_terminal：独立恢复、共同门禁分发、PTY进入返回 |
+
+执行目标未完成却文字收尾：`terminal/session_task.py:continuation`、`terminal/llm.py:ChatAgent._reply` → `tests/test_foreground_completion.py`；中文执行中介入 → `tests/test_steering_render.py`。
+
+| 验收字段虚构／模型超时续接／回执可读输出 | [SessionTask](../terminal/session_task.py)、[模型循环](../terminal/llm.py)、[工具显示](../terminal/tool_display.py)、[对照记录](research/vendor-open-agent-cli.md#2026-09-08-loop-ros-执行回路与输出对照) | test_foreground_completion、test_read_loop_reasoning、test_tool_display；test_tool_groups_terminal 中文草稿与 stdout 同屏 PTY |
+
+| 工具异步执行／中文停止绕过队列／Python 正常中断 | [交互](../terminal/interactive.py)、[Python runner](../terminal/python_runner.py)、[说明](PYTHON_EXECUTION.md) | test_interactive：忙碌命令中停止与引用边界；test_python_runner：真实 SIGINT 清理／忽略中断；test_tool_groups_terminal：真实 PTY 输入停止不排队 |
+
+| 后台 Task 复用当前 API Key／旧监督器缺凭据 | [task_service.refresh_model](../terminal/task_service.py)、[Key 入口](../terminal/app.py)、[用户目录](USER_HOME.md) | test_shared_task_credentials、test_home、test_task_supervisor、test_user_portability；后台 available 状态不含凭据 |
+
+| 减少重复检索／短正文证据复用／最新大段历史预览 | [上下文](../terminal/context_window.py)、[逐轮记录](../terminal/turn_summary.py)、[模型循环](../terminal/llm.py) | test_context_window、test_read_loop_reasoning：协议配对、完整历史不变、摘要去重和学习边界 |
+
+| 工作站 coding agent 对接机器人 Loop | [SSH＋MCP 方案](research/remote-robot-debugging.md)、[现有 MCP](../terminal/sim_mcp.py) | 官方文档和源码入口已核对；通用网关／跨客户端 attach 尚未实现，未实机部署 |
+
+| 端侧声音／触觉力觉／视觉／SLAM 与 ROS 双版本规划 | [方案](research/ros-sensor-agent-integration.md)、[现有 ROS 观察器](../toolchain/ros.py) | 已核对源码与官方仓库；双版本观察／进程／地图实现见 ROS_RUNTIME；跨机 Agent 协作与真机验收待实现 |
+
+| 模型 API 五次尝试／递增退避／等待中停止 | [ChatAgent](../terminal/llm.py)、[行为](CODING_AGENT.md) | test_foreground_completion、test_model_connection：HTTP 400 请求次数、2/4/8/16 秒、取消、已完成工具不重放 |
+
+| 模型内选择推理强度／保留上下文／输入历史／网关凭据隔离 | [reasoning](../terminal/reasoning.py)、[模型切换](MODEL_SWITCH.md)、[interactive](../terminal/interactive.py) | test_reasoning_choices、test_read_loop_reasoning、test_slash_terminal（真实 PTY） |
+
+| 端口占用／本地 SSH PID 退出／RSS 内存诊断 | [core策略](../core/processes.py)、[Linux适配器](../toolchain/process_control.py)、[门禁与资源](../terminal/process_control.py)、[流程](PROCESS_NODES.md) | test_process_control（真实 socket/PID、身份复用、信号升级、内存压力、SSH替身）、test_process_nodes、test_resource_foundation |

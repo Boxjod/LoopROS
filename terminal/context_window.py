@@ -1,5 +1,6 @@
 """Bounded model views; never mutate the durable conversation."""
 import json
+import copy
 
 
 def size(content):
@@ -19,9 +20,29 @@ def select(history, max_messages=32, budget=12000):
         groups[-1].append(message)
     selected = []
     used = 0
+    compacted = False
     for group in reversed(groups):
         cost = sum(size(m.get('content')) for m in group)
         if len(selected) + len(group) > max_messages or used + cost > budget:
+            # Keep a bounded view of the newest turn instead of losing its
+            # question, answer and every tool pair when one body is large.
+            if not selected and len(group) <= max_messages and budget >= 512 * len(group):
+                view = copy.deepcopy(group)
+                per_message = max(256, budget // len(group) - 64)
+                for message in view:
+                    content = message.get('content')
+                    if isinstance(content, str) and len(content) > per_message:
+                        if message.get('role') == 'tool':
+                            try:
+                                message['content'] = tool_text(json.loads(content), per_message)
+                            except ValueError:
+                                message['content'] = json.dumps({'truncated':True,'excerpt':content[:per_message//2]}, ensure_ascii=False)
+                        else:
+                            half = (per_message - 64) // 2
+                            message['content'] = content[:half] + '\n[History preview shortened; full text is saved.]\n' + content[-half:]
+                view_cost = sum(size(m.get('content')) for m in view)
+                if view_cost <= budget:
+                    selected, used, compacted = view, view_cost, True
             break
         selected = group + selected
         used += cost
@@ -40,6 +61,7 @@ def select(history, max_messages=32, budget=12000):
     return selected, recall, {'stored_messages': len(history), 'selected_messages': len(selected),
         'omitted_messages': len(omitted), 'history_character_units': used,
         'history_budget': budget, 'recall_characters': len(recall), 'message_limit': max_messages,
+        'latest_group_compacted': compacted,
         'measurement': 'characters; media=2000 units each; not tokens; schemas/system/current turn excluded'}
 
 

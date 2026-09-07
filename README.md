@@ -137,11 +137,12 @@ User ↔ Terminal / Master ↔ Model API
 ## Repository layout
 
 - `core/`, `terminal/`, `toolchain/`: Python implementation.
+- `rust/`, `firmware/`: portable Rust kernel and ESP32-C3 Arduino C++ development port. See [scope and build validation](docs/RUST_CORE.md); board operation remains unverified.
 - `configs/`: packaged defaults and key-free configuration examples.
-- `examples/`: demos and sample models; `assets/`: brand images.
+- `examples/`: source-only demos, excluded from installation; `assets/`: branding and required simulation/workbench resources.
 - `scripts/`: source installers, release builder and simulation requirements.
 - `docs/`: project documentation and changelog; `tests/`: verification.
-- `website/`: introduction page; `artifacts/`: ignored local runtime output.
+- `website/`: private local website source, backed up on the server and excluded from Git/releases; `artifacts/`: ignored local runtime output.
 - `user_projects/`: local generated scripts and records, grouped by project and confirmed robot model; excluded from Git and releases. See [storage rules](docs/GENERATED_CODE.md).
 
 The root also serves as the `loop_robot` package, so its Python modules and `loop` / `loop-switch` source launchers remain here.
@@ -170,3 +171,5 @@ Optional dependencies and display availability affect simulation tests. The dete
 ## Design reference
 
 [PhyAgentOS](https://github.com/PhyAgentOS/PhyAgentOS-core) informs the separation of task contracts, execution, evidence and verification. Loop ROS does not implement or claim compatibility with its Forge Gateway or Skill Runtime protocol. Third-party models and assets retain their own licenses and are obtained separately.
+
+ROS integration: ROS 2/ROS 1 observation hosts, bounded sensor summaries, managed native programs and map export. See [ROS runtime](docs/ROS_RUNTIME.md). Noetic loopback transport is tested; ROS 2 DDS and physical hardware validation remain pending.

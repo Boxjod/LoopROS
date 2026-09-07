@@ -10,12 +10,12 @@ from unittest.mock import patch
 from prompt_toolkit.application import create_app_session
 from prompt_toolkit.input import create_pipe_input
 from prompt_toolkit.output import DummyOutput
-from terminal.app import App
-from terminal.config import load_config
-from terminal.interactive import Terminal
-from terminal.llm import ChatAgent, read_stream
-from terminal.media import attachment, dropped_paths, clipboard_image
-from terminal.protocols import encode
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.interactive import Terminal
+from loop_robot.terminal.llm import ChatAgent, read_stream
+from loop_robot.terminal.media import attachment, dropped_paths, clipboard_image
+from loop_robot.terminal.protocols import encode
 
 
 class StreamTests(unittest.TestCase):
@@ -26,7 +26,7 @@ class StreamTests(unittest.TestCase):
             self.assertEqual(dropped_paths(path.as_uri()), [str(path)])
             self.assertEqual(dropped_paths('"' + str(path) + '"'), [str(path)])
             self.assertEqual(dropped_paths('explain ' + str(path)), [])
-        with patch.dict('os.environ', {'DISPLAY': ':0', 'WAYLAND_DISPLAY': ''}), patch('terminal.media.shutil.which', return_value='/usr/bin/xclip'), patch('terminal.media.subprocess.Popen') as spawn:
+        with patch.dict('os.environ', {'DISPLAY': ':0', 'WAYLAND_DISPLAY': ''}), patch('loop_robot.terminal.media.shutil.which', return_value='/usr/bin/xclip'), patch('loop_robot.terminal.media.subprocess.Popen') as spawn:
             process = spawn.return_value
             process.stdout = io.BytesIO(b'\x89PNG\r\n\x1a\nexample')
             process.wait.return_value = 0
@@ -92,12 +92,12 @@ class StreamTests(unittest.TestCase):
         self.assertEqual(next(m for m in client.messages if m["role"] == "user")["content"][1], media)
 
     def test_http_stream_transport(self):
-        from terminal.llm import QwenClient
+        from loop_robot.terminal.llm import QwenClient
         client = QwenClient(load_config()["llm"])
         client.key = "test-only"
         stream = io.BytesIO(b'data: {"choices":[{"delta":{"content":"ok"},"finish_reason":"stop"}]}\n\ndata: [DONE]\n')
         events = []
-        with patch("terminal.llm.build_opener") as opener:
+        with patch("loop_robot.terminal.llm.build_opener") as opener:
             opener.return_value.open.return_value = stream
             result = client.complete([], [], on_event=lambda *e: events.append(e))
             self.assertTrue(json.loads(opener.return_value.open.call_args.args[0].data)["stream"])
@@ -106,6 +106,77 @@ class StreamTests(unittest.TestCase):
 
 
 class InteractionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_create_multiple_tasks_while_foreground_is_running(self):
+        from concurrent.futures import Future
+        with tempfile.TemporaryDirectory() as folder, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), Path(folder)); terminal = Terminal(app); terminal.aliases = {}
+                app.permissions.set_rule('spawn_agent', 'allow')
+                foreground = Future(); terminal.pending = foreground
+                try:
+                    with patch('loop_robot.terminal.task_service.start', return_value={'process_alive': False}):
+                        for goal in ('检查日志', '整理文档'):
+                            terminal.input.text = '/task ' + goal
+                            await terminal.submit()
+                    tasks = terminal.task_store.list(session_id=app.session_id)
+                    self.assertEqual({t['spec']['goal'] for t in tasks}, {'检查日志', '整理文档'})
+                    self.assertEqual(len({t['id'] for t in tasks}), 2)
+                    self.assertTrue(all(t['state'] == 'queued' for t in tasks))
+                    self.assertIs(terminal.pending, foreground)
+                    self.assertFalse(app.stop_event.is_set())
+                    self.assertEqual(len(terminal.queue), 0)
+                    links = terminal.store.db.execute('SELECT task_id,session_id FROM task_sessions').fetchall()
+                    self.assertEqual({row[0] for row in links}, {task['id'] for task in tasks})
+                    self.assertEqual(len({row[1] for row in links}), 2)
+                finally:
+                    terminal.pending = None; terminal.store.close(); app.close()
+
+    async def test_stop_bypasses_busy_async_tool_command(self):
+        with tempfile.TemporaryDirectory() as folder, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), Path(folder)); terminal = Terminal(app); terminal.aliases = {}
+                entered = threading.Event(); release = threading.Event()
+                def command(text):
+                    entered.set(); release.wait(3)
+                    return 'Command returned'
+                try:
+                    with patch.object(app, 'dispatch', side_effect=command):
+                        terminal.input.text = '/devices'
+                        running = asyncio.create_task(terminal.submit())
+                        for _ in range(50):
+                            if entered.is_set(): break
+                            await asyncio.sleep(.01)
+                        self.assertTrue(entered.is_set())
+                        self.assertFalse(running.done())
+                        terminal.input.text = '停止'
+                        await terminal.submit()
+                        self.assertTrue(app.stop_event.is_set())
+                        self.assertEqual(len(terminal.queue), 0)
+                        self.assertTrue(terminal.paused)
+                        self.assertTrue(terminal.command_busy)
+                        release.set(); await asyncio.wait_for(running, 2)
+                finally:
+                    release.set(); terminal.store.close(); app.close()
+
+    async def test_quoted_stop_remains_input_and_stop_preserves_queue(self):
+        from concurrent.futures import Future
+        with tempfile.TemporaryDirectory() as folder, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), Path(folder)); terminal = Terminal(app); terminal.aliases = {}
+                try:
+                    terminal.pending = Future()
+                    terminal.input.text = '解释“停止”这个词'
+                    await terminal.submit()
+                    self.assertFalse(app.stop_event.is_set())
+                    self.assertEqual(len(terminal.queue), 1)
+                    terminal.input.text = 'stop'
+                    await terminal.submit()
+                    self.assertTrue(app.stop_event.is_set())
+                    self.assertEqual(len(terminal.queue), 1)
+                    self.assertEqual(terminal.queue[0][0], '解释“停止”这个词')
+                finally:
+                    terminal.pending = None; terminal.store.close(); app.close()
+
     async def test_permission_menu_selects_rule_and_action(self):
         with tempfile.TemporaryDirectory() as d, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
@@ -212,7 +283,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     terminal.store.close()
                     app.close()
 
-    async def test_up_retrieves_queued_message_with_attachments(self):
+    async def test_alt_up_retrieves_queued_message_with_attachments(self):
         with tempfile.TemporaryDirectory() as d, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 app = App(load_config(), Path(d))
@@ -223,7 +294,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                 task = asyncio.create_task(terminal.run())
                 try:
                     await asyncio.sleep(.2)
-                    pipe.send_text('\x1b[A')
+                    pipe.send_text('\x1b\x1b[A')
                     await asyncio.sleep(.2)
                     self.assertEqual(terminal.input.text, '你好')
                     self.assertEqual(terminal.attachments, files)
@@ -266,7 +337,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     return parts
                 try:
                     terminal.input.text = '/attach "clip.mp4"'
-                    with patch('terminal.interactive.attachment', convert):
+                    with patch('loop_robot.terminal.interactive.attachment', convert):
                         task = asyncio.create_task(terminal.submit())
                         for _ in range(50):
                             if started.is_set():
@@ -352,7 +423,7 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     app.close()
 
     async def test_ctrl_c_clear_then_exit_preserves_session(self):
-        from terminal.session import SessionStore
+        from loop_robot.terminal.session import SessionStore
         with tempfile.TemporaryDirectory() as d, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 app = App(load_config(), Path(d))
@@ -434,9 +505,44 @@ class InteractionTests(unittest.IsolatedAsyncioTestCase):
                     app.close()
 
 class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
+    async def test_busy_task_entry_defers_and_preserves_parent_queue_and_draft(self):
+        from concurrent.futures import Future
+        from unittest.mock import AsyncMock
+        with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
+            with create_app_session(input=pipe, output=DummyOutput()):
+                app = App(load_config(), directory)
+                terminal = Terminal(app)
+                try:
+                    parent = terminal.store.session_id
+                    task = terminal.task_store.submit({'goal':'启动机器人', 'session_id':parent})
+                    terminal.selected_task = task['id']
+                    terminal.input.text = '保留中文草稿'
+                    terminal.queue.append(('原会话排队消息', []))
+                    terminal.pending = Future()
+                    await terminal.enter_task_session()
+                    target = terminal.task_session_target
+                    self.assertIsNotNone(target)
+                    self.assertEqual(terminal.store.session_id,parent)
+                    self.assertTrue(app.stop_event.is_set())
+                    self.assertEqual(terminal.task_store.get(task['id'])['state'],'queued')
+                    terminal.pending.set_result('完成当前调用')
+                    terminal.pending = None
+                    with patch.object(terminal, 'redraw_session', new_callable=AsyncMock):
+                        await terminal.switch_task_session()
+                    self.assertEqual(terminal.store.session_id,target)
+                    self.assertEqual(list(terminal.queue),[])
+                    self.assertEqual(terminal.input.text,'')
+                    saved = terminal.store.read_session(app.client.config,parent)
+                    self.assertEqual(saved['draft'],'保留中文草稿')
+                    self.assertEqual(saved['queue'][0][0],'原会话排队消息')
+                    self.assertFalse(app.stop_event.is_set())
+                finally:
+                    terminal.store.close()
+                    app.close()
+
     async def test_restart_resets_display_without_discarding_usage_or_history(self):
-        from terminal.token_budget import status
-        from terminal.session import SessionStore
+        from loop_robot.terminal.token_budget import status
+        from loop_robot.terminal.session import SessionStore
         with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 app = App(load_config(), directory)
@@ -466,7 +572,7 @@ class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
 
     async def test_tokens_follow_current_session_on_new_and_resume(self):
         from unittest.mock import AsyncMock
-        from terminal.token_budget import status
+        from loop_robot.terminal.token_budget import status
         with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 app = App(load_config(), directory)
@@ -538,7 +644,7 @@ class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
                     app.close()
 
     async def test_each_restart_gets_new_session_without_inheriting_draft_or_queue(self):
-        from terminal.session import SessionStore
+        from loop_robot.terminal.session import SessionStore
         with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
             with create_app_session(input=pipe, output=DummyOutput()):
                 config = load_config()
@@ -569,12 +675,12 @@ class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
                         terminal.store.close(); app.close()
 
     async def test_resume_browses_without_running_queue_and_restores_history(self):
-        from terminal.interactive import Terminal
+        from loop_robot.terminal.interactive import Terminal
         with tempfile.TemporaryDirectory() as directory, create_pipe_input() as pipe:
             with create_app_session(input=pipe,output=DummyOutput()):
                 app=App(load_config(),directory)
                 terminal=Terminal(app)
-                from terminal.app import ALIASES
+                from loop_robot.terminal.app import ALIASES
                 terminal.aliases=ALIASES
                 try:
                     app.agent.history=[{'role':'user','content':'衣柜'}]

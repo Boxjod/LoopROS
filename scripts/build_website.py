@@ -15,7 +15,9 @@ WEBSITE_FILES = ('index.html', 'zh-CN.html', 'install.html', 'style.css', 'site.
 def export_website(output, url, version=__version__):
     output.mkdir(parents=True, exist_ok=True)
     for name in WEBSITE_FILES:
-        source = ROOT / ('assets/logo.png' if name == 'logo.png' else 'website/' + name)
+        source = ROOT / ('assets/logo.png' if name == 'logo.png' else
+                         'assets/workbench/' + name if name.startswith(('workbench.', 'three.')) else
+                         'website/' + name)
         if name.endswith(('.html', '.js')):
             content = source.read_text(encoding='utf-8').replace('../assets/logo.png', 'logo.png')
             content = content.replace('https://loopmaster.box2ai.com/LoopROS', url.rstrip('/'))

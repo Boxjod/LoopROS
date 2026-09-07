@@ -5,10 +5,10 @@ import tempfile
 import unittest
 from unittest.mock import patch
 from prompt_toolkit.document import Document
-from terminal.app import App
-from terminal.config import load_config, ROOT
-from terminal.references import extract
-from terminal.protocols import encode
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config, ROOT
+from loop_robot.terminal.references import extract
+from loop_robot.terminal.protocols import encode
 from model_fixture import call
 
 
@@ -36,7 +36,7 @@ class CodingAgentTests(unittest.TestCase):
         with self.assertRaises(PermissionError):app.tool('edit_file',{'path':'src/demo.py','old_text':'2','new_text':'3'})
     def test_product_root_rejects_new_auxiliary_scripts_but_preserves_source_edits(self):
         app = self.app
-        with patch('terminal.config.ROOT', app.workspace_root):
+        with patch('loop_robot.terminal.config.ROOT', app.workspace_root):
             for name in ('probe.py', './probe.sh', 'folder/../probe.ps1'):
                 with self.assertRaisesRegex(ValueError, 'user_projects/'):
                     app.tool('write_file', {'path':name, 'content':'pass\n'})
@@ -52,7 +52,7 @@ class CodingAgentTests(unittest.TestCase):
     def test_generated_project_is_readable_and_searchable_without_polluting_source_search(self):
         app = self.app
         relative = 'user_projects/demo/robots/known-model/scripts/probe.py'
-        with patch('terminal.config.ROOT', app.workspace_root):
+        with patch('loop_robot.terminal.config.ROOT', app.workspace_root):
             created = app.tool('write_file', {'path':relative, 'content':'unique_local_marker = 1\n'})
         self.assertEqual(app.tool('read_file', {'path':relative})['sha256'], created['sha256'])
         self.assertEqual(app.tool('search_files', {'query':'unique_local_marker'})['matches'], [])
@@ -111,7 +111,7 @@ class CodingAgentTests(unittest.TestCase):
         text=f'分析 "{path}" 和 "{image}" 并参考 https://example.com/info'
         refs=extract(text,self.app.workspace_root)
         self.assertEqual(len(refs),3)
-        with patch('terminal.references.read_url',return_value={'url':'https://example.com/info','text':'web evidence'}):
+        with patch('loop_robot.terminal.references.read_url',return_value={'url':'https://example.com/info','text':'web evidence'}):
             parts=self.app.prepare_input(text,[])
         self.assertIn('local evidence',json.dumps(parts));self.assertIn('web evidence',json.dumps(parts))
         self.assertTrue(any(p['type']=='image_url' for p in parts))
@@ -150,13 +150,13 @@ class CodingAgentTests(unittest.TestCase):
         self.assertTrue(Path(result['path']).exists())
 
     def test_url_image_and_no_coding_handoff(self):
-        from terminal.references import read_url
-        with patch('terminal.web.request',return_value={'body_bytes':(ROOT/'assets/logo.png').read_bytes(),'content_type':'image/png','url':'https://example.com/logo.png'}):
+        from loop_robot.terminal.references import read_url
+        with patch('loop_robot.terminal.web.request',return_value={'body_bytes':(ROOT/'assets/logo.png').read_bytes(),'content_type':'image/png','url':'https://example.com/logo.png'}):
             result=read_url('https://example.com/logo.png')
         self.assertTrue(result['image_loaded'])
         self.assertTrue(result['_media'][0]['image_url']['url'].startswith('data:image/png;base64,'))
         self.app.prepare_input('编写文件',[])
-        with patch('terminal.task_service.start',side_effect=AssertionError('No background task')):
+        with patch('loop_robot.terminal.task_service.start',side_effect=AssertionError('No background task')):
             self.assertIsNone(self.app.agent.on_turn_finished)
 
     def test_harness_refresh_inside_tool_loop(self):
@@ -173,13 +173,13 @@ class CodingAgentTests(unittest.TestCase):
             self.assertEqual(self.app.agent.reply('更新我的对话指令'),'Updated')
 
     def test_vision_routing_same_endpoint_and_text_model_preserved(self):
-        from terminal.llm import QwenClient
+        from loop_robot.terminal.llm import QwenClient
         from unittest.mock import MagicMock
         client=QwenClient({**self.app.client.config,'model':'qwen-plus'})
         images=[{'role':'user','content':[{'type':'image_url','image_url':{'url':'data:image/png;base64,AA=='}}]}]
         opener=MagicMock()
         opener.open.return_value.__enter__.return_value.read.return_value=b'{"data":[{"id":"qwen3-vl-plus"}]}'
-        with patch('terminal.llm.build_opener',return_value=opener):
+        with patch('loop_robot.terminal.llm.build_opener',return_value=opener):
             self.assertEqual(client.request_config(images,'test-key')['model'],'qwen3-vl-plus')
             self.assertEqual(client.request_config(images,'test-key')['model'],'qwen3-vl-plus')
         self.assertEqual(opener.open.call_count,1)
@@ -189,7 +189,7 @@ class CodingAgentTests(unittest.TestCase):
         self.assertEqual(client.request_config(images,'test-key')['model'],'my-visual-model')
         client.config={k:v for k,v in client.config.items() if k!='vision_model'};client._vision_models.clear()
         opener.open.return_value.__enter__.return_value.read.return_value=b'{"data":[]}'
-        with patch('terminal.llm.build_opener',return_value=opener),self.assertRaisesRegex(RuntimeError,'No supported vision model'):
+        with patch('loop_robot.terminal.llm.build_opener',return_value=opener),self.assertRaisesRegex(RuntimeError,'No supported vision model'):
             client.request_config(images,'test-key')
 
     def test_domain_words_never_execute_or_inject_robot_context(self):
@@ -226,7 +226,7 @@ class CodingAgentTests(unittest.TestCase):
             self.assertNotIn('viewer',context['live_context']())
 
     def test_multi_turn_history_survives_session_save_and_restore(self):
-        from terminal.session import SessionStore
+        from loop_robot.terminal.session import SessionStore
         config=self.app.client.config
         with patch.object(self.app.client,'complete',return_value={'content':'I will use project name Birch.'}):
             self.app.agent.reply('项目名字叫Birch')

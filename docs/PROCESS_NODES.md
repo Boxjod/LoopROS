@@ -4,6 +4,8 @@
 
 Session 保存对话，Task 保存有目标和验收的工作，Node 持有实际运行的进程。这里不需要为每个服务创建循环推理 Task。可同时运行多个 Node，切换对话或 `/new` 不会停止它们。
 
+0.0.3 起，普通 process Node 与 ROS Node 均正常中断退出：POSIX 发送 SIGINT，Windows 使用进程组 CTRL_BREAK。可选 stop_argv 仍先执行；本地命令尚未退出时再发送中断，不自动升级 TERM／KILL。等待超时返回 stopping，监督进程、输出句柄与资源租约保留到实际退出；关闭运行时后也继续监测尚未退出的工作进程。服务停止与电机失能分别验收。明确授权的强制信号仍使用 process_stop 的对应模式。
+
 ## 使用
 
 `loop node` 可在没有 API 配置的情况下进入节点终端；正常 `loop` 内也可操作。先检查 `/node profiles` 中的命令，再按既有权限流程允许宿主执行：`/permissions allow run_python`。`node_start` 与 `node_command` 也经过统一门禁，plan 模式禁止启动。配置文件不是额外的执行授权。
@@ -48,7 +50,7 @@ OpenPI 替代流程使用 `openpi-policy`、`jetson-agent-client` 和 `loopmaste
 
 ## 状态与退出
 
-`state=running` 表示节点监督进程有心跳；`snapshot.process_state` 和 `returncode` 表示所启动命令的状态。脚本退出 0 不证明机器人或推理服务就绪。命令退出后保留节点和输出，便于查看日志和执行 `stop_argv`；停止节点后可重新启动。
+`state=running` 表示节点监督进程有心跳且尚未报告命令退出；命令已退出时主状态显示 `exited`，监督进程仍可保留以读取日志/执行停止入口。`snapshot.process_state` 和 `returncode` 表示所启动命令的状态。脚本退出 0 不证明机器人或推理服务就绪。命令退出后保留节点和输出，便于查看日志和执行 `stop_argv`；停止节点后可重新启动。
 
 `/node stop` 先尝试 `stop_argv`（超时 4 秒），再终止仍存活的本地子进程组。SSH 断开、停止脚本返回或节点退出都不证明远端服务已停止；远端状态需要另行检查。日志接口保留有界输出尾部，停止时写入输出日志，不是无限完整终端录制。
 
@@ -65,3 +67,20 @@ OpenPI 替代流程使用 `openpi-policy`、`jetson-agent-client` 和 `loopmaste
 若要实现“启动机械臂”“运行已设定任务”等短名称入口，下一步应将已核实流程固化为具名、版本化的本地配方：明确参数、顺序和依赖、就绪检查、验收与停止步骤，由固定执行器调用原工具门禁和共享资源基础层。聊天 API 可辅助生成／修改配方，执行配方本身无需 API。独立 DAG 配方执行器尚未实现；当前可把固定流程写入 Bash／批处理，并通过 `/skills run 标题` 复用 Node 执行。启动机械臂驱动／Host进程与电机使能、回零、运动分别定义，不能从历史“成功”推导本次动作已获授权或服务已经就绪。
 
 核对入口：terminal.app.main、terminal.nodes.command、terminal.task_tools.dispatch、terminal.task_supervisor.TaskSupervisor；本次仅核对源码并补充说明，未启动机器人或远端进程。
+
+
+## 内置端口、进程和内存管理（2026-09-08）
+
+普通模型工具和 `/node` 共用内置入口，不再要求生成 SSH/Python 停止脚本：
+
+- `process_inspect({host, ports, pids})`：host 默认 local，也可用 SSH 别名/user@hostname；按 TCP 监听端口或 PID 查询，返回每个进程的 identity（PID/启动 ticks/host boot ID）、名称、RSS、父 PID、监听端口及主机可用 RAM。未提供选择器时返回 RSS 最大的进程（最多 64 个）。不输出完整进程命令行/环境，避免将凭据带入上下文。
+- `process_stop({host, targets, ports, mode, wait_s})`：targets 使用上次 inspect 的完整 identity；graceful=SIGINT，terminate=SIGTERM，kill=SIGKILL，escalate=依次 INT/TERM/KILL；每步等待默认 3 秒，上限 10 秒。明确强制 KILL 可以直接选择 kill。工具复查后返回 processes_stopped、ports_released、success 及内存前后观察。
+- 离线命令：`/node inspect {"host":"local","ports":[6555,6556]}`；停止用 `/node terminate JSON`，JSON 与 process_stop 一致。不要复制示例 PID，应使用当次观察的 identity。
+
+工具不自动杀端口的所有占用者，不随 PID 复用/服务自拉起而扩大范围；使用 pidfd 将信号固定到核对过的进程。祖先进程及 PID 1 受保护。目标进程退出但其他实例还占端口时，success=false。SIGINT 后仍存活只说明未退出，不据此猜测是否忽略信号。进程退出/端口释放均不证明设备失能、物理停止或完成运动。
+
+process_inspect 使用独立只读门禁；process_stop 无独立配置时继承 run_python 的规则，显式 process_stop 规则优先，plan 禁止停止。审批记录绑定实际 process_stop 请求，不会误当 run_python 路径执行。Skill 不授予权限。
+
+进程适配器目前覆盖 Linux `/proc` 的当前网络命名空间。远端通过既有 SSH 认证执行标准库脚本，不安装 SDK；停止需要目标 Linux pidfd 和 Python 3.9+。权限不可见/不支持/身份变化不伪报成功。超时或取消只终止本地控制器，远端可能已经收到信号，须 inspect 后决定后续操作；不自动重试信号。
+
+本地用户 Skill 位于 `~/.loop/skills/process-management/SKILL.md`，不进入发行或 GitHub。测试使用临时本机进程、真实 socket 和 SSH 替身验证传输；未对机器人实测。

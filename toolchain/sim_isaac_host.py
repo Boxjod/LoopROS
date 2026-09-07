@@ -45,7 +45,7 @@ class RuntimeBridge:
 class NetworkBridge:
     """Socket I/O runs in threads; USD/PhysX calls run only in poll's owner thread."""
     def __init__(self, bridge, port):
-        from toolchain.sim_isaac_client import MAX_MESSAGE
+        from loop_robot.toolchain.sim_isaac_client import MAX_MESSAGE
         self.bridge=bridge
         self.pending=queue.Queue(maxsize=16)
         owner=self
@@ -75,7 +75,7 @@ class NetworkBridge:
         self.thread.start()
 
     def poll(self, timeout=.01):
-        from toolchain.sim_isaac_client import encode
+        from loop_robot.toolchain.sim_isaac_client import encode
         try: request,reply,deadline=self.pending.get(timeout=timeout)
         except queue.Empty: return
         try:
@@ -105,7 +105,7 @@ def main(argv=None):
     if args.diagnostics: faulthandler.dump_traceback_later(45,repeat=True)
     app=SimulationApp({'headless':True,'width':640,'height':480,'create_new_stage':False,'sync_loads':False,'multi_gpu':False,
         'extra_args':['--/plugins/carb.tasking.plugin/threadCount=8','--/plugins/omni.tbb.globalcontrol/maxThreadCount=8']})
-    from toolchain.sim_isaac import IsaacSimulation
+    from loop_robot.toolchain.sim_isaac import IsaacSimulation
     import signal
     def stop(signum, frame): raise KeyboardInterrupt
     signal.signal(signal.SIGTERM, stop)
@@ -134,4 +134,6 @@ def main(argv=None):
 
 if __name__=='__main__':
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
+    from launcher import _bootstrap
+    _bootstrap(legacy=False)
     main()

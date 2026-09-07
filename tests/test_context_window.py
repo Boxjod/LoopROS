@@ -2,11 +2,27 @@ import copy
 import json
 import unittest
 from types import SimpleNamespace
-from terminal.context_window import select, tool_text, bound_tool_history
-from terminal.llm import ChatAgent
+from loop_robot.terminal.context_window import select, tool_text, bound_tool_history
+from loop_robot.terminal.llm import ChatAgent
 
 
 class ContextWindowTests(unittest.TestCase):
+    def test_oversized_latest_turn_keeps_bounded_question_and_receipt_pairs(self):
+        history = [{'role':'user','content':'Inspect known.py'},
+                   {'role':'assistant','content':None,'tool_calls':[{'id':'read-1'}]},
+                   {'role':'tool','tool_call_id':'read-1','content':json.dumps({'content':'x'*30000,'sha256':'known'})},
+                   {'role':'assistant','content':'Found the startup entry; next verify readiness.'}]
+        original = copy.deepcopy(history)
+        selected, recall, report = select(history, budget=4000)
+        self.assertEqual(len(selected),4)
+        self.assertEqual(selected[0],history[0])
+        self.assertEqual(selected[-1],history[-1])
+        self.assertEqual(selected[2]['tool_call_id'],'read-1')
+        self.assertTrue(json.loads(selected[2]['content'])['truncated'])
+        self.assertLessEqual(report['history_character_units'],4000)
+        self.assertTrue(report['latest_group_compacted'])
+        self.assertEqual(history,original)
+
     def test_complete_groups_and_non_destructive_views(self):
         history = [{'role': role, 'content': str(i)} for i in range(30) for role in ('user', 'assistant')]
         original = copy.deepcopy(history)

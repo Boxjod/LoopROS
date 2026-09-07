@@ -5,11 +5,12 @@ import sys
 import tempfile
 import time
 import unittest
-from unittest.mock import patch
+from unittest.mock import Mock, patch
+from dataclasses import replace
 
-from core.nodes import NodeRuntime
-from toolchain.node_workers import definitions
-from toolchain.process_node import read_profile, config
+from loop_robot.core.nodes import NodeRuntime
+from loop_robot.toolchain.node_workers import definitions
+from loop_robot.toolchain.process_node import read_profile, config
 
 
 def wait_for(predicate):
@@ -64,6 +65,7 @@ class ProcessNodeTests(unittest.TestCase):
         snapshot = self.nodes.status('envcheck')['snapshot']
         self.assertIn('[redacted]',snapshot['output_tail'])
         self.assertIn('NO_API=True',snapshot['output_tail'])
+        self.assertEqual(self.nodes.status('envcheck')['state'], 'exited')
         self.assertEqual(snapshot['readiness'],'not_verified')
         self.assertFalse(snapshot['model_polling'])
         self.nodes.stop('envcheck')
@@ -84,9 +86,39 @@ class ProcessNodeTests(unittest.TestCase):
         with self.assertRaises(ValueError):
             self.profile('invalid','print(1)',env={'CONTROL_TOKEN':'private'})
 
+    def test_sigint_timeout_retains_process_and_resource_until_actual_exit(self):
+        self.nodes.definitions['process'] = replace(self.nodes.definitions['process'], stop_timeout_s=.1)
+        self.nodes.admission = Mock()
+        self.nodes.admission.inspect.return_value = 'test-lease'
+        script = '''import signal,time
+from pathlib import Path
+signal.signal(signal.SIGINT, lambda *args: Path('interrupted').write_text('SIGINT'))
+print('READY', flush=True)
+while not Path('release').exists(): time.sleep(.02)
+'''
+        spec = self.profile('slow', script)
+        self.nodes.start('slow', 'process', spec)
+        try:
+            wait_for(lambda: 'READY' in self.nodes.status('slow')['snapshot'].get('output_tail', ''))
+            state = self.nodes.stop('slow')
+            self.assertTrue(state['process_alive'])
+            self.assertEqual(state['state'], 'stopping')
+            wait_for(lambda: (self.root / 'interrupted').exists())
+            self.assertEqual((self.root / 'interrupted').read_text(), 'SIGINT')
+            self.nodes.admission.release.assert_not_called()
+            self.assertIn(state['resource'], self.nodes.resources)
+            self.nodes.close()
+            self.assertTrue(self.nodes.monitor.is_alive())
+            self.nodes.admission.release.assert_not_called()
+        finally:
+            (self.root / 'release').touch()
+            wait_for(lambda: not self.nodes.status('slow')['process_alive'])
+        self.nodes.admission.release.assert_called_once_with('test-lease')
+        self.assertNotIn(state['resource'], self.nodes.resources)
+
     def test_app_permissions_and_revocation(self):
-        from terminal.app import App
-        from terminal.config import load_config
+        from loop_robot.terminal.app import App
+        from loop_robot.terminal.config import load_config
         spec = self.profile('gated', 'print("READY", flush=True); import time; time.sleep(60)')
         with patch.dict(os.environ, {'LOOP_TASK_AUTOSTART': '0'}):
             app = App(load_config(), self.root/'appstate')

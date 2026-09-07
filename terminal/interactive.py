@@ -8,6 +8,8 @@ import time
 from contextlib import redirect_stdout, redirect_stderr
 from concurrent.futures import ThreadPoolExecutor
 
+from loop_robot.terminal.reasoning import choices as reasoning_choices, identity as reasoning_identity, remember as remember_models
+
 from prompt_toolkit import PromptSession
 from prompt_toolkit.application import run_in_terminal, get_app_session
 from prompt_toolkit.key_binding import KeyBindings
@@ -34,16 +36,16 @@ class CompactPrompt(DynamicContainer):
         container.write_to_screen(screen, mouse_handlers, write_position, parent_style, erase_bg, z_index)
 
 
-from terminal.composer import Composer, ChipProcessor
+from loop_robot.terminal.composer import Composer, ChipProcessor
 
 
-from terminal.media import attachment, dropped_paths, clipboard_image
-from terminal.ui import welcome
-from terminal.session import SessionStore
-from terminal.markdown import BoldText
-from terminal.colors import paint, tool_call, tool_result
-from terminal.completion import SlashCompleter
-from terminal.command_display import format_command_result
+from loop_robot.terminal.media import attachment, dropped_paths, clipboard_image
+from loop_robot.terminal.ui import welcome
+from loop_robot.terminal.session import SessionStore
+from loop_robot.terminal.markdown import BoldText
+from loop_robot.terminal.colors import paint, tool_call, tool_result
+from loop_robot.terminal.completion import SlashCompleter
+from loop_robot.terminal.command_display import format_command_result
 
 
 class Terminal:
@@ -53,6 +55,7 @@ class Terminal:
         self.attachments = []
         self.paused = False
         self.pending = None
+        self.task_session_target = None
         self.pending_command = None
         self.completion_refresh_pending = False
         self.dismissed_completion = None
@@ -72,9 +75,9 @@ class Terminal:
         self.stream_text = ''
         self.stream_started = False
         self.streamed_answer = False
-        from terminal.tool_display import ToolDisplay
+        from loop_robot.terminal.tool_display import ToolDisplay
         self.tool_display = ToolDisplay()
-        from terminal.tool_groups import ToolGroups
+        from loop_robot.terminal.tool_groups import ToolGroups
         self.tool_groups = ToolGroups()
         kb = KeyBindings()
 
@@ -123,7 +126,7 @@ class Terminal:
                 return
             event.app.create_background_task(self.submit())
 
-        @kb.add('up', filter=Condition(lambda: bool(self.queue) and not self.input.text
+        @kb.add('escape', 'up', filter=Condition(lambda: bool(self.queue) and not self.input.text
                                        and not self.attachments and not self.command_busy))
         def edit_queue(event):
             text, files = self.queue.pop()
@@ -169,7 +172,7 @@ class Terminal:
         def cancel(event):
             if self.input.buffer.text or self.attachments:
                 self.input.clear()
-            elif self.pending or (self.queue and not self.paused):
+            elif self.pending or self.command_busy or (self.queue and not self.paused):
                 self.stop()
                 self.checkpoint()
             else:
@@ -189,7 +192,7 @@ class Terminal:
             if self.action_panel is not None:
                 self.close_panel()
                 return
-            if self.pending:
+            if self.pending or self.command_busy:
                 self.stop()
 
         @kb.add('pageup', filter=Condition(lambda: self.action_panel is not None))
@@ -210,11 +213,14 @@ class Terminal:
                 self.show_panel('/tools', self.tool_groups.details())
 
         for key, direction in (('up', -1), ('down', 1)):
-            @kb.add(key, filter=Condition(lambda: self.action_panel is not None
-                    and self.selected_task is None and self.viewer_choice is None
-                    and self.input.buffer.complete_state is None))
-            def scroll_panel_line(event, step=direction):
-                self.panel_offset = max(0, self.panel_offset + step)
+            @kb.add(key, filter=Condition(lambda: self.selected_task is None
+                    and self.viewer_choice is None and self.input.buffer.complete_state is None))
+            def recall_input(event, step=direction):
+                self.close_panel()
+                if step < 0:
+                    event.current_buffer.auto_up()
+                else:
+                    event.current_buffer.auto_down()
                 self.ui.invalidate()
 
         @kb.add(Keys.BracketedPaste)
@@ -233,18 +239,18 @@ class Terminal:
             if not self.command_busy:
                 event.app.create_background_task(self.paste_image())
 
-        from terminal.app import HELP
+        from loop_robot.terminal.app import HELP
         self.session = PromptSession(
             input=get_app_session().input, output=get_app_session().output,
             message=self.prompt_text, multiline=True,
-            placeholder=None,
+            placeholder=[('class:input-placeholder', 'Ask LoopROS to do anything about Robot')],
             editing_mode=EditingMode.EMACS,
             prompt_continuation='  ', key_bindings=kb,
-            completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"], models=lambda: self.model_choices, agents=self.agent_choices, roles=lambda: list(self.app.runtime.definitions)),
+            completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"], models=lambda: self.model_choices, agents=self.agent_choices, roles=lambda: list(self.app.runtime.definitions), reasoning=lambda: reasoning_choices(self.app)["choices"]),
             complete_while_typing=Condition(lambda: self.session.default_buffer.text.startswith('/')),
             reserve_space_for_menu=0, complete_style=CompleteStyle.COLUMN, mouse_support=Condition(lambda: self.action_panel is not None and self.selected_task is None), erase_when_done=True,
             color_depth=ColorDepth.DEPTH_8_BIT,
-            style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold', 'chip': 'bg:#273a44 #b9dce8', 'chip-selected': 'bg:#74b7cc #10212b bold'}))
+            style=Style.from_dict({'prompt': 'ansicyan bold', 'input-placeholder': '#9e9e9e nobold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold', 'chip': 'bg:#273a44 #b9dce8', 'chip-selected': 'bg:#74b7cc #10212b bold'}))
         # PromptSession normally stretches its editable window to absorb spare
         # renderer height. Keep the composer next to the transcript; spare
         # terminal rows belong below it, never between output and input.
@@ -314,7 +320,7 @@ class Terminal:
         # Every launch starts a fresh conversation; history is opt-in via /resume.
         saved = {}
         self.store.new_session()
-        from terminal.session_task import SessionTask
+        from loop_robot.terminal.session_task import SessionTask
         self.store.session_id = self.store.session_id or app.session_id
         app.session_id = self.store.session_id
         app.task_session_link = self.store.task_link()
@@ -331,7 +337,7 @@ class Terminal:
         self.input.restore(saved.get('draft', ''), saved.get('composer'))
         self.draft = self.input.buffer.text
         self.paused = bool(self.queue)
-        from core.tasks import TaskStore
+        from loop_robot.core.tasks import TaskStore
         self.task_store=TaskStore(app.state_dir/'tasks.sqlite')
         for task in self.task_store.list(limit=None, session_id=app.session_id):
             if task['spec'].get('provider') in (None, self.store.identity(app.client.config)):
@@ -426,9 +432,10 @@ class Terminal:
                 'panel': min(8, available - queue)}
 
     def status_text(self):
-        status = '{} | tasks {} | queued {} | attachments {}{}'.format(
-            'Working' if self.pending else 'Ready', getattr(self, 'task_count', 0), len(self.queue), len(self.attachments),
-            ' | queue paused: /queue resume' if self.paused else ' | Esc stop · Enter send/queue · Ctrl-V image')
+        status = ('Working | ' if self.pending else '') + 'tasks {}'.format(getattr(self, 'task_count', 0))
+        if self.attachments:
+            status += ' | attachments {}'.format(len(self.attachments))
+        status += ' | /queue resume' if self.paused else ' | Esc stop · Enter send · /paste'
         size = self.ui.output.get_size()
         columns = max(1, size.columns)
         budget = self.display_budget()
@@ -452,16 +459,8 @@ class Terminal:
             fragments.extend(self.panel_fragments(available))
         elif not self.input.text and not self.attachments:
             status = self.input_placeholder() + ' | ' + status
-        if (self.tool_groups.groups or self.tool_groups.pending or self.tool_groups.current) and available and not self.action_panel and not (state and state.completions):
-            current=self.tool_groups.current
-            rows=self.tool_groups.pending or (self.tool_groups.groups[-1] if self.tool_groups.groups else [])
-            label=self.tool_groups.label(rows) if rows else 'Tools'
-            if current:
-                import time
-                label+=' · '+current['time']+' running '+current['name']+' {:.1f}s'.format(time.monotonic()-current['display'].started)
-            fragments.append(('class:hint-selected',self.clip_hint('▸ '+label+' · Ctrl-O /tools',columns)+'\n'))
-        from terminal.token_budget import status as token_status
-        status = token_status(self.app.agent) + ' | ' + status
+        from loop_robot.terminal.token_budget import status as token_status
+        status = token_status(self.app.agent, include_session=False) + ' | ' + status
         fragments.append(('class:separator', self.clip_hint(status, columns)))
         return fragments
 
@@ -494,8 +493,14 @@ class Terminal:
             self.streamed_answer = False
             if kind == 'tool':
                 self.tool_groups.call(text)
+                row = self.tool_groups.current
+                self.write_line(tool_call(row['call'])+paint(' · '+row['time'],'muted'))
             else:
-                self.tool_groups.result(text,event_id)
+                row = self.tool_groups.result(text,event_id)
+                self.write_line(tool_result(row['summary']))
+                for line in row['preview']:
+                    role='added' if line.startswith('+') else 'removed' if line.startswith('-') else 'heading' if line.startswith('@@') else 'muted'
+                    self.write_line(paint('    '+line,role))
             if kind == 'result':
                 self.checkpoint()
             self.ui.invalidate()
@@ -548,14 +553,7 @@ class Terminal:
         group=self.tool_groups.flush()
         if not group: return
         index,rows=group
-        if len(rows)==1:
-            row=rows[0]
-            self.write_line(tool_call(row['call'])+paint(' · '+row['time'],'muted'))
-            self.write_line(tool_result(row['summary']))
-            for line in row['preview']:
-                role='added' if line.startswith('+') else 'removed' if line.startswith('-') else 'heading' if line.startswith('@@') else 'muted'
-                self.write_line(paint('    '+line,role))
-        else:
+        if len(rows)>1:
             self.write_line(paint('Tools ▸ '+self.tool_groups.label(rows)+' · /tools '+str(index),'tool'))
         self.store.record('tool_group',json.dumps({'session_id':self.app.session_id,'index':index,'calls':[{k:v for k,v in row.items() if k!='preview'} for row in rows]},ensure_ascii=False))
 
@@ -613,15 +611,15 @@ class Terminal:
         self.ui.invalidate()
 
     async def redraw_session(self):
-        from terminal.session_display import history_lines
-        from terminal.tool_display import ToolDisplay
+        from loop_robot.terminal.session_display import history_lines
+        from loop_robot.terminal.tool_display import ToolDisplay
         self.close_panel()
         self.stream_kind = None
         self.stream_text = ''
         self.stream_started = self.streamed_answer = False
         self.markdown = BoldText()
         self.tool_display = ToolDisplay()
-        from terminal.tool_groups import ToolGroups
+        from loop_robot.terminal.tool_groups import ToolGroups
         self.tool_groups = ToolGroups()
         # Save the new identity before yielding to terminal rendering/background polling.
         self.checkpoint()
@@ -686,17 +684,47 @@ class Terminal:
         return [('Enter session', 'enter_session'), ('Close session', 'close_session')]
 
     async def enter_task_session(self):
-        if self.pending or self.queue or self.attachments:
-            self.append('Error', 'Wait for the active turn and clear the queue before switching sessions')
-            return
         task = self.task_store.get(self.selected_task)
         link = self.store.task_link()
         if task.get('session_id') != self.app.session_id and (not link or link['task_id'] != task['id']):
             raise ValueError('Task belongs to another session')
         self.checkpoint()
         identity = self.store.ensure_task_session(self.app.client.config, task)
-        self.input.text = '/resume ' + identity
-        await self.submit()
+        self.task_session_target = identity
+        if self.pending:
+            self.paused = True
+            self.app.stop_event.set()
+            self.append('Session', 'Switch requested. Finishing the current call; queued messages stay in this session. Background task continues.')
+            self.checkpoint()
+            return
+        await self.switch_task_session()
+
+    async def switch_task_session(self):
+        identity = self.task_session_target
+        if not identity or self.pending or self.command_busy:
+            return
+        self.checkpoint()
+        try:
+            data = self.store.resume(self.app.client.config, identity)
+        except ValueError as exc:
+            self.task_session_target = None
+            self.append('Error', str(exc))
+            return
+        self.task_session_target = None
+        from loop_robot.terminal.session_task import SessionTask
+        self.app.session_task = SessionTask(data.get('task'), identity=self.store.session_id, history=data.get('history', []))
+        self.app.agent.history = data.get('history', [])
+        self.app.agent.turn_summaries = data.get('summaries', [])
+        self.app.agent.token_usage = data.get('token_usage', {})
+        self.app.agent.token_usage_baseline = self.token_baselines.setdefault(identity, dict(self.app.agent.token_usage))
+        self.app.agent.context_report = data.get('context_report', {})
+        self.app.agent.history_message_limit = data.get('history_message_limit', 32)
+        self.queue = deque(data.get('queue', []))
+        self.attachments = data.get('attachments', [])
+        self.input.restore(data.get('draft', ''), data.get('composer'))
+        self.paused = bool(self.queue)
+        self.app.stop_event.clear()
+        await self.redraw_session()
         self.close_panel()
 
     def scoped_tasks(self):
@@ -724,7 +752,7 @@ class Terminal:
         self.task_action = min(self.task_action, len(commands) - 1)
         feedback = task.get('feedback') or {}
         reason = feedback.get('reason') or feedback.get('review', {}).get('reason', '')
-        from terminal.titles import task_title
+        from loop_robot.terminal.titles import task_title
         lines = [task_title(task) + ' · ' + task['state'],
                  '←/→ tasks/chat · ↑/↓ actions · Enter apply · Esc close']
         lines += [('> ' if i == self.task_action else '  ') + '[' + label + ']' for i, (label, _) in enumerate(commands)]
@@ -740,7 +768,7 @@ class Terminal:
         columns = max(1, self.ui.output.get_size().columns)
         lines = []
         is_tools = title.startswith('/tools')
-        from terminal.colors import detail_style
+        from loop_robot.terminal.colors import detail_style
         for line in text.expandtabs(2).splitlines():
             style = detail_style(line) if is_tools else ''
             chunk, width = '', 0
@@ -820,7 +848,7 @@ class Terminal:
     def stop(self):
         self.paused = True
         self.app.stop_event.set()
-        self.append('Cancelled', 'Queue paused. Waiting for the active request/tool to return; /queue resume continues queued messages.')
+        self.append('Cancelled', 'Stop requested. Queue paused; interruptible tools are stopping. Waiting for the actual exit receipt; /queue resume continues queued messages.')
 
     def add_attachments(self, additions):
         if len(self.attachments) + len(additions) > 4:
@@ -852,6 +880,17 @@ class Terminal:
             self.ui.invalidate()
 
     async def submit(self):
+        # An explicit control message bypasses ordinary steering and any busy
+        # submission. Quoted/pasted text and attachments remain task input.
+        control = self.input.text.strip()
+        if ((self.pending or self.command_busy or self.queue) and not self.attachments
+                and self.input.buffer.text.strip() == control
+                and control.lower() in ('停止', '停下', 'stop', '/cancel-turn')):
+            self.input.reset(history=True)
+            self.append('You', control)
+            self.stop()
+            self.checkpoint()
+            return
         if self.command_busy:
             return
         self.command_busy = True
@@ -866,7 +905,7 @@ class Terminal:
         # New keystrokes during asynchronous media conversion belong to the next
         # draft. Never reset that draft when this submission finishes.
         submitted_files = self.input.numbered_files()
-        self.input.reset(history=True)
+        self.input.reset(history=bool(text) and (bool(literal_paste) or not text.startswith('/')))
         try:
             if not text and not self.attachments:
                 return
@@ -905,7 +944,7 @@ class Terminal:
                     if self.queue or self.attachments:
                         raise ValueError('Clear queued messages and attachments before starting a new session')
                     self.store.new_session()
-                    from terminal.session_task import SessionTask
+                    from loop_robot.terminal.session_task import SessionTask
                     self.app.session_task = SessionTask(identity=self.store.session_id)
                     goal = text[len('/new'):].strip()
                     if goal:
@@ -925,7 +964,7 @@ class Terminal:
                     for row in rows:
                         lines.append('{} | {} | {} turns'.format(row['label'],row['updated'],row['turns']))
                         if row['last_summary']:
-                            from terminal.turn_summary import display
+                            from loop_robot.terminal.turn_summary import display
                             lines.append('  '+display(row['last_summary'][0]))
                     self.show_panel('/resume', '\n'.join(lines))
                     self.input.text='/resume '
@@ -941,7 +980,7 @@ class Terminal:
                         if not isinstance(content,str):
                             content='\n'.join(p.get('text','[media]') for p in content)
                         lines.append(message.get('role','message')+': '+content)
-                    from terminal.turn_summary import display
+                    from loop_robot.terminal.turn_summary import display
                     for summary in data.get('summaries',[]):
                         lines.append(display(summary))
                     self.show_panel('/history', '\n\n'.join(lines) or 'No messages yet')
@@ -949,7 +988,7 @@ class Terminal:
                     if self.queue or self.attachments:
                         raise ValueError('Clear queued messages and attachments before switching sessions')
                     data=self.store.resume(self.app.client.config,parts[1])
-                    from terminal.session_task import SessionTask
+                    from loop_robot.terminal.session_task import SessionTask
                     self.app.session_task = SessionTask(data.get('task'), identity=self.store.session_id, history=data.get('history', []))
                     self.app.agent.history=data.get('history',[])
                     self.app.agent.turn_summaries=data.get('summaries',[])
@@ -995,7 +1034,7 @@ class Terminal:
                 self.add_attachments(additions)
             elif (not literal_paste and text.startswith('/')) or text in self.aliases:
                 command = self.aliases.get(text, text)
-                if self.pending and command.split()[0] not in ('/node', '/tasks', '/agents', '/spawn', '/send', '/result', '/agent-messages', '/stop-agent', '/help', '/stop', '/permissions', '/requests', '/mode', '/plan'):
+                if self.pending and command.split()[0] not in ('/node', '/task', '/tasks', '/agents', '/spawn', '/send', '/result', '/agent-messages', '/stop-agent', '/help', '/stop', '/permissions', '/requests', '/mode', '/plan'):
                     raise ValueError('Wait for the active turn before using this command')
                 if command == '/stop':
                     self.stop()
@@ -1011,14 +1050,16 @@ class Terminal:
                             self.input.buffer.start_completion(select_first=False)
                     return
                 if command == '/model':
-                    from terminal.setup import discover_models
+                    from loop_robot.terminal.setup import discover_models
                     self.model_choices = []
                     config = dict(self.app.client.config)
                     key = self.app.client.resolved_key()
                     if not key:
                         raise ValueError('Configure the current provider key before listing models')
                     self.show_panel('/model', 'Discovering models from the current provider...')
+                    binding = reasoning_identity(self.app.client)
                     self.model_choices = await asyncio.to_thread(discover_models, config, key)
+                    remember_models(self.app, self.model_choices, binding)
                     self.show_panel('/model', 'Choose a model · company A–Z, newest catalog date first. Catalog listing does not verify tool support.' if self.model_choices else 'No models listed. Enter /model MODEL_ID manually.')
                     if not self.input.text:
                         self.input.text = '/model '
@@ -1033,8 +1074,39 @@ class Terminal:
                     self.checkpoint()
                     return
                 # Existing hidden-key and approval prompts temporarily own the terminal.
-                result = (await asyncio.to_thread(self.app.dispatch, command) if command.split()[0] in agent_commands
+                # Tool commands run off the editor loop. Configuration/menu
+                # commands retain their UI-owned SQLite and prompt boundary.
+                background_commands = {*agent_commands, '/node', '/skills', '/approve',
+                    '/devices', '/move', '/home', '/joints', '/robot', '/doctor', '/stop', '/status', '/task', '/tasks'}
+                result = (await asyncio.to_thread(self.app.dispatch, command)
+                          if command.split()[0] in background_commands
                           else await self.run_prompt(lambda: self.app.dispatch(command)))
+                if command.startswith('/model ') and len(shlex.split(command)) == 2:
+                    cached = getattr(self.app, 'reasoning_catalog', None)
+                    binding = reasoning_identity(self.app.client)
+                    if not cached or cached[0] != binding or time.monotonic() - cached[1] >= 300:
+                        from loop_robot.terminal.setup import discover_models
+                        config = dict(self.app.client.config)
+                        key = self.app.client.resolved_key()
+                        if key:
+                            try:
+                                rows = await asyncio.to_thread(discover_models, config, key)
+                                remember_models(self.app, rows, binding)
+                            except ValueError:
+                                pass  # Known official choices or unknown/default remain available.
+                    capability = reasoning_choices(self.app)
+                    self.show_panel('/model', 'Choose reasoning effort · ' + ', '.join(capability['choices']) + '\n' + capability['source'] + '\n' + capability['notice'])
+                    if not self.input.text:
+                        self.input.text = '/model ' + shlex.quote(self.app.client.config['model']) + ' '
+                        self.input.buffer.cursor_position = len(self.input.buffer.text)
+                        if self.ui.is_running:
+                            self.input.buffer.start_completion(select_first=False)
+                    return
+                if command.startswith('/model ') and len(shlex.split(command)) == 3:
+                    self.close_panel()
+                    self.model_choices = []
+                    self.ui.invalidate()
+                    return
                 task_selection = self.selected_task
                 self.show_panel(command, format_command_result(command, result))
                 if task_selection and command.startswith(('/tasks cancel ', '/tasks resume ')):
@@ -1051,10 +1123,14 @@ class Terminal:
                 if command in ('/help', '/shortcuts'):
                     self.append('Editor', 'Type / to find commands · Tab/↑/↓ choose · Enter runs selected command · Esc dismisses · Arrows/Home/End edit · Enter send/queue · Alt-Enter newline · Ctrl-C clear/stop/exit · Esc stop · Backspace twice removes a paste/image chip · Ctrl-V or /paste clipboard image · drop media paths then Enter to attach · /attach PATH · /detach · /queue [clear|resume] · /resume [TITLE] · /history [TITLE] · /new · /details [ID] expands a tool result. Scroll using your terminal.')
             elif self.app.node_focus != 'master':
-                from terminal.nodes import focused_reply
+                from loop_robot.terminal.nodes import focused_reply
                 focus = self.app.node_focus
-                result = await run_in_terminal(lambda: focused_reply(self.app, text, self.attachments))
-                self.append('Node ' + focus, result)
+                if self.pending:
+                    raise ValueError('Wait for the active node command before sending another')
+                self.app.stop_event.clear()
+                self.pending_command = 'Node ' + focus
+                self.pending = self.executor.submit(focused_reply, self.app, text, list(self.attachments))
+                self.attachments.clear()
             else:
                 if len(text) > 16000 or len(self.queue) >= 20:
                     raise ValueError('Limit: 16000 characters per message, 20 queued messages')
@@ -1104,7 +1180,7 @@ class Terminal:
                 for feedback in self.task_store.notifications(self.task_cursor, session_id=self.app.session_id):
                     details=feedback.get('feedback') or {}
                     reason=details.get('reason') or details.get('review',{}).get('reason','')
-                    from terminal.titles import task_title
+                    from loop_robot.terminal.titles import task_title
                     self.append('Task feedback',task_title(self.task_store.get(feedback['task_id']))+' · '+feedback['state']+(' · '+str(reason)[:200] if reason else ''))
                     self.task_cursor=feedback['id']
                 self.task_store.meta('terminal_seen_event:' + self.app.session_id,self.task_cursor)
@@ -1140,7 +1216,7 @@ class Terminal:
                 except Exception as exc:
                     if self.timer:
                         self.app.scheduler.finish(*self.timer, str(exc), failed=True)
-                    self.paused = bool(self.queue)
+                    self.paused = self.paused or bool(self.queue)
                     hint = ('Queue paused; /queue resume to continue.' if self.paused
                             else 'You can send another message.')
                     if self.pending_command:
@@ -1153,6 +1229,11 @@ class Terminal:
                 self.timer = None
                 self.streamed_answer = False
                 self.checkpoint()
+            if self.task_session_target and not self.pending and not self.command_busy:
+                await self.switch_task_session()
+                # Do not deliver the old conversation's mailbox to the new one.
+                await asyncio.sleep(.05)
+                continue
             if not self.pending and not self.paused and not self.command_busy:
                 if self.queue:
                     text, files = self.queue.popleft()
@@ -1170,16 +1251,10 @@ class Terminal:
                         self.timer = (job_id, period)
                         self.app.stop_event.clear()
                         if command.startswith('/'):
-                            try:
-                                result = await run_in_terminal(lambda: self.app.dispatch(command, scheduled=True))
-                                self.app.scheduler.finish(job_id, period, str(result))
-                                self.append('Scheduled', result)
-                            except Exception as exc:
-                                self.app.scheduler.finish(job_id, period, str(exc), failed=True)
-                            self.timer = None
+                            self.pending = self.executor.submit(self.app.dispatch, command, scheduled=True)
                         else:
-                            from terminal.llm import ChatAgent
-                            from terminal.app import TOOLS
+                            from loop_robot.terminal.llm import ChatAgent
+                            from loop_robot.terminal.app import TOOLS
                             agent = ChatAgent(self.app.client, TOOLS, self.app.scheduled_tool, stop_event=self.app.stop_event)
                             self.pending = self.executor.submit(agent.reply, command)
             self.ui.invalidate()
@@ -1202,7 +1277,7 @@ class Terminal:
         return updates
 
     async def run(self):
-        from terminal.app import ALIASES
+        from loop_robot.terminal.app import ALIASES
         self.aliases = ALIASES
         loop = asyncio.get_running_loop()
         self.app.agent.streaming = True

@@ -40,3 +40,10 @@ with resources.lease("python", {"ram_mb": 512, "cpu_cores": 0.5, "vram_mb": 0}):
 采样平台边界、Agent默认上限和CPU／GPU阈值见 [AGENT_RUNTIME](AGENT_RUNTIME.md)。资源许可不替代安全权限、设备所有权、模型服务就绪检查或目标验收。停止与诊断路径不因资源不足被禁止，避免在压力下无法回收资源。
 
 验证：`test_resource_foundation` 覆盖跨工作负载预算、真实双服务／Node进程释放、模型驻留及失败回收、默认查询工具权限和Python拒绝执行；原资源／Agent／Python测试保持兼容。
+
+
+### 进程诊断与回收
+
+`process_inspect` 补充本地/SSH 主机的进程 RSS 与可用 RAM；本机 RAM/CPU/VRAM 总预算仍由 `resource_status` 和共享 ResourceManager 管理，不另建账本。RSS 可能包含共享页，不能简单相加当作物理内存；可用 RAM 前后差额也不等于该进程释放量。外部/远端服务只观测，不冒充已有资源租约。
+
+进程控制器使用 `ResourceManager.control_lease()` 在同一 leases 表固定记账 32 MiB RAM、0.05 CPU、0 VRAM；这是内部有界诊断/停止专用入口，不是模型可配置的预算绕过。即使常规工作负载因内存/CPU压力被拒绝，控制器仍可运行，结束/异常释放记账。远端脚本开销和外部服务并未纳入本机硬限制。不会执行 drop_caches、清空任意进程内存或因压力擅自杀服务。

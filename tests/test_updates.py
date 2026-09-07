@@ -8,6 +8,8 @@ import sqlite3
 import subprocess
 import sys
 import tempfile
+import threading
+import time
 import unittest
 from unittest.mock import patch
 
@@ -164,14 +166,23 @@ class UpdateTests(unittest.TestCase):
                      'versions/0.2.0/latest.json': json.dumps(metadata).encode(),
                      metadata['wheel']: b'wheel', 'bootstrap.pyz': b'zip fixture',
                      'install.sh': b'install', 'uninstall.sh': b'uninstall',
-                     'install.ps1': b'powershell', 'index.html': b'page'}
+                     'install.ps1': b'powershell'}
             for name, content in files.items():
                 path = bundle / name
                 path.parent.mkdir(parents=True, exist_ok=True)
                 path.write_bytes(content)
             (bundle / 'SHA256SUMS').write_text('\n'.join(hashlib.sha256(content).hexdigest() + '  ' + name for name, content in files.items()) + '\n')
+            target.mkdir()
+            (target / 'index.html').write_bytes(b'existing independent website')
             deploy_local(bundle, target)
+            self.assertEqual((target / 'index.html').read_bytes(), b'existing independent website')
             deploy_local(bundle, target)  # Identical publication is idempotent.
+            (bundle / 'index.html').write_bytes(b'accidental website')
+            sums = (bundle / 'SHA256SUMS').read_text()
+            (bundle / 'SHA256SUMS').write_text(sums + hashlib.sha256(b'accidental website').hexdigest() + '  index.html\n')
+            with self.assertRaisesRegex(ValueError, 'whitelist'):
+                deploy_local(bundle, target)
+            (bundle / 'SHA256SUMS').write_text(sums)
             (target / metadata['wheel']).write_bytes(b'different previous artifact')
             before = (target / 'latest.json').read_bytes()
             with self.assertRaisesRegex(ValueError, 'Immutable'):
@@ -193,3 +204,85 @@ class UpdateTests(unittest.TestCase):
                                         capture_output=True, text=True, timeout=15)
             self.assertNotEqual(result.returncode, 0)
             self.assertIn('update is in progress', result.stderr)
+
+    def test_source_migration_checks_remaining_terminal_and_gates_new_startup(self):
+        from loop_robot.terminal.instances import TerminalInstance
+        with tempfile.TemporaryDirectory() as directory:
+            first = TerminalInstance(directory).__enter__()
+            second = TerminalInstance(directory).__enter__()
+            first.__exit__()
+            try:
+                with contextlib.ExitStack() as stack, self.assertRaisesRegex(RuntimeError, 'Close Loop ROS'):
+                    release.state_guard(stack, directory)
+            finally:
+                second.__exit__()
+            with contextlib.ExitStack() as stack:
+                release.state_guard(stack, directory)
+                with self.assertRaisesRegex(RuntimeError, 'migration'):
+                    with TerminalInstance(directory):
+                        pass
+            with TerminalInstance(directory):
+                pass
+
+    def test_source_migration_checks_service_and_viewer_in_later_slot(self):
+        with tempfile.TemporaryDirectory() as directory:
+            state = Path(directory)
+            slot = state / 'terminals/2'
+            slot.mkdir(parents=True)
+            with (slot / 'task_service.lock').open('a+b') as stream:
+                runtime._lock(stream)
+                with contextlib.ExitStack() as stack, self.assertRaisesRegex(RuntimeError, 'Close Loop ROS'):
+                    release.state_guard(stack, state)
+            (slot / 'viewer').mkdir()
+            (slot / 'viewer/owner.json').write_text(json.dumps({'pid': os.getpid()}))
+            with contextlib.ExitStack() as stack, self.assertRaisesRegex(RuntimeError, 'viewer'):
+                release.state_guard(stack, state)
+
+    def test_publisher_rejects_conflicting_pinned_manifest_before_writing(self):
+        from scripts.publish_release import deploy_local
+        with tempfile.TemporaryDirectory() as directory:
+            bundle = Path(directory) / 'bundle'
+            data = json.loads(self.metadata())
+            files = {'latest.json': json.dumps(data).encode(), data['wheel']: b'wheel',
+                     'versions/0.2.0/latest.json': json.dumps({**data, 'sha256': '0' * 64}).encode(),
+                     'bootstrap.pyz': b'fixture', 'install.sh': b'fixture',
+                     'uninstall.sh': b'fixture', 'install.ps1': b'fixture'}
+            for name, payload in files.items():
+                path = bundle / name
+                path.parent.mkdir(parents=True, exist_ok=True)
+                path.write_bytes(payload)
+            (bundle / 'SHA256SUMS').write_text(''.join(
+                hashlib.sha256(payload).hexdigest() + '  ' + name + '\n' for name, payload in files.items()))
+            target = Path(directory) / 'public'
+            with self.assertRaisesRegex(ValueError, 'Versioned manifest differs'):
+                deploy_local(bundle, target)
+            self.assertFalse(target.exists())
+
+    def test_controller_carries_manifest_validation_from_package_import(self):
+        from loop_robot import release_client as packaged
+        with tempfile.TemporaryDirectory() as directory:
+            packaged.write_control(Path(directory))
+            result = subprocess.run([sys.executable, str(Path(directory) / 'release-control.pyz'), '--help'],
+                                    cwd=directory, capture_output=True, text=True, timeout=15)
+            self.assertEqual(result.returncode, 0, result.stderr)
+
+    def test_concurrent_source_start_waits_for_brief_slot_acquisition(self):
+        from loop_robot.terminal.instances import TerminalInstance
+        with tempfile.TemporaryDirectory() as directory:
+            entered = threading.Event()
+            failures = []
+            def start():
+                try:
+                    with TerminalInstance(directory):
+                        entered.set()
+                except Exception as error:
+                    failures.append(error)
+            with runtime.state_startup(directory):
+                thread = threading.Thread(target=start)
+                thread.start()
+                time.sleep(.05)
+                self.assertFalse(entered.is_set())
+            thread.join(timeout=3)
+            self.assertFalse(thread.is_alive())
+            self.assertFalse(failures)
+            self.assertTrue(entered.is_set())

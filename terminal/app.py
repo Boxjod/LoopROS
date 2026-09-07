@@ -8,25 +8,25 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from terminal.config import ROOT, DEFAULT_STATE_DIR, load_config, user_config_file
-from terminal.ui import VERSION, welcome
-from terminal.platform_support import lock_terminal, InputPoller
-from terminal.home import save_key, loop_home
-from terminal.setup import ensure_setup, quick_setup
-from terminal.llm import ChatAgent, QwenClient
-from terminal.scheduler import Scheduler
-from terminal.services import PolicyServices
-from terminal.agents import AgentRuntime, AGENT_TOOLS, ALLOWED_AGENT_TOOLS
-from terminal.providers import ProviderStore, choose_profile
-from terminal.permissions import PermissionGate, ACTION_NAMES
-from terminal.control import CONTROL_COMMANDS, operator_command, list_devices
-from terminal.nodes import NODE_TOOLS
-from terminal.model_library import LIBRARY_TOOLS
-from terminal.mujoco_docs import DOC_TOOLS
-from terminal.robotics import ROBOT_TOOLS, ROBOT_NAMES
-from terminal.web import WEB_TOOLS, WEB_NAMES, dispatch as web_dispatch
-from terminal.skills import SKILL_TOOLS, SKILL_NAMES, tool as skills_tool
-from terminal.files import FILE_TOOLS, FILE_NAMES, tool as files_tool
+from loop_robot.terminal.config import ROOT, DEFAULT_STATE_DIR, load_config, user_config_file
+from loop_robot.terminal.ui import VERSION, welcome
+from loop_robot.terminal.platform_support import lock_terminal, InputPoller
+from loop_robot.terminal.home import save_key, loop_home
+from loop_robot.terminal.setup import ensure_setup, quick_setup
+from loop_robot.terminal.llm import ChatAgent, QwenClient
+from loop_robot.terminal.scheduler import Scheduler
+from loop_robot.terminal.services import PolicyServices
+from loop_robot.terminal.agents import AgentRuntime, AGENT_TOOLS, ALLOWED_AGENT_TOOLS
+from loop_robot.terminal.providers import ProviderStore, choose_profile
+from loop_robot.terminal.permissions import PermissionGate, ACTION_NAMES
+from loop_robot.terminal.control import CONTROL_COMMANDS, operator_command, list_devices
+from loop_robot.terminal.nodes import NODE_TOOLS
+from loop_robot.terminal.model_library import LIBRARY_TOOLS
+from loop_robot.terminal.mujoco_docs import DOC_TOOLS
+from loop_robot.terminal.robotics import ROBOT_TOOLS, ROBOT_NAMES
+from loop_robot.terminal.web import WEB_TOOLS, WEB_NAMES, dispatch as web_dispatch
+from loop_robot.terminal.skills import SKILL_TOOLS, SKILL_NAMES, tool as skills_tool
+from loop_robot.terminal.files import FILE_TOOLS, FILE_NAMES, tool as files_tool
 
 HELP = """Loop ROS commands
 /help, /shortcuts         Show help
@@ -43,7 +43,7 @@ HELP = """Loop ROS commands
 /node [help|list|start|use|status|move|logs|stop]  Manage persistent processes
 /carrier [list|status|start|move|stop]  Route to configured local robot carriers
 /key [save]              Set API key; save persists in user home
-/model [name]            Show/change the session model
+/model [MODEL_ID [EFFORT]]            Show/change the session model
 /fast [on|off|status]    Toggle requested Fast tier for the current client
 /switch [master|expert] [profile]  Select and save a model profile
 /switch list|reload      List profiles / apply external changes
@@ -118,33 +118,33 @@ TOOLS.append({'type': 'function', 'function': {'name': 'simulator_control',
 TOOLS += LIBRARY_TOOLS + DOC_TOOLS + ROBOT_TOOLS
 TOOLS += NODE_TOOLS
 TOOLS += WEB_TOOLS
-from terminal.offline_skills import TOOLS as OFFLINE_SKILL_TOOLS, NAMES as OFFLINE_SKILL_NAMES, tool as offline_skill_tool
+from loop_robot.terminal.offline_skills import TOOLS as OFFLINE_SKILL_TOOLS, NAMES as OFFLINE_SKILL_NAMES, tool as offline_skill_tool
 TOOLS += SKILL_TOOLS + OFFLINE_SKILL_TOOLS
 TOOLS += FILE_TOOLS
-from terminal.coding import CODING_TOOLS, CODING_NAMES, tool as coding_tool
-from terminal.harness import HARNESS_TOOLS, HARNESS_NAMES, tool as harness_tool
-from terminal.references import REFERENCE_TOOLS
-from terminal.conversation_context import CONTEXT_TOOLS, BASE_PROMPT, context as build_conversation_context
-from terminal.python_runner import TOOLS as PYTHON_TOOLS
+from loop_robot.terminal.coding import CODING_TOOLS, CODING_NAMES, tool as coding_tool
+from loop_robot.terminal.harness import HARNESS_TOOLS, HARNESS_NAMES, tool as harness_tool
+from loop_robot.terminal.references import REFERENCE_TOOLS
+from loop_robot.terminal.conversation_context import CONTEXT_TOOLS, BASE_PROMPT, context as build_conversation_context
+from loop_robot.terminal.python_runner import TOOLS as PYTHON_TOOLS
 TOOLS += CODING_TOOLS + HARNESS_TOOLS + REFERENCE_TOOLS + CONTEXT_TOOLS + PYTHON_TOOLS
-from terminal.task_tools import TASK_TOOLS, NAMES as TASK_NAMES
+from loop_robot.terminal.task_tools import TASK_TOOLS, NAMES as TASK_NAMES
 TOOLS += TASK_TOOLS
-from terminal.learning import Learning, TOOLS as LEARNING_TOOLS, NAMES as LEARNING_NAMES, tool as learning_tool
+from loop_robot.terminal.learning import Learning, TOOLS as LEARNING_TOOLS, NAMES as LEARNING_NAMES, tool as learning_tool
 TOOLS += LEARNING_TOOLS
-from terminal.carriers import Carriers, TOOLS as CARRIER_TOOLS, NAMES as CARRIER_NAMES, load_bound, validate_bindings
-from terminal.settings import TOOLS as SETTINGS_TOOLS, NAMES as SETTINGS_NAMES, call as settings_call
-from terminal.session_task import SessionTask, TOOLS as SESSION_TASK_TOOLS, NAMES as SESSION_TASK_NAMES, call as session_task_call
-from terminal.user_tools import TOOLS as USER_TOOLS, NAMES as USER_TOOL_NAMES, call as user_tool_call
-from terminal.files import schema
+from loop_robot.terminal.carriers import Carriers, TOOLS as CARRIER_TOOLS, NAMES as CARRIER_NAMES, load_bound, validate_bindings
+from loop_robot.terminal.settings import TOOLS as SETTINGS_TOOLS, NAMES as SETTINGS_NAMES, call as settings_call
+from loop_robot.terminal.session_task import SessionTask, TOOLS as SESSION_TASK_TOOLS, NAMES as SESSION_TASK_NAMES, call as session_task_call
+from loop_robot.terminal.user_tools import TOOLS as USER_TOOLS, NAMES as USER_TOOL_NAMES, call as user_tool_call
+from loop_robot.terminal.files import schema
 TOOLS += [schema('resource_status', 'Read shared host RAM/CPU/GPU telemetry, resource reservations and admission limits across workloads. Does not launch work.', {}, [])]
 TOOLS += CARRIER_TOOLS + SETTINGS_TOOLS + SESSION_TASK_TOOLS + USER_TOOLS
-from terminal.simulation import TOOLS as SIM_TOOLS, NAMES as SIM_NAMES, call as simulation_call
+from loop_robot.terminal.simulation import TOOLS as SIM_TOOLS, NAMES as SIM_NAMES, call as simulation_call
 TOOLS += SIM_TOOLS
 
 
 class App:
     def __init__(self, config, state_dir, confirm=None, background=False, runtime_dir=None):
-        from toolchain.serial_port import SerialPort
+        from loop_robot.toolchain.serial_port import SerialPort
         self.serial = SerialPort()
         self.config = config
         self.workspace_root = Path.cwd().resolve()
@@ -157,7 +157,7 @@ class App:
         self.concurrent_terminal = self.runtime_dir.resolve() != state_dir.resolve()
         self.deployment = load_bound(state_dir)
         if self.deployment:
-            from toolchain.node_workers import definitions
+            from loop_robot.toolchain.node_workers import definitions
             validate_bindings(self.deployment, definitions())
         self.permissions = PermissionGate(state_dir / "permissions.sqlite")
         self.motion_lock = threading.RLock()
@@ -169,14 +169,14 @@ class App:
         self.key_cache = {}
         self.evidence_path = state_dir / "episodes.sqlite"
         self.scene_dir = self.runtime_dir / "scenes"
-        from terminal.viewer import SimulatorViewer
+        from loop_robot.terminal.viewer import SimulatorViewer
         self.viewer = SimulatorViewer(ROOT, self.runtime_dir / "viewer")
         self.latest_scene = None
         self.last_scene_request = None
         self.scene_generation_error = None
         self.restore_scene_state()
-        from core.resources import ResourceManager
-        from toolchain.admission import HostMonitor
+        from loop_robot.core.resources import ResourceManager
+        from loop_robot.toolchain.admission import HostMonitor
         self.resources = ResourceManager(state_dir / "resource_leases.sqlite", config.get("resources", {}), HostMonitor())
         self.services = PolicyServices(config["services"], self.runtime_dir / "services", resources=self.resources)
         self.scheduler = Scheduler(self.runtime_dir / "jobs.sqlite", recover=not background)
@@ -209,6 +209,7 @@ class App:
         import uuid
         self.session_id = uuid.uuid4().hex[:12]
         self.session_task = SessionTask(identity=self.session_id)
+        self.agent.completion_gate = lambda: self.session_task.continuation()
         self.agent.on_tool_result = self.observe_tool_result
         self.agent.on_session_finished = lambda summary, events: self.session_task.finish(summary, events)
         self.agent.prepare_input = self.prepare_input
@@ -218,9 +219,9 @@ class App:
             "Explain receipts in plain language; raw tool results are available through /details. "
             "Include paths or technical details when useful or requested."
         )
-        from core.nodes import NodeRuntime
-        from toolchain.node_workers import definitions
-        from terminal.instances import claim_node_resource
+        from loop_robot.core.nodes import NodeRuntime
+        from loop_robot.toolchain.node_workers import definitions
+        from loop_robot.terminal.instances import claim_node_resource
         self.nodes = NodeRuntime(definitions(), self.runtime_dir / "nodes", admission=self.resources,
                                  resource_claim=lambda resource: claim_node_resource(state_dir, resource))
         self.node_focus = "master"
@@ -228,7 +229,7 @@ class App:
         self.confirm = confirm or (lambda message: input(message + " [y/N] ").strip().lower() == "y")
 
     def prepare_input(self, text, attachments):
-        from terminal.references import prepare
+        from loop_robot.terminal.references import prepare
         self.local_read_cache = {}
         self.session_task.begin(text)
         self.active_toolsets.clear()  # Specialist schemas last for one turn only.
@@ -236,7 +237,7 @@ class App:
 
     def observe_tool_result(self, name, args, result):
         # Advisory feedback is added to the actual receipt; it never retries an action.
-        from terminal.connection_memory import fallback
+        from loop_robot.terminal.connection_memory import fallback
         import sqlite3
         try:
             feedback = fallback(self.learning, result)
@@ -253,12 +254,12 @@ class App:
         for node in self.nodes.status()['nodes']:
             if not node['process_alive']:
                 continue
-            dependencies = ['node_start'] + (['open_serial', 'read_serial'] if node['kind'] == 'serial_rx' else ['run_python', 'node_command'] if node['kind'] == 'process' else ['move_sim', 'node_command'])
+            dependencies = ['node_start'] + (['open_serial', 'read_serial'] if node['kind'] == 'serial_rx' else ['run_python', 'node_command'] if node['kind'] in ('process', 'ros') else ['move_sim', 'node_command'])
             if permissions['mode'] == 'plan' or any(permissions['rules'][action] == 'deny' for action in dependencies):
                 self.nodes.stop(node['name'])
 
     def tool(self, name, args):
-        from terminal.read_cache import call
+        from loop_robot.terminal.read_cache import call
         return call(self,name,args,self._tool)
 
     def _tool(self, name, args):
@@ -274,7 +275,7 @@ class App:
             return settings_call(self, name, args)
         if name == "run_python":
             self.permissions.check(name, args)
-            from terminal.python_runner import run
+            from loop_robot.terminal.python_runner import run
             return run(self, args)
         if name in CARRIER_NAMES:
             return self.carriers.call(name, args)
@@ -290,21 +291,21 @@ class App:
             if name in CODING_NAMES: return coding_tool(self,name,args)
             if name in HARNESS_NAMES: return harness_tool(self,name,args)
             if name in FILE_NAMES: return files_tool(self,name,args)
-            from terminal.references import read_url
+            from loop_robot.terminal.references import read_url
             if not isinstance(args,dict) or set(args)!={'url'}: raise ValueError('url required')
             return read_url(args['url'])
         if name in TASK_NAMES:
-            from terminal.task_tools import dispatch
+            from loop_robot.terminal.task_tools import dispatch
             return dispatch(self,name,args)
         if name in ROBOT_NAMES:
             self.permissions.check(name,args)
-            from terminal.robotics import dispatch
+            from loop_robot.terminal.robotics import dispatch
             return dispatch(self,name,args)
         if name in SIM_NAMES:
             return simulation_call(self,name,args)
         if name == 'mujoco_docs':
             self.permissions.check(name, args)
-            from terminal.mujoco_docs import lookup
+            from loop_robot.terminal.mujoco_docs import lookup
             if args.get('query'): self.permissions.check('web_search', {'query':args['query']})
             return lookup(self.state_dir / 'docs_cache', **args)
         if name == 'compose_scene':
@@ -312,7 +313,7 @@ class App:
             return self.compose(args)
         if name in ('model_library', 'load_model'):
             self.permissions.check(name, args)
-            from terminal.model_library import catalog, search
+            from loop_robot.terminal.model_library import catalog, search
             if name == 'model_library':
                 if not isinstance(args,dict) or set(args)-{'query'}: raise ValueError('Only query is supported')
                 if args.get('query'):
@@ -336,7 +337,7 @@ class App:
             self.permissions.check(name, args)
             return web_dispatch(name, args)
         if name in {t['function']['name'] for t in NODE_TOOLS}:
-            from terminal.nodes import tool
+            from loop_robot.terminal.nodes import tool
             return tool(self, name, args)
         if name in OFFLINE_SKILL_NAMES:
             return offline_skill_tool(self, name, args)
@@ -365,7 +366,7 @@ class App:
             if args.get('action') in ('move_joints','move_cartesian') and result.get('executed'):
                 import time
                 def finish(motion,error=None):
-                    from core.store import EventStore
+                    from loop_robot.core.store import EventStore
                     finished={**result,'executed':error is None,'motion':motion,'review':{'verdict':'pass' if error is None else 'fail','reason':error or 'Measured motion reached tolerance; grasp not evaluated'}}
                     if error:finished['error']=error
                     store=EventStore(self.viewer.directory/'control.sqlite')
@@ -404,11 +405,11 @@ class App:
                 return {"window_open": False, "error": "最近的场景生成失败，不能把旧场景作为新结果打开：" + self.scene_generation_error}
             self.viewer.ensure_installed()
             if self.latest_scene is None:
-                from toolchain.scenes import save_default_scene
+                from loop_robot.toolchain.scenes import save_default_scene
                 # Only use compiler-produced scenes; don't load arbitrary model paths.
                 candidates = sorted(self.scene_dir.glob("*/scene.json"), key=lambda p: p.stat().st_mtime, reverse=True)
                 if candidates:
-                    from toolchain.scenes import compile_scene, physics_check
+                    from loop_robot.toolchain.scenes import compile_scene, physics_check
                     spec = json.loads(candidates[0].read_text())
                     xml = compile_scene(spec)
                     physics_check(xml)
@@ -471,16 +472,16 @@ class App:
 
     def move_sim(self, target):
         self.viewer.ensure_installed()
-        from toolchain.trajectory import validate_target
+        from loop_robot.toolchain.trajectory import validate_target
         validate_target(target, ((-1, 1), (-1, 1)))
         with self.motion_lock:
-            from core.contracts import TaskSpec, record
-            from core.loop import Loop
-            from core.plugins import FeedbackMaster, NumericalReviewer
-            from core.store import EventStore
-            from toolchain.mujoco_sim import MujocoBody
+            from loop_robot.core.contracts import TaskSpec, record
+            from loop_robot.toolchain.feedback import Loop
+            from loop_robot.toolchain.feedback import FeedbackMaster, NumericalReviewer
+            from loop_robot.core.store import EventStore
+            from loop_robot.toolchain.mujoco_sim import MujocoBody
             if self.sim_body is None:
-                self.sim_body = MujocoBody(ROOT / "examples/two_joint.xml", {"j1": "a1", "j2": "a2"})
+                self.sim_body = MujocoBody(ROOT / "assets/simulation/two_joint.xml", {"j1": "a1", "j2": "a2"})
                 self.sim_body.cancel_event = self.motion_stop
             body = self.sim_body
             store = EventStore(self.evidence_path)
@@ -496,12 +497,12 @@ class App:
         if type(complex_task) is not bool:
             raise ValueError("complex_task must be boolean")
         self.permissions.check("generate_scene", {"description": description, "complex_task": complex_task})
-        from toolchain.scenes import generate_scene
+        from loop_robot.toolchain.scenes import generate_scene
         self.viewer.ensure_installed()
         self.last_scene_request = description
         self.save_scene_state()
         try:
-            from terminal.scene_intent import direct_edit
+            from loop_robot.terminal.scene_intent import direct_edit
             explicit_edit = direct_edit(description)
             if explicit_edit:
                 return self.publish_scene(self.build_composition(explicit_edit, description))
@@ -545,12 +546,12 @@ class App:
         if scene and not scene.is_absolute():
             scene=self.runtime_dir/scene
         if scene and scene.resolve().is_relative_to(self.scene_dir.resolve()) and scene.exists():
-            from toolchain.model_assets import snapshot
+            from loop_robot.toolchain.model_assets import snapshot
             _,_,digest=snapshot(scene)
             if digest==state.get('scene_sha256'): self.latest_scene=scene
 
     def save_scene_state(self):
-        from toolchain.model_assets import snapshot
+        from loop_robot.toolchain.model_assets import snapshot
         digest=snapshot(self.latest_scene)[2] if self.latest_scene else None
         path=self.runtime_dir/'scene_state.json';temp=path.with_suffix('.tmp')
         scene=str(self.latest_scene.resolve().relative_to(self.runtime_dir.resolve())) if self.latest_scene else None
@@ -559,8 +560,8 @@ class App:
         temp.replace(path)
 
     def build_composition(self, edit, description=''):
-        from toolchain.composition import compose
-        from terminal.model_library import resolve
+        from loop_robot.toolchain.composition import compose
+        from loop_robot.terminal.model_library import resolve
         def resolve_asset(query, source):
             self.permissions.check('load_model', {'model':query})
             self.permissions.check('model_library', {'query':query})
@@ -652,13 +653,13 @@ class App:
             return ""
         selected = self.node_focus if focus is None else focus
         if not scheduled and text.split()[0] == '/carrier':
-            from terminal.carriers import dispatch
+            from loop_robot.terminal.carriers import dispatch
             return dispatch(self, text.partition(' ')[2])
         if not scheduled and text.split()[0] == '/node':
-            from terminal.nodes import dispatch
+            from loop_robot.terminal.nodes import dispatch
             return dispatch(self, text.partition(' ')[2])
         if not scheduled and selected != 'master':
-            from terminal.nodes import focused_reply
+            from loop_robot.terminal.nodes import focused_reply
             aliases = {'/status': 'status', '/joints': 'status', '/home': 'move 0 0'}
             node_text = aliases.get(text, 'move ' + text[6:] if text.startswith('/move ') else text)
             if not node_text.startswith('/'):
@@ -757,7 +758,7 @@ class App:
             tool = {'/result':'agent_result', '/stop-agent':'cancel_agent', '/agent-messages':'agent_messages'}[command]
             return json.dumps(self.tool(tool, {'agent_id':agent_id}), ensure_ascii=False)
         if command == "/skills":
-            from terminal.offline_skills import dispatch
+            from loop_robot.terminal.offline_skills import dispatch
             return dispatch(self, tail)
         if command in ("/help", "/shortcuts"):
             return HELP
@@ -775,25 +776,30 @@ class App:
             args = shlex.split(tail)
             if args not in ([], ["save"]):
                 raise ValueError("Usage: /key [save]")
-            self.client.key = getpass.getpass("API key (save to disk): " if args else "API key (session only): ").strip()
-            if args == ["save"]:
-                save_key(self.client.config, self.client.key)
-                return "API key saved in Loop ROS user home."
-            return "API key set in memory." if self.client.key else "No key set."
+            key = getpass.getpass("API key (shared by chat and tasks): ").strip()
+            if not key:
+                return "No key changed."
+            save_key(self.client.config, key)
+            self.client.key = None
+            return "API key saved for the current endpoint; shared by chat, agents and tasks."
         if command == "/model":
-            if tail.strip():
+            parts = shlex.split(tail)
+            if len(parts) > 2:
+                raise ValueError('Usage: /model [MODEL_ID [EFFORT]]')
+            if parts:
                 with self.runtime.lock:
                     if any(r['state'] in ('running', 'queued') for r in self.runtime.records.values()):
                         raise ValueError('Wait for or cancel running subagents before changing model')
-                if self.client.config['model'] != tail.strip():
+                if self.client.config['model'] != parts[0]:
                     self.client.config.pop('context_window', None)
-                self.agent.token_usage = {}
-                self.agent.context_report = {}
-                self.agent.history_message_limit = 32
-                self.config["llm"]["model"] = tail.strip()
-                self.client.config['model'] = tail.strip()
-                self.agent.history.clear(); self.agent.turn_summaries.clear()
-            return self.config["llm"]["model"]
+                    self.client.config.pop('reasoning_effort', None)
+                    self.agent.context_report = {}
+                self.config['llm']['model'] = parts[0]
+                self.client.config['model'] = parts[0]
+                if len(parts) == 2:
+                    from loop_robot.terminal.reasoning import set_effort
+                    return json.dumps(set_effort(self, parts[1]))
+            return self.config['llm']['model']
         if command == '/fast':
             option = tail.strip().lower()
             if option not in ('', 'on', 'off', 'status'):
@@ -827,8 +833,8 @@ class App:
         if command == '/trigger':
             return json.dumps(self.tool('task_signal',{'name':tail}),ensure_ascii=False)
         if command == '/tasks':
-            from terminal.task_service import start,stop,policy_path
-            from core.tasks import TaskStore
+            from loop_robot.terminal.task_service import start,stop,policy_path
+            from loop_robot.core.tasks import TaskStore
             parts=tail.split();action=parts[0] if parts else 'list'
             if action in ('list','all','start','stop','config') and len(parts)<=1:
                 if action=='start': result=start(self)
@@ -836,7 +842,7 @@ class App:
                 elif action=='config': result={'path':str(policy_path(self.state_dir)),'config':json.loads(policy_path(self.state_dir).read_text())}
                 else: result=self.tool('task_status',{'scope':'all'} if action=='all' else {})
             elif action in ('status','cancel','resume') and len(parts)>=2:
-                from terminal.task_tools import resolve_reference
+                from loop_robot.terminal.task_tools import resolve_reference
                 reference = tail[len(action):].strip()
                 message = None
                 if action == 'resume':
@@ -896,8 +902,8 @@ def main(argv=None):
     if args.host and not args.deployment:
         parser.error('--host requires --deployment')
     if args.deployment:
-        from core.deployment import Deployment
-        from toolchain.node_workers import definitions
+        from loop_robot.core.deployment import Deployment
+        from loop_robot.toolchain.node_workers import definitions
         try:
             deployment = Deployment.load(args.deployment, args.host)
             validate_bindings(deployment, definitions())
@@ -906,10 +912,10 @@ def main(argv=None):
     if args.state_dir is None:
         args.state_dir = DEFAULT_STATE_DIR if deployment is None else DEFAULT_STATE_DIR / 'deployments' / deployment.deployment_id / deployment.host_id
     args.state_dir.mkdir(parents=True, exist_ok=True)
-    from terminal.instances import TerminalInstance
+    from loop_robot.terminal.instances import TerminalInstance
     with TerminalInstance(args.state_dir) as instance:
         if deployment:
-            from terminal.carriers import bind
+            from loop_robot.terminal.carriers import bind
             try:
                 with (args.state_dir / 'deployment.lock').open('a+b') as binding_lock:
                     lock_terminal(binding_lock)
@@ -928,13 +934,13 @@ def main(argv=None):
                 print(app.dispatch(args.once))
                 return 0
             if args.entry == "node":
-                from terminal.nodes import HELP as NODE_HELP
+                from loop_robot.terminal.nodes import HELP as NODE_HELP
                 print(NODE_HELP)
             if args.entry != "node" and not ensure_setup(app, sys.stdin.isatty()):
                 print("Run loop again to configure access, or use --once for offline commands.")
                 return 0
             if sys.stdin.isatty() and sys.stdout.isatty():
-                from terminal.interactive import run
+                from loop_robot.terminal.interactive import run
                 run(app)
                 return 0
             print(welcome(app.client.config["model"], app.expert.config["model"], app.permissions.snapshot()["mode"],

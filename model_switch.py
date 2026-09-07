@@ -3,10 +3,10 @@ import argparse
 import json
 from pathlib import Path
 
-from terminal.config import ROOT, DEFAULT_STATE_DIR, load_config
-from terminal.providers import ProviderStore, choose_profile
-from terminal.llm import QwenClient
-from terminal.setup import quick_setup
+from loop_robot.terminal.config import ROOT, DEFAULT_STATE_DIR, load_config
+from loop_robot.terminal.providers import ProviderStore, choose_profile
+from loop_robot.terminal.llm import QwenClient
+from loop_robot.terminal.setup import quick_setup
 
 
 def edit_profile(store, name, editing=False):

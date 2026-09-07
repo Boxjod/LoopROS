@@ -1,8 +1,8 @@
 import unittest
 from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.document import Document
-from terminal.app import HELP
-from terminal.completion import SlashCompleter
+from loop_robot.terminal.app import HELP
+from loop_robot.terminal.completion import SlashCompleter
 
 
 class CompletionTests(unittest.TestCase):
@@ -14,7 +14,7 @@ class CompletionTests(unittest.TestCase):
         self.assertIn('/switch', matches('/s'))
         self.assertIn('/stop', matches('/s'))
         self.assertTrue(all(c.startswith('/s') for c in matches('/s')))
-        self.assertEqual(matches('/sw'), ['/switch'])
+        self.assertEqual(matches('/sw'), ['/switch', '/switch setup', '/switch list', '/switch reload', '/switch master', '/switch expert'])
         self.assertIn('/queue', matches('/'))
         self.assertIn('/shortcuts', matches('/'))
         self.assertEqual(len(matches('/')), len(set(matches('/'))))
@@ -42,6 +42,15 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(matches('/switch setup '), [])
         self.assertEqual(matches(' /switch '), [])
         self.assertEqual(matches('/switch\nse'), [])
+
+    def test_partial_parent_includes_full_subcommands(self):
+        completer = SlashCompleter(HELP)
+        choices = list(completer.get_completions(Document('/swi'), CompleteEvent()))
+        setup = next(c for c in choices if c.text == '/switch setup')
+        self.assertEqual(setup.start_position, -4)
+        self.assertIn('Configure provider', setup.display_meta_text)
+        root = list(completer.get_completions(Document('/'), CompleteEvent()))
+        self.assertFalse(any(' ' in c.text for c in root))
 
 
     def test_agent_role_and_title_completion(self):

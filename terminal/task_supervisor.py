@@ -3,8 +3,8 @@ import hashlib
 import json
 from pathlib import Path
 import time
-from core.tasks import assess, validate_spec
-from terminal.agents import AgentRuntime, ResourceBusy
+from loop_robot.core.tasks import assess, validate_spec
+from loop_robot.terminal.agents import AgentRuntime, ResourceBusy
 
 FEEDBACK_TOOL={'type':'function','function':{'name':'task_feedback','description':'报告本轮反馈和下一步；不能自行宣布验收成功。缺输入/外部条件时明确等待原因。','parameters':{'type':'object','properties':{'state':{'type':'string','enum':['continue','needs_input']},'reason':{'type':'string'},'next_step':{'type':'string'},'checks':{'type':'array','description':'Only propose missing acceptance checks derived from the user goal; never replace existing checks. Must use actual granted tool receipts.','items':{'type':'object'}}},'required':['state','reason','next_step'],'additionalProperties':False}}}
 PROMPT='''你是持久任务的执行子Agent。每轮依据原始目标、明确验收条件和上轮实际反馈修正方案。
@@ -95,7 +95,7 @@ class TaskSupervisor:
         identity=self.running[agent]
         if self.learning:
             try:
-                from terminal.connection_memory import fallback
+                from loop_robot.terminal.connection_memory import fallback
                 feedback = fallback(self.learning, result)
                 if feedback:
                     result['memory_feedback'] = feedback

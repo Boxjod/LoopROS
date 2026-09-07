@@ -7,7 +7,7 @@ import tempfile
 import threading
 import uuid
 
-from terminal.files import schema, _denied
+from loop_robot.terminal.files import schema, _denied
 
 LOCK = threading.RLock()
 LIMIT = 1024 * 1024
@@ -29,13 +29,13 @@ def resolve(app, value='.', write=False):
     if write:
         if not path.is_relative_to(app.workspace_root): raise PermissionError('Writes must stay inside the workspace: ' + str(app.workspace_root))
         if any(part in SKIP for part in path.relative_to(app.workspace_root).parts): raise PermissionError('Protected/generated directory; choose a source file')
-        from terminal.config import ROOT
+        from loop_robot.terminal.config import ROOT
         if (app.workspace_root.resolve() == ROOT.resolve() and path.parent == ROOT.resolve()
                 and not path.exists() and path.suffix.lower() in {'.py', '.sh', '.bash', '.ps1', '.bat', '.cmd'}):
             raise ValueError('New scripts must not clutter the Loop ROS package root. '
                              'Use user_projects/PROJECT/robots/MODEL/scripts/NAME (omit robots/MODEL if unknown); '
                              'maintained product code belongs in core/, terminal/, toolchain/ or scripts/.')
-        from terminal.home import loop_home
+        from loop_robot.terminal.home import loop_home
         if path.is_relative_to(loop_home().resolve()): raise PermissionError('Use skill_write or harness_write for Loop configuration')
     return path
 

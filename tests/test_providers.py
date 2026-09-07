@@ -1,24 +1,28 @@
 import copy
 import json
+import os
 from pathlib import Path
 import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config, validate_provider
-from terminal.providers import ProviderStore, choose_profile
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config, validate_provider
+from loop_robot.terminal.providers import ProviderStore, choose_profile
 
 
 class ProviderTests(unittest.TestCase):
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory()
+        self.env = patch.dict(os.environ, {"LOOPER_HOME": self.temp.name})
+        self.env.start()
         self.config = load_config()
         self.path = Path(self.temp.name) / "providers.sqlite"
         self.store = ProviderStore(self.path, self.config)
 
     def tearDown(self):
         self.store.close()
+        self.env.stop()
         self.temp.cleanup()
 
     def test_add_edit_and_persistent_selection(self):
@@ -39,9 +43,9 @@ class ProviderTests(unittest.TestCase):
     def test_advice_and_legacy_key_share_current_client(self):
         app = App(copy.deepcopy(self.config), self.temp.name)
         try:
-            with patch('terminal.app.getpass.getpass', return_value='session-secret'):
+            with patch('loop_robot.terminal.app.getpass.getpass', return_value='session-secret'):
                 app.dispatch('/expert-key')
-            self.assertEqual(app.client.key, 'session-secret')
+            self.assertEqual(app.client.resolved_key(), 'session-secret')
             with patch.object(app.client, 'complete', return_value={'content': 'analysis'}) as request:
                 result = app.tool('expert_advice', {'description': '复杂规划'})
             request.assert_called_once()

@@ -2,11 +2,13 @@ import time
 import unittest
 from dataclasses import replace
 
-from core.contracts import TaskSpec
-from core.loop import Loop
-from core.plugins import FeedbackMaster, MockBody, NumericalReviewer
-from core.store import EventStore
-from toolchain.trajectory import validate_trajectory
+from loop_robot.core.contracts import TaskSpec
+from loop_robot.core.contracts import Episode, Review
+from loop_robot.toolchain.feedback import Loop
+from loop_robot.toolchain.feedback import FeedbackMaster, NumericalReviewer
+from examples.mock_body import MockBody
+from loop_robot.core.store import EventStore
+from loop_robot.toolchain.trajectory import validate_trajectory
 
 
 class LoopTests(unittest.TestCase):
@@ -98,6 +100,16 @@ class LoopTests(unittest.TestCase):
                        [(0, [0, 0]), (0.1, [0.8, 0])]):
             with self.assertRaises(ValueError):
                 validate_trajectory(points, self.body.spec.limits, 0.5)
+
+    def test_episode_review_is_atomic_and_preserves_caller_verdict(self):
+        with EventStore(':memory:') as store:
+            episode = Episode('test', 1, 'body', 'calibration')
+            with self.assertRaises(ValueError):
+                store.append_episode_review(episode, Review('inconclusive', float('nan'), 'invalid'))
+            self.assertEqual(store.events(), [])
+            store.append_episode_review(episode, Review('inconclusive', 0, 'Observation only'))
+            self.assertEqual([kind for kind, _ in store.events()], ['episode', 'review'])
+            self.assertEqual(store.events()[1][1]['verdict'], 'inconclusive')
 
 
 if __name__ == "__main__":

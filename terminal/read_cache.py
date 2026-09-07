@@ -13,8 +13,8 @@ def call(app,name,args,execute):
     try:
         if name=='skill_read':
             if set(args)-{'name','path','offset','limit'}: return execute(name,args)
-            from terminal.skills import _resolve
-            from terminal.home import loop_home
+            from loop_robot.terminal.skills import _resolve
+            from loop_robot.terminal.home import loop_home
             root=_resolve(loop_home()/'skills',args['name']).parent
             relative=args.get('path','SKILL.md')
             if not isinstance(relative,str) or Path(relative).is_absolute() or '..' in Path(relative).parts: return execute(name,args)
@@ -22,9 +22,9 @@ def call(app,name,args,execute):
             if not path.is_relative_to(root): return execute(name,args)
         else:
             if set(args)-({'path','offset','limit'} if name=='read_file' else {'path'}): return execute(name,args)
-            from terminal.coding import resolve
+            from loop_robot.terminal.coding import resolve
             path=resolve(app,args['path'])
-        from terminal.files import _denied
+        from loop_robot.terminal.files import _denied
         if _denied(path): return execute(name,args)
         if not path.is_file() or path.stat().st_size>1024*1024: return execute(name,args)
         raw=path.read_bytes()

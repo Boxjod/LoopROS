@@ -21,8 +21,8 @@ import pyte
 
 class ResizeRenderTests(unittest.TestCase):
     def test_wide_panel_title_and_preview_stay_within_cell_width(self):
-        from terminal.interactive import Terminal
-        from terminal.markdown import BoldText
+        from loop_robot.terminal.interactive import Terminal
+        from loop_robot.terminal.markdown import BoldText
         from prompt_toolkit.utils import get_cwidth
         terminal = Terminal.__new__(Terminal)
         terminal.ui = SimpleNamespace(output=SimpleNamespace(get_size=lambda: SimpleNamespace(rows=8, columns=18)))

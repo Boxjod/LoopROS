@@ -9,8 +9,7 @@ import secrets
 from urllib.parse import unquote, urlsplit
 
 ROOT = Path(__file__).resolve().parents[1]
-STATIC = {'index.html','zh-CN.html','install.html','style.css','site.js','favicon.png',
-          'workbench.html','workbench.css','workbench.js','three.module.min.js','three.LICENSE.txt'}
+STATIC = {'workbench.html','workbench.css','workbench.js','three.module.min.js','three.LICENSE.txt'}
 
 
 def layout(engine):
@@ -50,8 +49,8 @@ def layout(engine):
 class WorkbenchServer(HTTPServer):
     allow_reuse_address=True
     def __init__(self, address, directory, isaac_config=None):
-        from terminal.permissions import PermissionGate
-        from toolchain.simulation import SimulationWorkbench
+        from loop_robot.terminal.permissions import PermissionGate
+        from loop_robot.toolchain.simulation import SimulationWorkbench
         self.directory=Path(directory).resolve();self.directory.mkdir(parents=True,exist_ok=True)
         self.gate=PermissionGate(self.directory/'permissions.sqlite')
         self.service=SimulationWorkbench(self.directory/'web-simulation',isaac_config)
@@ -98,9 +97,9 @@ class Handler(BaseHTTPRequestHandler):
             path=unquote(urlsplit(self.path).path)
             if path=='/api/session':
                 return self.reply(200,{'token':self.server.token,'permissions':self.server.gate.snapshot(),
-                    'example_scene':str(ROOT/'examples/simulation_workbench.xml')})
+                    'example_scene':str(ROOT/'assets/simulation/simulation_workbench.xml')})
             if path=='/api/state':
-                from terminal.simulation import call_service
+                from loop_robot.terminal.simulation import call_service
                 result=call_service(self.server.service,self.server.gate,'sim_list',{})
                 for state in result['instances']:
                     state['layout']=layout(self.server.service.entry(state['instance'])['engine'])
@@ -115,7 +114,7 @@ class Handler(BaseHTTPRequestHandler):
             else:
                 name='workbench.html' if path=='/' else path.removeprefix('/')
                 if name not in STATIC: return self.reply(404,{'error':'Not found'})
-                file=ROOT/'website'/name
+                file=ROOT/'assets/workbench'/name
             data=file.read_bytes()
             self.send_bytes(200,data,mimetypes.guess_type(str(file))[0] or 'application/octet-stream')
         except PermissionError as exc: self.reply(403,{'error':str(exc)})
@@ -138,7 +137,7 @@ class Handler(BaseHTTPRequestHandler):
             if not 0<length<=2*1024*1024: raise ValueError('Invalid request size')
             if self.headers.get('Content-Type','').split(';')[0]!='application/json': raise ValueError('JSON required')
             body=json.loads(self.rfile.read(length))
-            from terminal.simulation import call_service
+            from loop_robot.terminal.simulation import call_service
             path=urlsplit(self.path).path
             if path=='/api/tool':
                 if not isinstance(body,dict) or set(body)!={'name','args'}: raise ValueError('Expected name and args')
@@ -159,8 +158,8 @@ class Handler(BaseHTTPRequestHandler):
 
 def main(argv=None):
     import os
-    from terminal.config import DEFAULT_STATE_DIR
-    from terminal.home import loop_home
+    from loop_robot.terminal.config import DEFAULT_STATE_DIR
+    from loop_robot.terminal.home import loop_home
     parser=argparse.ArgumentParser(prog='loop web',description='Local Loop ROS visual simulation workbench')
     parser.add_argument('--port',type=int,default=8768)
     parser.add_argument('--state-dir',type=Path,default=DEFAULT_STATE_DIR)

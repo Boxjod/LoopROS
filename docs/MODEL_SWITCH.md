@@ -96,8 +96,22 @@ loop-switch remove setup-配置ID
 
 ### Reasoning effort（2026-09-07）
 
-`/reasoning` 查看请求的思考强度；`/reasoning medium`、`/reasoning high` 等持久保存到当前 profile；`/reasoning default` 删除该覆盖，交由供应商默认处理。命令补全提供 default、none、minimal、low、medium、high、xhigh、max。并非每个模型都支持全部档位，不支持时保留接口错误，不偷偷改模型或参数重发。修改沿用 profile 的活动任务保护，不更换 endpoint 或密钥。
+`/model` 选完模型后在同一菜单选择推理档位，选择完成即关闭面板并恢复普通输入框。独立 `/reasoning` 命令已移除；完整命令为 `/model MODEL_ID EFFORT`，default 删除强度覆盖，交由供应商默认处理。设置持久保存到当前 profile，切换模型与选择档位均保留当前会话历史、摘要和 token 统计；补全只显示有依据的档位。先使用当前 URL＋API 类型＋Key 请求 `/models` 返回的明确枚举（supported_reasoning_efforts、reasoning_efforts 或 reasoning_effort.enum），只在内存缓存 5 分钟，换凭据或地址失效。不把布尔“支持推理”当成档位列表。缺少枚举时使用已核实的官方条目；自定义网关显示“未验证网关支持”。未知模型仅提供 default，不发送猜测档位。切换模型清除旧 reasoning_effort，选择后保存到当前 profile。修改沿用 profile 的活动任务保护，不更换 endpoint 或密钥。
 
 配置字段为 `reasoning_effort`。Chat Completions 编码为顶层 reasoning_effort；Responses 编码为 reasoning.effort。未配置时完全省略。显示的是 requested 值，不证明中转接口确实采用了该强度。`/fast` 是服务等级，reasoning 是思考投入，两者不同；思考文本的显示也不是强度选择。
 
 [官方 Reasoning 说明](https://developers.openai.com/api/docs/guides/reasoning)指出档位按模型而异，更高档位可能增加 token 与等待时间。本次测试验证配置持久化和两个协议的请求体，没有使用用户模型进行收费兼容性探测。
+
+
+### 官方档位记录（2026-09-08）
+
+| 精确模型／范围 | 档位 | 官方依据 |
+| --- | --- | --- |
+| gpt-6-astra | low, medium, high, xhigh, max | [OpenAI](https://developers.openai.com/api/docs/models/gpt-6-astra) |
+| gpt-5.6 / gpt-5.6-sol | none, low, medium, high, xhigh, max | [OpenAI Sol](https://developers.openai.com/api/docs/models/gpt-5.6-sol) |
+| gpt-5.6-terra / gpt-5.6-luna | none, low, medium, high, xhigh, max | [Terra](https://developers.openai.com/api/docs/models/gpt-5.6-terra)、[Luna](https://developers.openai.com/api/docs/models/gpt-5.6-luna) |
+| qwen3.8-*，Chat Completions | low, medium, xhigh | [Alibaba Cloud](https://www.alibabacloud.com/help/en/model-studio/qwen-api-via-openai-chat-completions) |
+
+每组另有 default（省略参数，不等于 none）。Qwen 表仅列原生档位，不把官方兼容映射重复列成新档位。官方记录不是第三方网关或当前账户的兼容性验收；未匹配的别名不猜测。实现见 terminal/reasoning.py。本次只核对文档与离线测试，未对用户平台发送收费推理探测。
+
+2026-09-08：输入框默认提示为 `Ask LoopROS to do anything about Robot`。无补全/任务操作菜单时，上下键在多行文本内移动，到首尾后回溯本会话输入历史（不混入 slash 配置命令）；Alt＋↑ 取回排队消息。模型与强度选择完成后，底部不保留模型面板、配置回执或选择用的命令草稿。

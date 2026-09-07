@@ -6,8 +6,8 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from toolchain.admission import HostMonitor, ResourceAdmission, validate_policy
-from terminal.agents import AgentRuntime
+from loop_robot.toolchain.admission import HostMonitor, ResourceAdmission, validate_policy
+from loop_robot.terminal.agents import AgentRuntime
 from test_agents import fake_worker
 
 
@@ -74,7 +74,7 @@ class AdmissionTests(unittest.TestCase):
 
     def test_unknown_metrics_and_dead_reservation(self):
         self.admission.inspect(acquire=True)
-        with patch('core.resources._identity', return_value=None):
+        with patch('loop_robot.core.resources._identity', return_value=None):
             self.assertEqual(self.admission.status()['reserved_workers'], 0)
         self.monitor.value['available_ram_mb'] = None
         self.assertIsNone(self.admission.inspect(acquire=True))
@@ -154,7 +154,7 @@ class AdmissionTests(unittest.TestCase):
             fixture.tearDown()
 
     def test_monitor_handles_missing_gpu_and_caches(self):
-        with patch('toolchain.admission.subprocess.run', side_effect=FileNotFoundError) as run:
+        with patch('loop_robot.toolchain.admission.subprocess.run', side_effect=FileNotFoundError) as run:
             monitor = HostMonitor()
             first = monitor.sample()
             self.assertIs(first, monitor.sample())

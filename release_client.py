@@ -15,8 +15,16 @@ import importlib
 import shlex
 import sqlite3
 from contextlib import ExitStack
-from install_support import ensure_uv, venv_python, windows_launcher, backup_launcher, configure_path
-from release_runtime import maintenance, managed_home, _lock
+if __package__:
+    from .install_support import ensure_uv, venv_python, windows_launcher, backup_launcher, configure_path
+    from .release_runtime import maintenance, managed_home, _lock, runtime_directories, state_startup
+    from .release_manifest import validate_manifest, version
+    from ._version import __version__
+else:  # Standalone HTTPS bootstrap and retained update controller.
+    from install_support import ensure_uv, venv_python, windows_launcher, backup_launcher, configure_path
+    from release_runtime import maintenance, managed_home, _lock, runtime_directories, state_startup
+    from release_manifest import validate_manifest, version
+    from _version import __version__
 from urllib.parse import urlsplit
 from urllib.request import HTTPRedirectHandler, build_opener
 
@@ -57,27 +65,13 @@ def fetch(url, limit):
     return data
 
 
-def version(value):
-    if not isinstance(value, str) or not re.fullmatch(r"[0-9]+\.[0-9]+\.[0-9]+", value):
-        raise ValueError("Expected stable major.minor.patch version")
-    return tuple(map(int, value.split(".")))
-
-
 def manifest(url, target_version=None):
     suffix = "/latest.json"
     if target_version:
         version(target_version)
         suffix = "/versions/" + target_version + suffix
     data = json.loads(fetch(base_url(url) + suffix, 16384))
-    if target_version and data.get("version") != target_version:
-        raise ValueError("Requested version does not match release metadata")
-    if data.get("state_schema", 1) != 1:
-        raise ValueError("This release requires an unsupported state migration")
-    version(data["version"])
-    expected = "loop_ros-" + data["version"] + "-py3-none-any.whl"
-    if data.get("wheel") != expected or not re.fullmatch(r"[0-9a-f]{64}", data.get("sha256", "")):
-        raise ValueError("Invalid release artifact metadata")
-    return data
+    return validate_manifest(data, target_version)
 
 
 def check(url, current):
@@ -127,17 +121,20 @@ def snapshot(record):
 
 
 def smoke(environment, expected):
-    # No App construction, user-state migration, tasks, network or simulation.
+    # All App state is temporary; offline status must not start tasks or devices.
     with tempfile.TemporaryDirectory(prefix='loop-smoke-') as directory:
         env = dict(os.environ, LOOP_HOME=directory, LOOP_STATE_DIR=directory,
                    XDG_STATE_HOME=directory, LOOP_TASK_AUTOSTART='0')
         command = [str(venv_python(environment)), '-I', '-c',
-                   'import importlib.metadata; from loop_robot.launcher import _bootstrap; '
-                   '_bootstrap(); import terminal.app, model_switch; '
+                   'import importlib.metadata; from loop_robot.launcher import _bootstrap; _bootstrap(); '
+                   'import loop_robot.terminal.app, loop_robot.model_switch; '
+                   'import loop_robot.core.resources, loop_robot.core.memory_layers; '
                    'print(importlib.metadata.version("loop-ros"))']
         result = subprocess.run(command, env=env, cwd=directory, capture_output=True, text=True, timeout=60, check=True)
         if result.stdout.strip() != expected:
             raise ValueError('Candidate version smoke check failed: ' + result.stdout.strip())
+        subprocess.run([str(venv_python(environment)), '-I', '-m', 'loop_robot', '--once', '/status'],
+                       env=env, cwd=directory, capture_output=True, text=True, timeout=60, check=True)
 
 
 DISPATCHER = '''"""Stable release dispatcher; selection is an atomic release.json record."""
@@ -176,8 +173,9 @@ try:
 except Exception as error:
     raise SystemExit('Update failed: ' + str(error))
 """)
-            for name in ('release_client', 'install_support', 'release_runtime', '_version'):
-                module = sys.modules[__name__] if name == 'release_client' else importlib.import_module(name)
+            for name in ('release_client', 'install_support', 'release_runtime', 'release_manifest', '_version'):
+                module = sys.modules[__name__] if name == 'release_client' else importlib.import_module(
+                    (__package__ + '.' if __package__ else '') + name)
                 source = module.__loader__.get_source(module.__name__)
                 archive.writestr(name + '.py', source)
         os.replace(temporary, root / 'release-control.pyz')
@@ -254,15 +252,20 @@ def state_guard(stack, state):
     if not state:
         return
     state = Path(state)
-    for name in ('terminal.lock', 'task_service.lock'):
-        path = state / name
-        if path.exists():
-            stream = stack.enter_context(path.open('a+b'))
-            try:
-                _lock(stream)
-            except OSError:
-                raise RuntimeError('Close Loop ROS and its background service before updating: ' + str(state)) from None
-    owner = state / 'viewer/owner.json'
+    stack.enter_context(state_startup(state))
+    for directory in runtime_directories(state):
+        for name in ('terminal.lock', 'task_service.lock'):
+            path = directory / name
+            if path.exists():
+                stream = stack.enter_context(path.open('a+b'))
+                try:
+                    _lock(stream)
+                except OSError:
+                    raise RuntimeError('Close Loop ROS and its background service before updating: ' + str(directory)) from None
+        viewer_guard(directory / 'viewer/owner.json')
+
+
+def viewer_guard(owner):
     if owner.is_file():
         data = json.loads(owner.read_text())
         pid = data.get('pid')
@@ -403,7 +406,6 @@ def rollback():
 
 
 def check_main():
-    from _version import __version__
     print(json.dumps(check(release_url(user_home()), __version__)))
 
 
@@ -422,7 +424,6 @@ def update_main(argv):
     args = parser.parse_args(argv)
     if args.rollback and (args.check or args.url or args.migrate or args.terminal_only is not None or args.target_version):
         parser.error('--rollback cannot be combined with check, URL, migration or dependency changes')
-    from _version import __version__
     root = user_home()
     if args.rollback:
         rollback(); return 0
@@ -440,7 +441,7 @@ def update_main(argv):
         if not args.migrate:
             raise ValueError('This is a source/unmanaged installation. Use update --migrate to switch to a release; source files remain unchanged.')
         if state is None:
-            from terminal.config import DEFAULT_STATE_DIR
+            from loop_robot.terminal.config import DEFAULT_STATE_DIR
             state = DEFAULT_STATE_DIR
     install(url, args.terminal_only, args.replace_launchers or args.migrate, state, args.target_version)
     return 0

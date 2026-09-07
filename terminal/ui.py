@@ -3,10 +3,7 @@ import os
 from pathlib import Path
 import shutil
 
-if __package__ == 'loop_robot.terminal':
-    from .._version import __version__ as VERSION
-else:
-    from _version import __version__ as VERSION
+from .._version import __version__ as VERSION
 TAGLINE = "Build robots. Close the loop."
 
 # Monochrome infinity with mirrored eye openings and four antennae.

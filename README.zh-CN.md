@@ -137,11 +137,12 @@ loop update --rollback
 ## 目录结构
 
 - `core/`、`terminal/`、`toolchain/`：Python 实现。
+- `rust/`、`firmware/`：Rust 端侧核心与 ESP32-C3 Arduino C++ 开发移植；见 [范围与构建验证](docs/RUST_CORE.md)，板上运行待验收。
 - `configs/`：默认配置与不含 Key 的配置示例。
-- `examples/`：演示脚本和示例模型；`assets/`：品牌图片。
+- `examples/`：仅源码开发使用的演示，不随安装包发行；`assets/`：品牌图片及仿真／本地工作台必要资源。
 - `scripts/`：源码安装器、发布构建脚本和仿真依赖清单。
 - `docs/`：项目文档和更新记录；`tests/`：验证。
-- `website/`：介绍网页；`artifacts/`：不纳入版本控制的本地运行产物。
+- `website/`：本地官网源码，备份到服务器，不进入 Git／CLI 发行；`artifacts/`：不纳入版本控制的本地运行产物。
 - `user_projects/`：按项目和已确认机器人型号分类的本地生成脚本与记录，不进入 Git 或发行；见[存放规则](docs/GENERATED_CODE.md)。
 
 根目录同时作为 `loop_robot` Python 包目录，因此保留包模块及 `loop`、`loop-switch` 源码启动入口。
@@ -170,3 +171,5 @@ python3 examples/run_demo.py
 ## 设计参考
 
 [PhyAgentOS](https://github.com/PhyAgentOS/PhyAgentOS-core) 为任务契约、执行、证据和验证的职责划分提供了参考。Loop ROS 尚未实现其 Forge Gateway 或 Skill Runtime 协议，也不宣称与其兼容。第三方模型和资产保留各自许可证，并需单独获取。
+
+ROS 接入：支持 ROS 2／ROS 1 独立观察 host、传感器摘要、原生包常驻运行与地图导出，见 [ROS 运行接入](docs/ROS_RUNTIME.md)。Noetic 回环已测试，ROS 2 DDS 与真机仍需验收。

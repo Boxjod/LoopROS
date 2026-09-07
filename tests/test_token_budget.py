@@ -5,11 +5,11 @@ import tempfile
 import unittest
 from pathlib import Path
 from types import SimpleNamespace
-from terminal.token_budget import fit, record, estimate, status
-from terminal.protocols import encode
-from terminal.config import validate_provider
-from terminal.llm import ChatAgent, read_stream
-from terminal.session import SessionStore
+from loop_robot.terminal.token_budget import fit, record, estimate, status
+from loop_robot.terminal.protocols import encode
+from loop_robot.terminal.config import validate_provider
+from loop_robot.terminal.llm import ChatAgent, read_stream
+from loop_robot.terminal.session import SessionStore
 
 
 class TokenBudgetTests(unittest.TestCase):

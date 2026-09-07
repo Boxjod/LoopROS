@@ -66,7 +66,7 @@ class ModelPool:
                 self.evict(old)
             token = None
             if self.resources:
-                from core.resources import ResourceBusy
+                from loop_robot.core.resources import ResourceBusy
                 token = self.resources.inspect(acquire=True, workload='model', request=dict(
                     ram_mb=spec.ram_bytes / 1048576, cpu_cores=0,
                     vram_mb=spec.vram_bytes / 1048576, gpu_index=self.gpu_index))

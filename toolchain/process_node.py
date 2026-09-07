@@ -11,7 +11,7 @@ import subprocess
 
 
 def profile_path(name):
-    from terminal.home import loop_home
+    from loop_robot.terminal.home import loop_home
     if not isinstance(name, str) or not re.fullmatch(r'[a-zA-Z][a-zA-Z0-9_-]{0,47}', name):
         raise ValueError('Invalid process profile name')
     return loop_home() / 'processes' / (name + '.json')
@@ -54,7 +54,7 @@ def validate_spec(spec):
 
 def config(value):
     if isinstance(value, dict) and set(value) == {'skill', 'expected_sha256'}:
-        from toolchain.offline_skill import inspect
+        from loop_robot.toolchain.offline_skill import inspect
         skill = inspect(value['skill'])
         if skill['sha256'] != value['expected_sha256']: raise ValueError('Skill changed; inspect it again')
         if not skill['supported']: raise ValueError('Skill has no entrypoint for this platform')
@@ -69,8 +69,8 @@ def config(value):
 
 def resource(value, name):
     if 'skill' in value:
-        from terminal.skills import _resolve
-        from terminal.home import loop_home
+        from loop_robot.terminal.skills import _resolve
+        from loop_robot.terminal.home import loop_home
         return 'skill:' + str(_resolve(loop_home()/'skills',value['skill']).parent)
     return 'process-profile:' + str(profile_path(value['profile']).resolve())
 
@@ -79,7 +79,7 @@ class ProcessNode:
     def __init__(self, value):
         self.package = None
         if 'skill' in value:
-            from toolchain.offline_skill import materialize
+            from loop_robot.toolchain.offline_skill import materialize
             self.spec, self.package = materialize(value)
             self.name = value['skill']
         else:
@@ -191,15 +191,13 @@ class ProcessNode:
         # Never signal an old PID after its child has exited and been reaped.
         if self.process.poll() is None:
             try:
-                if os.name == 'posix': os.killpg(self.process.pid, signal.SIGTERM)
-                else: subprocess.run(['taskkill','/PID',str(self.process.pid),'/T','/F'],capture_output=True,timeout=5)
-                self.process.wait(timeout=.2)
+                if os.name == 'posix': os.killpg(self.process.pid, signal.SIGINT)
+                else: self.process.send_signal(signal.CTRL_BREAK_EVENT)
             except ProcessLookupError:
                 pass
-            except subprocess.TimeoutExpired:
-                if os.name == 'posix': os.killpg(self.process.pid, signal.SIGKILL)
-                else: self.process.kill()
-                self.process.wait(timeout=1)
+            # The supervisor reports a stop timeout and retains this worker,
+            # its handles and resource lease until the child actually exits.
+            self.process.wait()
         self.tick()
         print(self.output())
         if os.name == 'posix': os.close(self.master)

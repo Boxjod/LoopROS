@@ -1,7 +1,7 @@
 """Native tool schemas and permission entry shared by the optional MCP server."""
 from pathlib import Path
 
-from terminal.skills import schema
+from loop_robot.terminal.skills import schema
 
 INSTANCE={'type':'string','description':'Exact live instance ID from sim_create; instances are owned by this process'}
 CAMERAS={'type':'array','items':{'type':'string'},'minItems':1,'maxItems':8,'uniqueItems':True}
@@ -58,8 +58,8 @@ def call_service(service,permissions,name,args):
 
 def call(app,name,args):
     if not hasattr(app,'simulation_workbench'):
-        from toolchain.simulation import SimulationWorkbench
-        from terminal.home import loop_home
+        from loop_robot.toolchain.simulation import SimulationWorkbench
+        from loop_robot.terminal.home import loop_home
         app.simulation_workbench=SimulationWorkbench(app.state_dir/'simulation',loop_home()/'isaac-bridge.json',
                                                     cancelled=lambda:app.stop_event.is_set())
     return call_service(app.simulation_workbench,app.permissions,name,args)

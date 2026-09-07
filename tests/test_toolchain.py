@@ -4,10 +4,10 @@ import tempfile
 import time
 import unittest
 
-from toolchain.ego2mujoco import template_command
-from toolchain.resources import ModelPool, ModelSpec
-from toolchain.ros import JointStateBuffer
-from toolchain.trajectory import edit_trajectory, sample_trajectory
+from loop_robot.toolchain.ego2mujoco import template_command
+from loop_robot.toolchain.resources import ModelPool, ModelSpec
+from loop_robot.toolchain.ros import JointStateBuffer
+from loop_robot.toolchain.trajectory import edit_trajectory, sample_trajectory
 
 
 class ToolchainTests(unittest.TestCase):
@@ -77,15 +77,15 @@ class PhysicsTests(unittest.TestCase):
             import mujoco
         except ImportError as exc:
             self.skipTest("optional MuJoCo environment incomplete: {}".format(exc))
-        from toolchain.mujoco_sim import MujocoBody
-        self.body = MujocoBody(Path(__file__).resolve().parents[1] / "examples/two_joint.xml",
+        from loop_robot.toolchain.mujoco_sim import MujocoBody
+        self.body = MujocoBody(Path(__file__).resolve().parents[1] / "assets/simulation/two_joint.xml",
                               {"j1": "a1", "j2": "a2"})
 
     def test_physics_loop_and_reset(self):
-        from core.contracts import TaskSpec
-        from core.loop import Loop
-        from core.plugins import FeedbackMaster, NumericalReviewer
-        from core.store import EventStore
+        from loop_robot.core.contracts import TaskSpec
+        from loop_robot.toolchain.feedback import Loop
+        from loop_robot.toolchain.feedback import FeedbackMaster, NumericalReviewer
+        from loop_robot.core.store import EventStore
         store = EventStore(":memory:")
         try:
             review = Loop(self.body, FeedbackMaster(), NumericalReviewer(), store).run(
@@ -105,7 +105,7 @@ class PhysicsTests(unittest.TestCase):
     @unittest.skipUnless(importlib.util.find_spec("mink"), "optional Mink not installed")
     def test_mink_fk_ik(self):
         import numpy as np
-        from toolchain.kinematics import MinkKinematics
+        from loop_robot.toolchain.kinematics import MinkKinematics
         ik = MinkKinematics(self.body.model, "tip", {"j1": 1.0, "j2": 1.0})
         target = ik.fk([0.1, -0.1])
         q = np.zeros(2)

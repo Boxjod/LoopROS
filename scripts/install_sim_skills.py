@@ -22,6 +22,8 @@ def install(destination):
 if __name__=='__main__':
     import argparse,json
     sys.path.insert(0,str(Path(__file__).resolve().parents[1]))
-    from terminal.home import loop_home
+    from launcher import _bootstrap
+    _bootstrap(legacy=False)
+    from loop_robot.terminal.home import loop_home
     parser=argparse.ArgumentParser();parser.add_argument('--destination',type=Path,default=loop_home()/'skills')
     print(json.dumps(install(parser.parse_args().destination),ensure_ascii=False,indent=2))

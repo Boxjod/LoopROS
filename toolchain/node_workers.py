@@ -4,7 +4,7 @@ from pathlib import Path
 import time
 import uuid
 
-from core.nodes import NodeDefinition
+from loop_robot.core.nodes import NodeDefinition
 
 
 def sim_config(config):
@@ -33,9 +33,9 @@ def serial_resource(config, name):
 
 class SimArmNode:
     def __init__(self, config):
-        from toolchain.mujoco_sim import MujocoBody
-        from core.store import EventStore
-        self.body = MujocoBody(Path(__file__).resolve().parents[1] / 'examples/two_joint.xml',
+        from loop_robot.toolchain.mujoco_sim import MujocoBody
+        from loop_robot.core.store import EventStore
+        self.body = MujocoBody(Path(__file__).resolve().parents[1] / 'assets/simulation/two_joint.xml',
                                {'j1': 'a1', 'j2': 'a2'}, body_id=config['node_name'])
         self.store = EventStore(config['evidence_path'])
         self.last_review = None
@@ -56,9 +56,9 @@ class SimArmNode:
     def command(self, action, arguments, stopping):
         if action != 'move' or set(arguments) != {'target'}:
             raise ValueError('sim_arm supports move with target=[q1,q2] in radians')
-        from core.contracts import TaskSpec, record
-        from core.loop import Loop
-        from core.plugins import FeedbackMaster, NumericalReviewer
+        from loop_robot.core.contracts import TaskSpec, record
+        from loop_robot.toolchain.feedback import Loop
+        from loop_robot.toolchain.feedback import FeedbackMaster, NumericalReviewer
         self.body.cancel_event = stopping
         review = Loop(self.body, FeedbackMaster(), NumericalReviewer(), self.store).run(
             TaskSpec(uuid.uuid4().hex, self.body.spec.body_id, tuple(arguments['target']), tolerance=.02))
@@ -72,9 +72,9 @@ class SimArmNode:
 
 class SerialReceiveNode:
     def __init__(self, config):
-        from toolchain.serial_port import SerialPort
-        from core.contracts import Episode
-        from core.store import EventStore
+        from loop_robot.toolchain.serial_port import SerialPort
+        from loop_robot.core.contracts import Episode
+        from loop_robot.core.store import EventStore
         self.port = SerialPort()
         self.store = EventStore(config['evidence_path'])
         self.episode = Episode(config['instance_id'], 1, config['node_name'], 'unknown-protocol')
@@ -108,7 +108,7 @@ class SerialReceiveNode:
         raise ValueError('serial_rx continuously receives; use node status for data. No write or motor commands.')
 
     def close(self):
-        from core.contracts import Review, record
+        from loop_robot.core.contracts import Review, record
         self.episode.observations.append({'bytes_received': self.total, 'timestamp': time.monotonic()})
         self.episode.error = self.error
         try:
@@ -121,7 +121,9 @@ class SerialReceiveNode:
 
 
 def definitions():
-    from toolchain.process_node import ProcessNode, config, resource
-    return {'sim_arm': NodeDefinition(SimArmNode, sim_config, sim_resource),
+    from loop_robot.toolchain.ros_node import RosNode, config as ros_config, resource as ros_resource
+    from loop_robot.toolchain.process_node import ProcessNode, config, resource
+    return {'ros': NodeDefinition(RosNode, ros_config, ros_resource, stop_timeout_s=3, force_stop=False),
+            'sim_arm': NodeDefinition(SimArmNode, sim_config, sim_resource),
             'serial_rx': NodeDefinition(SerialReceiveNode, serial_config, serial_resource),
-            'process': NodeDefinition(ProcessNode, config, resource, stop_timeout_s=11 if os.name == 'nt' else 6)}
+            'process': NodeDefinition(ProcessNode, config, resource, stop_timeout_s=3, force_stop=False)}

@@ -155,6 +155,19 @@ class ResourceManager:
         return self.last
 
     @contextmanager
+    def control_lease(self):
+        """Account bounded diagnostics/stop work without blocking recovery on pressure."""
+        token = uuid.uuid4().hex
+        costs = dict(ram=32, cpu=.05, vram=0, gpu=0, workload='process-control')
+        with self._db() as db:
+            db.execute('INSERT INTO leases VALUES (?,?,?,?)',
+                       (token, os.getpid(), _identity(os.getpid()), json.dumps(costs)))
+        try:
+            yield token
+        finally:
+            self.release(token)
+
+    @contextmanager
     def lease(self, workload, request=None):
         token = self.inspect(acquire=True, request=request, workload=workload)
         if token is None:

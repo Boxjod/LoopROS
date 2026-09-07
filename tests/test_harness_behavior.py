@@ -4,10 +4,10 @@ import threading
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
-from terminal.app import App
-from terminal.config import load_config
-from terminal.llm import ChatAgent
-from terminal.tool_display import ToolDisplay
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.llm import ChatAgent
+from loop_robot.terminal.tool_display import ToolDisplay
 from model_fixture import call
 
 class HarnessBehaviorTests(unittest.TestCase):
@@ -96,7 +96,7 @@ class HarnessBehaviorTests(unittest.TestCase):
         self.assertTrue(any(k=='result' for k,v in events))
 
     def test_explicit_operator_grant_updates_existing_rules_without_motion(self):
-        from terminal.permissions import ACTION_NAMES
+        from loop_robot.terminal.permissions import ACTION_NAMES
         with tempfile.TemporaryDirectory() as d:
             app=App(load_config(),d)
             try:

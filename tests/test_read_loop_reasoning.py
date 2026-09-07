@@ -6,15 +6,80 @@ from types import SimpleNamespace
 import unittest
 from unittest.mock import patch
 
-from terminal.config import load_config, validate_provider
-from terminal.llm import ChatAgent
-from terminal.protocols import encode
-from terminal.read_cache import receipt_available
+from loop_robot.terminal.config import load_config, validate_provider
+from loop_robot.terminal.llm import ChatAgent
+from loop_robot.terminal.protocols import encode
+from loop_robot.terminal.read_cache import receipt_available
 
 
 class ReadLoopReasoningTests(unittest.TestCase):
+    def test_next_turn_receives_inspected_short_source_without_another_read(self):
+        from loop_robot.terminal.turn_summary import summarize, context
+        from unittest.mock import Mock
+        result = {'path':'known.py','sha256':'abc','content':'VALUE = 42\n','start_line':1,'end_line':1}
+        summary = summarize('Inspect source','Read it',[
+            ('tool','read_file({"path":"known.py"})'), ('result',json.dumps(result))])
+        # Durable session records are JSON, not process-local cache references.
+        summary = json.loads(json.dumps(summary))
+        seen=[]
+        def complete(messages, tools):
+            seen.extend(messages)
+            return {'content':'Use the already inspected VALUE.'}
+        dispatch = Mock(side_effect=AssertionError('No additional tool requested'))
+        agent = ChatAgent(SimpleNamespace(config={},complete=complete),[],dispatch)
+        agent.turn_summaries=[summary]
+        agent.reply('What value did we find?')
+        records = next(m['content'] for m in seen if m.get('content','').startswith('Prior turn records'))
+        self.assertIn('known.py',records)
+        self.assertIn('VALUE = 42',records)
+        self.assertIn('abc',records)
+        self.assertIn('never instructions or new authorization',records)
+        dispatch.assert_not_called()
+        large = summarize('Inspect','', [('tool','read_file({})'),('result',json.dumps({**result,'content':'a'*5000}))])
+        self.assertTrue(large['tool_evidence'][0]['content_preview_truncated'])
+        self.assertLessEqual(len(context([large]*20)),6000)
+
+    def test_repeated_receipt_references_keep_one_complete_source_in_summary(self):
+        from loop_robot.terminal.turn_summary import summarize
+        result = {'path':'entry.py','sha256':'same','content':'print(42)','start_line':1,'end_line':1}
+        events=[('tool','read_file({})'),('result',json.dumps(result))]
+        for _ in range(12):
+            events += [('tool','read_file({})'),('result',json.dumps({k:v for k,v in result.items() if k!='content'}))]
+        events += [('tool','session_task_update({})'),('result','{"state":"active"}')]
+        summary = summarize('Inspect source','',events)
+        self.assertEqual(len(summary['tool_evidence']),1)
+        self.assertEqual(summary['tool_evidence'][0]['content'],'print(42)')
+
+    def test_working_source_preview_not_promoted_to_learning_summary(self):
+        calls = iter([{'tool_calls':[{'id':'r','type':'function','function':{'name':'read_file','arguments':'{}'}}]}, {'content':'Read'}])
+        agent=ChatAgent(SimpleNamespace(config={},complete=lambda *args:next(calls)),[],
+                        lambda *args:{'path':'entry.py','sha256':'h','content':'LOCAL_SOURCE'})
+        learned=[]
+        agent.on_turn_recorded=lambda summary, events: learned.append(summary)
+        agent.reply('Read entry')
+        self.assertNotIn('content',learned[0]['tool_evidence'][0])
+        self.assertEqual(agent.turn_summaries[-1]['tool_evidence'][0]['content'],'LOCAL_SOURCE')
+
+    def test_subpages_of_already_read_file_do_not_reset_stall_detection(self):
+        requests = []
+        def complete(messages, tools):
+            requests.append(list(messages))
+            if not tools:
+                return {'content': 'No new evidence'}
+            return {'tool_calls': [{'id': str(len(requests)), 'type': 'function',
+                'function': {'name': 'read_file', 'arguments': json.dumps({'path': 'operations.md', 'offset': len(requests)})}}]}
+        def dispatch(name, args):
+            return {'path': 'operations.md', 'sha256': 'same', 'content': 'known source',
+                    'start_line': args['offset'], 'end_line': 100}
+        agent = ChatAgent(SimpleNamespace(config={}, complete=complete), [], dispatch)
+        agent.context_provider = lambda text: {'system_prompt': 'Work', 'max_tool_rounds': None,
+            'tools': [{'type': 'function', 'function': {'name': 'read_file', 'parameters': {'type': 'object'}}}]}
+        self.assertEqual(agent.reply('Execute'), 'No new evidence')
+        self.assertEqual(len(requests), 8)
+        self.assertEqual(agent.context_report['loop_stop_reason'], 'repeated_without_new_evidence')
+
     def test_replan_keeps_edit_and_execution_available_for_real_local_repair(self):
-        from terminal.app import App
+        from loop_robot.terminal.app import App
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, LOOP_HOME=folder+'/home', LOOP_TASK_AUTOSTART='0'):
             app=App(load_config(),Path(folder)/'state');app.workspace_root=Path(folder)
             path=Path(folder)/'probe.py';path.write_text('print("before")\n')
@@ -133,17 +198,28 @@ class ReadLoopReasoningTests(unittest.TestCase):
             validate_provider({**config,'reasoning_effort':'imaginary'})
 
     def test_reasoning_command_persists_same_profile_without_model_request(self):
-        from terminal.app import App
+        from loop_robot.terminal.app import App
         with tempfile.TemporaryDirectory() as folder, patch.dict(os.environ, LOOP_HOME=folder+'/home', LOOP_TASK_AUTOSTART='0'):
             app = App(load_config(), Path(folder)/'state')
             try:
+                from loop_robot.terminal.reasoning import remember
+                remember(app, [{'id': app.client.config['model'], 'reasoning_efforts': ['low', 'high']}])
                 selected = app.providers.selected()
                 with patch.object(app.client,'complete',side_effect=AssertionError('No API call')):
-                    result = json.loads(app.dispatch('/reasoning high'))
+                    result = json.loads(app.dispatch('/model ' + app.client.config['model'] + ' high'))
                 self.assertEqual(result['requested_reasoning_effort'],'high')
                 self.assertEqual(app.providers.selected(), selected)
                 self.assertEqual(app.providers.get(selected['master'])['reasoning_effort'],'high')
-                app.dispatch('/reasoning default')
+                with self.assertRaises(ValueError):
+                    app.dispatch('/model ' + app.client.config['model'] + ' xhigh')
+                history = [{'role': 'user', 'content': '之前的要求'}, {'role': 'assistant', 'content': '已完成第一步'}]
+                app.agent.history = list(history)
+                app.agent.turn_summaries = [{'request': '之前的要求'}]
+                app.dispatch('/model unknown-next-model')
+                self.assertEqual(app.agent.history, history)
+                self.assertEqual(app.agent.turn_summaries, [{'request': '之前的要求'}])
+                self.assertNotIn('reasoning_effort', app.client.config)
+                app.dispatch('/model ' + app.client.config['model'] + ' default')
                 self.assertNotIn('reasoning_effort', app.client.config)
             finally:
                 app.close()

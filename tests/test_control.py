@@ -4,9 +4,9 @@ import tempfile
 import unittest
 from unittest.mock import patch
 
-from terminal.app import App
-from terminal.config import load_config
-from terminal.permissions import PermissionGate
+from loop_robot.terminal.app import App
+from loop_robot.terminal.config import load_config
+from loop_robot.terminal.permissions import PermissionGate
 
 
 class ControlTests(unittest.TestCase):
@@ -64,7 +64,7 @@ class ControlTests(unittest.TestCase):
         with self.assertRaises(PermissionError):
             self.app.dispatch("/devices")
         request_id = next(iter(self.app.permissions.requests()))
-        with patch("terminal.app.list_devices", return_value={"opened": False}):
+        with patch("loop_robot.terminal.app.list_devices", return_value={"opened": False}):
             self.assertFalse(json.loads(self.app.dispatch("/approve " + request_id))["opened"])
         with self.assertRaisesRegex(ValueError, "Approval ID not found"):
             self.app.dispatch("/approve " + request_id)
@@ -86,7 +86,7 @@ class ControlTests(unittest.TestCase):
             self.app.dispatch("/scene --complex 六个方块")
         request_id = next(iter(self.app.permissions.requests()))
         (Path(self.temp.name) / "scene.xml").write_text("<mujoco><worldbody/></mujoco>")
-        with patch("toolchain.scenes.generate_scene", return_value={"scene": str(Path(self.temp.name) / "scene.xml")}) as generate:
+        with patch("loop_robot.toolchain.scenes.generate_scene", return_value={"scene": str(Path(self.temp.name) / "scene.xml")}) as generate:
             self.app.dispatch("/approve " + request_id)
             self.assertTrue(generate.call_args[0][-1])
 

@@ -11,7 +11,7 @@ class WebsiteWorkbenchTests(unittest.TestCase):
     def test_real_http_physics_camera_and_permission_boundaries(self):
         import os
         os.environ.setdefault('MUJOCO_GL','egl')
-        from terminal.web_workbench import WorkbenchServer
+        from loop_robot.terminal.web_workbench import WorkbenchServer
         with tempfile.TemporaryDirectory() as d:
             server=WorkbenchServer(('127.0.0.1',0),d)
             def serve():
@@ -27,6 +27,11 @@ class WebsiteWorkbenchTests(unittest.TestCase):
                 except HTTPError as exc: return exc.code,exc.read()
             try:
                 status,data=request('/api/session');self.assertEqual(status,200)
+                self.assertTrue(Path(json.loads(data)['example_scene']).is_file())
+                for asset in ('/', '/workbench.html', '/workbench.css', '/workbench.js',
+                              '/three.module.min.js', '/three.LICENSE.txt', '/logo.png'):
+                    self.assertEqual(request(asset)[0],200,asset)
+                self.assertEqual(request('/site.js')[0],404)
                 token=json.loads(data)['token'];headers={'X-Loop-Token':token}
                 self.assertEqual(request('/api/session',headers={'Origin':'https://untrusted.example'})[0],403)
                 self.assertEqual(request('/api/session',headers={'Host':'untrusted.example'})[0],403)

@@ -4,6 +4,10 @@
 
 配置默认值与示例放 `configs/`，品牌资源放 `assets/`，演示与模型放 `examples/`，安装/发布脚本放 `scripts/`，文档与变更记录放 `docs/`。根目录仍是 `loop_robot` 包目录，保留包模块和命令入口；用户本地配置与运行状态路径不变。
 
+- 默认发行仅包含 CLI 运行所需代码、配置和资源；examples 不进入 wheel／发行源码快照。仿真默认场景位于 assets/simulation，本地工作台必要资源位于 assets/workbench。website 为本地维护的服务器官网源码，不暂存、不随 CLI 上传；备份使用 docs/DEPLOYMENT.md 中已验证的服务器私有目录，官网发布独立于版本发布。
+
+- Rust 端侧核心位于 rust/，MCU／Arduino C++ SDK 接入位于 firmware/；no_std 核心不携带模型 Key、SDK 或宿主进程服务。Python core 继续作为宿主实现，不能把 Rust 开发核心宣称为完整 CLI 等价替换。ESP32 可用 C++ SDK 调用 Rust C ABI；按具体芯片区分编译通过、刷写、联网和控制验收，详见 docs/RUST_CORE.md。板端 secrets.h 与所有配置后的固件／构建目录不上传，不因编译成功自动刷写设备。
+
 - 默认是通用 coding agent。保留文件读写、代码执行、模型工具循环、session多轮记忆与恢复、Skills、经验和权限。机器人是按需工具能力，不用机器人关键词或具体句式拦截自然语言请求。
 - `load_toolset` 按本轮需要加载 robotics、tasks 或 agents；每轮重置。工具组加载不执行动作，不附带整套机器人提示词或窗口/串口状态。实际状态由对应工具查询；Session 是对话容器，task 是有独立 ID 和会话归属的工作目标；普通对话不自动启动后台任务。
 - 通用提示词只写目标、用户范围、工具、证据、权限和反馈；领域参数与约束在工具schema/实现中维护，不追加一次性问法补丁。细节见 [Coding Agent](docs/CODING_AGENT.md)。
@@ -22,6 +26,7 @@
 - Session保存完整历史，模型上下文预算与持久化分离；/resume选历史会话，/queue resume恢复排队任务，恢复不自动执行队列或仿真。权限/profile切换保护活动任务，禁止将旧Key发送到新地址。
 - 本地/SSH 常驻程序优先使用 process Node 和用户目录 processes 配置，无需持续模型轮询；Task 负责目标与验收，Session 负责对话。进程存活不等于服务就绪，CLI 退出不证明远端已停止；见 [进程工作流](docs/PROCESS_NODES.md)。
 - 发行版本从 `_version.py` 单一来源读取；公开版本的 wheel 和版本清单不可覆盖。源码迁移到托管运行环境须显式使用 `loop update --migrate`，更新保留用户状态并遵循 [版本与更新](docs/RELEASES.md) 的运行锁、验证与回滚约定。
+- 运行代码统一使用 `loop_robot` 包名或包内相对导入；源码入口与已安装入口共用同一模块身份。`core.loop/core.plugins` 仅保留旧公开对象导出，模拟策略位于 `toolchain/feedback.py`，MockBody 位于不发行的 `examples/mock_body.py`。发布构建须验证实际 wheel 的离线 App 启动，wheel 与 bootstrap 来自同一源码快照；Git 上传前复用 `scripts/check_public_source.py` 检查索引及待上传提交。
 - 发布状态、平台实测与授权边界以 [GitHub准备](docs/GITHUB_RELEASE.md)、[PLATFORMS](docs/PLATFORMS.md)、[部署记录](docs/DEPLOYMENT.md)为准；源码候选与真实发布分开，不上传私有配置和运行产物。
 
 - 会话配置由 `terminal/settings.py` 的 settings_read/settings_update 和 `/config set` 管理；默认写入走既有 ask/approve，模型无自批权限。模式 plan/sim/real（hardware 别名）可持久化切换，real 不替代设备驱动与硬件验收；配置回执区分当场应用与下次启动生效。
@@ -61,3 +66,21 @@
 - 手动 Task 使用完整注册工具目录并共用 Session 的 PermissionGate，不再以 worker_tools 限制手动执行；定时/触发与只读重规划保留各自边界。每个 Task 关联可由 /resume 恢复的独立聊天 Session，Enter session 真正切换历史，Close session 返回原会话；Task ID、原归属、执行生命周期与聊天 Session 分开，进入/恢复不得自动重播任务。
 
 - 机器人 Host／控制客户端停止遵从用户约定：使用 Ctrl-C／SIGINT 正常退出，不自动升级 SIGTERM／SIGKILL。超时先保留状态并诊断；停止服务与电机失能分别验收，不把进程消失当作失能。
+
+- 用户要求简化 Key 存储：URL 与 Key 明文统一存 ~/.loop/config.json 的 endpoints，旧 credentials.json 兼容迁移后移除；保留 endpoint 绑定、0600 和输出脱敏，不把本地 Key 纳入运行时模型上下文或项目文件。
+
+- 执行任务不以模型一段文字作为结束依据：登记当前目标与最小回执检查，未完成且无真实阻塞时在同一回合继续执行；不能只说“下一步执行”便交还用户。普通问答、旧目标、当前纠正与取消分别处理，不能靠关键词拦截或自动恢复旧任务实现自主性。
+
+- 工具调用及返回实时显示在对话记录中，位于输入框上方；输入框下方不显示常驻工具调用进度行。保留手动工具详情入口与中文并行输入，不把运行过程延迟到回合结束才显示。
+
+- 工具执行与终端输入异步：模型工具、Node 控制台与定时命令不得阻塞编辑器。活动工作中独立输入“停止”／“停下”／stop 直接进入取消通道，不作为普通消息排队；引文和粘贴内容仍按普通输入处理。取消以实际回执为准，Python 使用 SIGINT 正常退出，不自动升级强杀；未退出进程保留跟踪与资源占用。
+
+- 主对话、子 Agent 和后台 Task 统一复用当前 profile 对应 endpoint 的 API Key，不要求按 Task 配置。/key 隐藏输入默认保存到 ~/.loop/config.json；后台共享用户目录并在空闲时刷新配置，Key 不进入日志／任务账本／模型上下文。凭据修复不自动恢复旧机器人任务，换地址不发送旧地址 Key。
+
+- 底部状态栏保持简短：不显示Ready、queued计数或Session Tokens；保留Context和运行中必要状态，粘贴提示用/paste，不固定显示Ctrl-V image。详细统计继续保存。
+
+- 启动连接失败优先提供已保存profile选择、重试与新建入口，不直接要求重输Key；保留已有配置和选择，不静默切换地址。凭据优先级提示必须与实际解析一致，不输出凭据。
+
+- ROS 接入默认 ROS 2、兼容 ROS 1，SDK 仅在独立 host 导入；复用 Node／权限／资源基础层。实现范围、SIGINT 停止、摘要契约与实测边界见 [ROS_RUNTIME](docs/ROS_RUNTIME.md)。
+
+- 端口占用、旧 HOST 退出及 RSS 内存排查优先使用内置 process_inspect/process_stop，按 PID＋启动标识＋主机 boot ID 核对目标，直接采用用户已授权的信号方式并以退出/端口释放验收；不重复生成临时 kill 脚本。诊断/停止走共享资源控制租约，内存压力不阻断回收；不推定设备已使能或停止。见 [进程管理](docs/PROCESS_NODES.md)。

@@ -28,7 +28,7 @@ def record(state, value):
 
 
 def estimate(config, messages, tools):
-    from terminal.protocols import encode
+    from loop_robot.terminal.protocols import encode
     _, body = encode({'model': '', **config}, messages, tools)
     # UTF-8 byte count is deliberately conservative for text across languages.
     # Images have provider-specific costs: use a configurable allowance per image.
@@ -114,7 +114,7 @@ def fit(config, source, tools, current_content=None):
     return messages, report
 
 
-def status(agent):
+def status(agent, include_session=True):
     config = getattr(agent.client, 'config', {})
     current = getattr(agent, 'context_report', {})
     state = getattr(agent, 'token_usage', {})
@@ -128,4 +128,5 @@ def status(agent):
         window += f' {used / capacity:.0%}'
     suffix = '+' if state.get('unreported_requests', 0) > baseline.get('unreported_requests', 0) else ''
     total = max(0, state.get('total_tokens', 0) - baseline.get('total_tokens', 0))
-    return f"Session Tokens {total:,}{suffix} | Context {prefix}{window}"
+    context = f"Context {prefix}{window}"
+    return f"Session Tokens {total:,}{suffix} | {context}" if include_session else context

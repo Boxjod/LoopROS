@@ -5,9 +5,9 @@ import json
 from pathlib import Path
 import re
 import tempfile
-from terminal.files import schema
-from terminal.home import initialize
-from terminal.coding import atomic_text, resolve
+from loop_robot.terminal.files import schema
+from loop_robot.terminal.home import initialize
+from loop_robot.terminal.coding import atomic_text, resolve
 
 TOOLS = [
     schema('tool_read', 'List user-authored portable tools, or read one with its source, usage and sha256 before execution.', {'name': {'type': 'string'}}, []),
@@ -87,7 +87,7 @@ def call(app, name, args):
     # Gate the stable, inspectable package identity rather than a transient script path.
     if app.permissions.snapshot()['rules']['run_python'] == 'deny':
         raise PermissionError('Python execution is denied by run_python')
-    from terminal.python_runner import run
+    from loop_robot.terminal.python_runner import run
     with tempfile.TemporaryDirectory(prefix='loop-tool-') as folder:
         script = Path(folder) / (args['name'] + '.py')
         script.write_text(spec['source'], encoding='utf-8')
