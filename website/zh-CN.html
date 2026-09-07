@@ -1,0 +1,69 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <meta name="description" content="Loop ROS — Loop Robot Operating System. 以终端为入口，支持机器人、仿真与基于证据的持续迭代。">
+  <title>Loop ROS — 让反馈形成闭环。</title>
+  <link rel="icon" type="image/png" sizes="128x128" href="favicon.png">
+  <link rel="stylesheet" href="style.css">
+  <script src="site.js" defer></script>
+</head>
+<body>
+  <header class="nav wrap">
+    <a class="brand" href="#"><img src="../assets/logo.png" alt="" width="56" height="31"> Loop ROS<span class="version">0.0.1</span></a>
+    <nav aria-label="主导航"><a href="#system">工作方式</a><a href="#install">安装</a><a href="https://github.com/Boxjod/LoopROS/blob/main/README.zh-CN.md" data-docs>文档 ↗</a><span class="languages" aria-label="Language"><a href="index.html" lang="en">EN</a><a href="zh-CN.html" lang="zh-CN" aria-current="page">中文</a></span></nav>
+  </header>
+  <main>
+    <section class="hero wrap">
+      <div class="hero-copy"><p class="eyebrow">LOOP ROBOT OPERATING SYSTEM</p>
+        <h1>构建机器人。<br>让反馈形成<em>闭环。</em></h1>
+        <p class="lead">在一个终端中完成机器人工作流程。与 Master 对话，在仿真中探索，并用执行反馈推动下一次迭代。</p>
+        <div class="actions"><a class="button" href="#install">安装 Loop ROS <span>↗</span></a><a class="quiet" href="#system">了解工作方式 ↓</a></div>
+        <p class="fine">终端交互，自选模型，默认仿真。</p>
+      </div>
+      <div class="terminal" aria-label="Loop ROS 终端会话示意">
+        <div class="terminal-top"><span class="dots">● ● ●</span><span>loop — 工作空间</span><span>⌘</span></div>
+        <div class="terminal-body"><pre class="mark" aria-hidden="true">         █
+     ▟▀▀▀▀▀▀▀▙
+ ▄██████   ██████▄▄▄▄
+▟█▛   ▜██▄██▛   ▜██▄▄
+▜█▙   ▟██▀██▙   ▟██▄▄
+ ▀█████▀   ▀█████▀</pre>
+          <p><strong>Loop ROS</strong> <span class="muted">v0.0.1</span><br><span class="muted">Master · qwen-plus<br>模式 · 仿真 / 真机运动禁用</span></p>
+          <div class="terminal-rule"></div><p><span class="blue">❯</span> 打开一个仿真工作空间。</p>
+          <p class="muted">● Master<br>  从本地 MuJoCo 场景开始。<br>  观察、执行、评审、迭代。</p>
+          <p><span class="blue">❯</span> <span class="cursor"> </span></p>
+          <small>界面示意 · 非实时执行</small>
+        </div>
+      </div>
+    </section>
+    <section id="system" class="system wrap">
+      <div class="section-heading"><p class="eyebrow">精简内核，完整反馈流程。</p><h2>从目标到执行证据。</h2><p>Master 协调工作，工具在权限范围内执行，评审记录实际发生的结果。</p></div>
+      <div class="cards">
+        <article><span class="number">01 / 交互</span><h3>你的终端，你的模型。</h3><p>配置 API 地址与 Key，自选提供商和模型，并将个人指令保存到 <code>~/.loop</code>。</p></article>
+        <article><span class="number">02 / 实验</span><h3>从仿真开始。</h3><p>支持 MuJoCo 场景、轨迹工具、可选的 Mink 运动学与策略服务编排。重型依赖按需安装。</p></article>
+        <article><span class="number">03 / 评审</span><h3>保留反馈。</h3><p>Episode 与 Review 让执行结果可检查。工具返回成功，不等于任务已经完成。</p></article>
+      </div>
+      <div class="boundary"><span>开发预览</span><p>真机运动默认禁用，硬件访问受权限控制。尚未提供自动模型训练或通用机器人操作能力。</p></div>
+    </section>
+    <section id="install" class="installation wrap">
+      <div class="section-heading"><p class="eyebrow">一条命令安装，输入 LOOP 开始。</p><h2>按你的方式开始。</h2><p>Linux/macOS 可直接在终端下载安装。Windows 可选择 PowerShell 或 CMD 命令。安装器支持 Python 3.8+ 启动，并通过 uv 自动创建独立的 Python 3.12 环境。</p></div>
+      <div class="install-box">
+        <div class="platforms" role="group" aria-label="选择操作系统">
+          <button type="button" data-platform="linux" aria-pressed="true">Linux</button><button type="button" data-platform="mac" aria-pressed="false">macOS</button><button type="button" data-platform="windows" aria-pressed="false">Windows · PowerShell</button><button type="button" data-platform="cmd" aria-pressed="false">Windows · CMD</button><button type="button" data-platform="legacy" aria-pressed="false">旧系统 / SSH</button>
+        </div>
+        <label class="option"><input type="checkbox" id="light"> 仅终端 — 跳过本地仿真依赖</label>
+        <div class="command-row"><code id="command">curl -fsSL https://loopmaster.box2ai.com/LoopROS/install.sh | sh</code><button type="button" id="copy">复制命令</button></div>
+        <p id="platform-note" class="note">已验证 Linux 下通过 Python 3.8 引导 uv Python 3.12 环境完成安装。</p>
+        <p class="note">安装后打开新终端，运行 <code>loop</code> 或 <code>loop ros</code>。Linux/macOS 如有提示，请将 <code>~/.local/bin</code> 加入 PATH。</p>
+        <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
+      </div>
+      <noscript><p>JavaScript 未启用。请在 <a href="https://github.com/Boxjod/LoopROS/blob/main/README.zh-CN.md#按系统安装">GitHub 中文 README</a> 查看 Linux、macOS、Windows 与旧系统的安装指令。</p></noscript>
+      <div class="install-bottom"><p>0.0.1 版本已通过有效 HTTPS 提供下载，安装后可使用 loop update 获取后续版本。</p><a href="https://github.com/Boxjod/LoopROS/blob/main/README.zh-CN.md">安装指南 ↗</a><a href="https://github.com/Boxjod/LoopROS/blob/main/README.zh-CN.md#按系统安装">各系统安装指令 ↗</a></div>
+    </section>
+    <section class="closing wrap"><img src="../assets/logo.png" width="100" height="55" alt="Loop ROS 无限环机器人标志"><h2>持续学习。<br>让反馈清晰可见。</h2><p>以当前上下文与工具能力，为机器人持续学习打下基础。</p></section>
+  </main>
+  <footer class="wrap"><span>Loop ROS · Loop Robot Operating System</span><span>不是 Linux 发行版，也不替代 ROS / ROS 2。</span></footer>
+</body>
+</html>

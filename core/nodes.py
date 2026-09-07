@@ -23,7 +23,8 @@ class NodeDefinition:
 
 
 def _worker(pipe, stopping, factory, config):
-    with Path(config['evidence_path']).with_suffix('.log').open('a', encoding='utf-8', buffering=1) as output:
+    from release_runtime import runtime_session
+    with runtime_session(), Path(config['evidence_path']).with_suffix('.log').open('a', encoding='utf-8', buffering=1) as output:
         with redirect_stdout(output), redirect_stderr(output):
             _run_worker(pipe, stopping, factory, config)
 

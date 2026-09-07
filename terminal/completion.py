@@ -32,6 +32,18 @@ class SlashCompleter(Completer):
         parts = prefix.split()
         if prefix and prefix[-1].isspace():
             parts.append('')
+        if len(parts) == 2 and parts[0] == '/switch' and prefix.startswith('/switch'):
+            options = {
+                'setup': 'Configure provider, API type, key and model',
+                'list': 'List saved provider profiles',
+                'reload': 'Apply the selected profile',
+                'master': '[PROFILE] Select the current model',
+                'expert': '[PROFILE] Legacy alias for the current model',
+            }
+            for name, description in options.items():
+                if name.startswith(parts[1]) and name != parts[1]:
+                    yield Completion(name, start_position=-len(parts[1]), display_meta=description)
+            return
         if self.permissions and len(parts) >= 2 and parts[0] == '/permissions':
             if len(parts) == 2:
                 for mode in ('ask', 'deny', 'allow', 'default', 'plan', 'cautious', 'yolo'):

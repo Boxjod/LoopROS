@@ -31,3 +31,14 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(matches('/permissions\task\tr'),['run_sim'])
         self.assertEqual(matches('/resume   ab'),['abc123'])
         self.assertEqual(matches('/permissions allow\nr'),[])
+
+    def test_switch_subcommands_after_space(self):
+        completer = SlashCompleter(HELP)
+        def matches(text):
+            return list(completer.get_completions(Document(text), CompleteEvent()))
+        self.assertEqual([c.text for c in matches('/switch ')], ['setup', 'list', 'reload', 'master', 'expert'])
+        self.assertEqual([c.text for c in matches('/switch   se')], ['setup'])
+        self.assertEqual(matches('/switch se')[0].start_position, -2)
+        self.assertEqual(matches('/switch setup '), [])
+        self.assertEqual(matches(' /switch '), [])
+        self.assertEqual(matches('/switch\nse'), [])

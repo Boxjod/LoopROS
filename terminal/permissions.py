@@ -17,6 +17,8 @@ PLAN_BLOCKED.add("pid_trial")
 PLAN_BLOCKED |= {"feetech_scan", "feetech_read"}
 ACTION_NAMES |= {"carrier_list", "carrier_status", "carrier_start", "carrier_command", "carrier_stop"}
 PLAN_BLOCKED |= {"carrier_start", "carrier_command"}
+ACTION_NAMES |= {"send_agent", "agents_status", "agent_result", "cancel_agent"}
+PLAN_BLOCKED.add("send_agent")
 ACTION_NAMES.add("skill_write")
 ACTION_NAMES.add("run_python")
 PLAN_BLOCKED.add("run_python")

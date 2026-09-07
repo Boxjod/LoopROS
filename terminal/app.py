@@ -8,7 +8,7 @@ import sys
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from terminal.config import ROOT, DEFAULT_STATE_DIR, load_config
+from terminal.config import ROOT, DEFAULT_STATE_DIR, load_config, user_config_file
 from terminal.ui import VERSION, welcome
 from terminal.platform_support import lock_terminal, InputPoller
 from terminal.home import save_key, loop_home
@@ -165,9 +165,10 @@ class App:
         self.client = QwenClient(config["llm"])
         self.expert = self.client  # Legacy role/tool alias; one model and credential source.
         config["expert"] = self.client.config
-        definitions = AgentRuntime.load_definitions(ROOT / "configs/agents.json", {"run_sim", "generate_scene"})
+        definitions = AgentRuntime.load_definitions(user_config_file("agents.json"), {"run_sim", "generate_scene"})
         self.runtime = AgentRuntime(definitions, {"llm": self.client, "expert": self.expert},
                                     TOOLS + AGENT_TOOLS, self.tool, state_dir / "agents.jsonl")
+        self.runtime.before_tool = lambda agent_id, name, args: self.permissions.check(name, args)
         self.stop_event = threading.Event()
         self.agent = ChatAgent(self.client, TOOLS + AGENT_TOOLS, self.tool,
                                BASE_PROMPT, self.runtime.inbox, self.stop_event)
@@ -368,6 +369,8 @@ class App:
         if name == "agent_result":
             return self.runtime.result(**args)
         if name == "send_agent":
+            if not isinstance(args, dict) or set(args) != {"agent_id", "message"}:
+                raise ValueError("agent_id and message required; sender is assigned by broker")
             return self.runtime.send(**args)
         if name == "cancel_agent":
             return self.runtime.cancel(**args)
@@ -755,7 +758,7 @@ class App:
 
 
 def main(argv=None):
-    parser = argparse.ArgumentParser(prog="loop", description="Loop ROS · Loop Robot Operating System")
+    parser = argparse.ArgumentParser(prog="loop", description="Loop ROS · Loop Robot Operating System", epilog="Updates: loop update --check | loop update | loop update --rollback")
     parser.add_argument("entry", nargs="?", choices=("ros", "robot", "node"), help="node opens the local process console without API setup; robot is a legacy alias")
     parser.add_argument("--version", action="version", version="Loop ROS " + VERSION)
     parser.add_argument("--config", type=Path)

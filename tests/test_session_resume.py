@@ -70,9 +70,12 @@ class SessionResumeTests(unittest.TestCase):
             captured.append(messages)
             return {'content':'已生成，哈希 a1b2c3'}
         agent=ChatAgent(SimpleNamespace(complete=complete),[],lambda *args:None)
+        events=[]
+        agent.on_event=lambda kind,value:events.append((kind,value))
         agent.history=[{'role':role,'content':str(i)+'x'*1000} for i in range(30) for role in ('user','assistant')]
         agent.reply('测试')
         self.assertEqual(len(agent.history),62)
+        self.assertNotIn('Summary',[kind for kind,value in events])
         self.assertLess(len(captured[0]),15)
         summary=agent.turn_summaries[-1]
         self.assertEqual(summary['status'],'conversation_only')

@@ -6,6 +6,8 @@ All default installations use `Path.home() / ".loop"`: `/home/<user>/.loop` on L
 .loop/
   config.json        Optional global defaults, no API keys
   credentials.json   Created only by an explicit key-save command
+  agents.json        Optional user Agent definitions (replaces packaged registry)
+  task_runtime.json  Optional user task policy (state-specific policy takes precedence)
   AGENTS.md          Optional user instructions for Master
   harness/*.md       Additional Master instructions, sorted by filename
   skills/            SKILL.md packages; metadata discovery and tool-based read/write
@@ -32,3 +34,45 @@ Source checkouts retain `artifacts/terminal`. Installed packages default to `${X
 New setup profiles use `LOOP_KEY_<endpoint hash>`. Existing profiles keep their original key environment variable and credential binding, including `LOOPER_KEY_*`; these identifiers are compatibility data and must not be replaced without moving their credentials. The canonical Python helper is `loop_home`; `looper_home` remains an import alias.
 
 The home/config implementation is platform-neutral. Terminal locking, input polling, venv layout and service termination now have Windows branches; macOS passive viewer uses mjpython. Linux is verified locally; Windows/macOS native OS validation is pending. Hardware, clipboard and simulation have separate limits; see [PLATFORMS](PLATFORMS.md).
+
+
+## Device migration
+
+Personal customization belongs to the Loop user directory, not the installed Python package or another product's configuration directory. Keep packaged `configs/` and `toolchain/hardware_targets.json` as release defaults; user device/deployment manifests may be stored under `~/.loop/deployments/` and selected explicitly with `--deployment FILE --host HOST_ID`. These manifests describe bindings; copying them does not connect or authorize hardware.
+
+| Content | Authoritative location | Migration rule |
+| --- | --- | --- |
+| General configuration | `~/.loop/config.json` | Copy; existing explicit `--config` and project `config.local.json` still override it |
+| Agent roles | `~/.loop/agents.json`, otherwise packaged `configs/agents.json` | Copy the complete registry; validation and allowed-tool limits remain in force |
+| Task policy | `STATE/task_runtime.json` → `~/.loop/task_runtime.json` → packaged default | Copy user overrides; state-specific policy has priority; restart the supervisor explicitly after edits |
+| User instructions | `~/.loop/AGENTS.md`, `~/.loop/harness/*.md` | Copy; reloaded on the next model call |
+| Skills | `~/.loop/skills/<name>/SKILL.md` plus optional `scripts/`, `references/`, `assets/` | Copy the entire package; use relative paths for supporting files |
+| Credentials | `~/.loop/credentials.json` or external environment variables | Private transfer only; POSIX 0600; environment variables must be set again on the new device |
+| Model profiles and selection | `STATE/providers.sqlite` | Copy after closing Loop and loop-switch; saved selections take priority over config defaults |
+| Permission settings | `STATE/permissions.sqlite` | Copy only when those same user-selected rules are intended on the new device |
+| History, learning and task records | Remaining `STATE/` contents | Copy after stopping all writers; do not resume device tasks automatically |
+
+`STATE` is the explicit `--state-dir`, otherwise `LOOP_STATE_DIR` (legacy `LOOPER_STATE_DIR`), otherwise `artifacts/terminal` for a source checkout or `${XDG_STATE_HOME:-~/.local/state}/loop-ros` for an installed package. `loop-switch --state-dir` must select the same state directory as `loop`. A user-selected `LOOP_HOME` does not implicitly move STATE.
+
+1. On the old device, stop persistent tasks/Nodes and close Loop and loop-switch before copying SQLite databases. Record the chosen user/state paths. Copy any external `--config` or deployment files separately; they are not automatically collected.
+2. Install Loop on the new device. Transfer the user directory and STATE privately, keeping directory structure, Skill supporting files and SQLite companion files together. Restore POSIX home permissions to 0700 and `credentials.json` to 0600. If the destination already has settings, keep separate backup directories and choose which copy to use; do not merge SQLite files or overwrite existing credentials blindly.
+3. To keep both sets of data under one portable directory, place the transferred state in `~/.loop/state` and configure **both** variables before starting Loop or loop-switch:
+
+   ```sh
+   export LOOP_HOME="$HOME/.loop"
+   export LOOP_STATE_DIR="$LOOP_HOME/state"
+   ```
+
+   PowerShell equivalent (current session):
+
+   ```powershell
+   $env:LOOP_HOME = Join-Path $HOME '.loop'
+   $env:LOOP_STATE_DIR = Join-Path $env:LOOP_HOME 'state'
+   ```
+
+   Persist these variables using your shell/user environment configuration. This is an explicit migration option, not an automatic change to existing state paths.
+
+4. Recreate the Python runtime on the new device. Do not transfer `.venv/` or `~/.loop/runtime/` as working environments; their binaries and launchers are device-specific. Preserve `release.json` only if the same release server is intended. Reconfigure API-key environment variables if used.
+5. Verify `loop-switch list`, `loop --once /status`, Skills discovery and `/resume`. Check device names, deployment host IDs and external absolute paths before explicitly resuming tasks. Copying history does not make old serial ports, remote hosts, live processes or absolute asset paths valid on the new device.
+
+2026-09-07: temporary-directory copy test verifies configuration, complete Skills, harness, Agent overrides, task-policy precedence, selected profiles and endpoint-bound credentials after relocation. No actual device configuration, credential or runtime database was moved by this change.

@@ -1,45 +1,87 @@
-# Hosted installation and update checks
+# Loop ROS release installation and updates
 
-Implementation is ready for a static HTTPS host. Authorized target: `root@8.134.90.171`, directory `/root/workspaces/LoopROS`. Root SSH now succeeds after permission was granted. Files are staged; a valid authorized HTTPS hostname remains unresolved and no public Loop ROS URL is live. Current status: [DEPLOYMENT](DEPLOYMENT.md). The following paragraph records the earlier failed attempt, not current SSH status.
+The initial release number is **0.0.1**, from [_version.py](../_version.py). `pyproject.toml` reads that value dynamically; package and CLI version displays use the same source. Earlier 0.1.0/0.2.0 wheels were unpublished development candidates, not release history.
 
-2026-09-05 read-only checks: TCP/SSH reachable, but current agent keys rejected for both root and the local default account boxjod. No matching target alias found in the current SSH config. HTTP redirects to HTTPS; the IP certificate names mingle.box2ai.com/www.mingle.box2ai.com, not the IP. A direct SNI/certificate check for mingle.box2ai.com also fails certificate expiry validation. That domain is observed certificate metadata, not an authorized deployment hostname. No remote directory was created and no existing website/configuration was changed. Obtain the correct SSH account/key alias and confirm an HTTPS hostname before publication; do not use curl -k or disable verification.
+Release base URL: `https://loopmaster.box2ai.com/LoopROS`, on the authorized server `8.134.90.171`. DNS, certificate dates and verified HTTPS access were checked on 2026-09-07. Publication and client validation receipts are recorded in [DEPLOYMENT](DEPLOYMENT.md); do not infer deployment solely from a local build.
 
-## Build a public bundle
-
-From the project directory, with a final HTTPS URL and a fresh output directory:
+## Install and uninstall
 
 ```sh
-.venv/bin/python scripts/build_release.py --url https://YOUR-DOMAIN/loop --output /absolute/new/release-directory
+curl -fsSL https://loopmaster.box2ai.com/LoopROS/install.sh | sh -s -- --terminal-only
+# Optional local simulation dependencies: omit --terminal-only or specify --sim.
+curl -fsSL https://loopmaster.box2ai.com/LoopROS/uninstall.sh | sh
 ```
 
-This builds a wheel without dependency wheels, audits known private paths, then copies only the wheel, metadata, bootstrap, website assets and selected public docs. Never upload the entire repository, .loop, config.local.json, runtime databases or the user-supplied website/example.html. The output URL is compiled into install.sh; do not change the host/path without rebuilding.
+The shell bootstrap accepts Python 3.8+; if none is available it prepares uv and a private Python. The shared installer uses uv to create Python 3.12 environments. No system Python replacement, root privileges or system pip is needed. Windows has `install.ps1` with Python 3.8+; native Windows/macOS execution is not yet validated. Installations preserve configuration, Skills and runtime data. Uninstall preserves state backups, launcher backups and uv too.
 
-Upload the resulting files to that URL. Publish immutable versioned wheels before changing latest.json; replace metadata atomically. Do not reuse an existing version number for changed release code. Configure HTTPS and serve scripts as text/plain. Server setup, TLS and remote commands must be verified against the actual deployment destination; none has been invented here.
+Conflicting global commands are preserved unless `--replace-launchers` explicitly requests backup and replacement. All four current/legacy command names are installed. Source uninstall remains `python3 scripts/uninstall.py`; it also recognizes managed release wrappers, but only deletes the source `.venv`. Use the hosted uninstall script to remove managed environments.
 
-## End-user installation (after publication)
-
-```sh
-curl -fsSL https://YOUR-DOMAIN/loop/install.sh | sh
-# API terminal only:
-curl -fsSL https://YOUR-DOMAIN/loop/install.sh | sh -s -- --terminal-only
-```
-
-Replace the placeholder with the deployed URL. The script requires an existing compatible Python 3.10+ and curl; it does not replace system Python. LOOP_PYTHON selects a private interpreter. Users can download and inspect the script before running it instead of piping to sh.
-
-The bootstrap retrieves latest.json and its wheel over HTTPS, checks SHA-256, installs in ~/.loop/runtime, and creates ~/.local/bin/loop and loop-switch. It saves only the release server URL in ~/.loop/release.json; configuration/keys are not overwritten. Explicit LOOP_HOME is honored. Existing unrelated/source-install command links are refused, not silently replaced. The existing workstation source install is not automatically migrated to hosted installation. Windows currently retains its local PowerShell installer; this hosted bootstrap is Linux/macOS only, with macOS native validation pending.
-
-Dependencies are resolved by pip from the user's configured index; they are not bundled or hash-pinned by this release manifest. SHA-256 detects artifact mismatch; it is not an independent publisher signature and cannot protect against a compromised HTTPS release server.
-
-## Check and apply updates
+## Update commands
 
 ```sh
+loop update --check
 loop --check-update
-# Also accepted:
-loop ros --check-update
+loop ros update --check
+loop update
+loop update --version 0.0.1
+loop update --rollback
 ```
 
-Checks report installed/latest stable versions and update_available as JSON, use a 20-second network timeout and never install anything. The server is read from LOOP_RELEASE_URL or ~/.loop/release.json. No server configured, malformed metadata or network failure yields a nonzero exit with an explanation. There is no hidden startup network request, background timer or automatic upgrade.
+All source, installed and `python -m loop_robot` entrypoints share the same dispatcher. Checks only fetch metadata; there is no background update or startup network request. Stable major.minor.patch versions are supported; previews/channels are intentionally not provided. Explicit version selection downloads the immutable version manifest and refuses implicit downgrades. Rollback selects the retained previous runtime; it does **not** roll user data back in time.
 
-To install an update in an existing hosted runtime, exit Loop ROS and rerun the installer from the same trusted URL, keeping --terminal-only if desired. Existing configuration and runtime state are retained. Dependency changes occur within the same runtime venv; transactional upgrade/rollback is not implemented, so a failed pip update can require rerunning installation. Source installations should use their source workflow, not bypass command collision protection.
+Source/unmanaged installations require explicit migration:
 
-Verification: unit tests cover newer/equal/older versions, HTTPS constraints, invalid manifest/path traversal and checksum rejection before installation. Build/packaging smoke evidence is recorded in RUNBOOK. Public HTTPS deployment and actual remote curl installation remain unverified until a server is supplied.
+```sh
+loop update --migrate --terminal-only
+# If a custom state directory was used:
+loop update --migrate --terminal-only --state-dir /absolute/path/to/state
+```
+
+Migration retains the source tree and its state directory and backs up existing command launchers. It does not git pull, overwrite local edits or automatically uninstall the old source environment. For managed releases, terminal-only/simulation choice and selected state directory persist in `release.json`; `--sim` / `--terminal-only` intentionally change dependency selection.
+
+## Activation, data and failure handling
+
+Managed environments live under `~/.loop/releases/<version>-<id>` (or explicit LOOP_HOME), alongside a separate `updater` interpreter and stable dispatcher. A verified wheel is installed into a fresh environment, followed by isolated package/import/version smoke checks. Only afterward is `release.json` replaced atomically. Previous environments are retained. Installation, smoke or pre-activation failures leave the old active record unchanged; incomplete candidates from a hard crash are inactive and are not automatically executed. Initial launcher migration also makes backups; interrupted first installation may require rerunning bootstrap.
+
+An installation-wide maintenance lock prevents concurrent updates. Running terminals, model-switch commands, supervisors, Agents, Nodes and viewers in managed releases hold runtime leases. An update refuses while they are active, and new launch attempts refuse during maintenance. Source migration also checks the selected terminal/service locks and recorded viewer ownership. No processes are killed or hardware actions started by updating.
+
+Top-level SQLite state databases are backed up using SQLite's backup API before activation, under private `state-backups/`. Current state schema is 1; unsupported schema changes and incompatible rollback are refused. Configuration and model/scene assets remain in their original locations; this is not a full user-directory backup. Custom external writers and older unmanaged processes are outside managed leases; close them before migration. Runtime rollback is for compatible schema versions and preserves current data.
+
+Downloads require verified HTTPS, including redirects, and the wheel must match manifest SHA-256. curl is used when available for host CA configuration; otherwise Python HTTPS verification applies. SHA-256 is integrity checking against the trusted release server, not a separate publisher signature. Dependency wheels are resolved by uv from configured indexes; they are not bundled or hash-pinned by this manifest.
+
+## Build and publish
+
+```sh
+python3 scripts/build_release.py --url https://loopmaster.box2ai.com/LoopROS --output /absolute/new/public-bundle
+python3 scripts/publish_release.py --bundle /absolute/new/public-bundle --host root@8.134.90.171 --destination /www/wwwroot/loopmaster.box2ai.com/LoopROS
+```
+
+The builder uses uv, audits wheel inventory, and exports only the wheel, metadata, standalone bootstrap zipapp, platform scripts and the public introduction website and installation guide. Private project deployment/runbook documents are not included. The publisher checks an explicit file whitelist and all checksums locally and on the server, stages under `/root/workspaces/LoopROS/releases`, refuses overwriting changed versioned artifacts, and publishes `latest.json` last. Never republish changed code with the same released version number. No existing website root or nginx/TLS configuration needs replacement.
+
+The [tag workflow](../.github/workflows/release.yml) checks `v<version>` against the single version source, runs release regressions, builds the bundle and attaches public artifacts to a GitHub Release on a tag event. It is configured, not an executed GitHub run; no repository/tag is created automatically by local builds. Server upload remains the explicit publisher command using existing SSH authorization.
+
+## Validation
+
+See [RUNBOOK](RUNBOOK.md) for actual test counts and public download receipts. Local tests cover metadata/HTTPS/hash rejection, atomic activation failure, preserved state/options, cross-process locks, stale leases, rollback and immutable publication. Real package install/upgrade/rollback/uninstall is checked using isolated homes. Windows/macOS logic is not a native validation claim.
+
+---
+
+The following audit records the previous implementation and is superseded by the current behavior above.
+
+## Historical audit before the 0.0.1 implementation — 2026-09-07
+
+Question: are version management, updates and `loop update` complete? **No.** There is a stable-version check and a hosted installation prototype; an integrated update command and release lifecycle are missing. This is a local source review, not a new deployment verification or authorization to implement/publish.
+
+| Area | Verified implementation / gap | Source |
+| --- | --- | --- |
+| Version management | `0.1.0` is separately defined in package metadata, package `__version__` and UI VERSION. No local Git tags were listed; only a platform smoke workflow exists, without tag-driven publication or version consistency enforcement. | [pyproject](../pyproject.toml), [package](../__init__.py), [UI](../terminal/ui.py), [CI](../.github/workflows/platform-smoke.yml) |
+| `loop update` | Not implemented; positional CLI choices are ros/robot/node. Installed-entrypoint invocation returned exit 2 with invalid choice. | [launcher](../launcher.py), [CLI](../terminal/app.py) |
+| Update checks | Installed launcher supports `--check-update` and `ros --check-update`; reports stable major.minor.patch comparison via latest.json. An isolated home without a release URL returned exit 1 with an actionable configuration error. Source `loop` and module `__main__` bypass this launcher; source `--check-update` returned exit 2. | [client](../release_client.py), [source entry](../loop), [module entry](../__main__.py) |
+| Artifact delivery | Wheel, latest.json, SHA-256 check, HTTPS-only fetch and size/time limits exist. Hosted reinstall directly modifies one runtime using pip. No staged environment switch, health-check activation, automatic rollback, update lock or active-process coordination exists in this path. | [builder](../scripts/build_release.py), [client](../release_client.py) |
+| Installer consistency | Source installation now bootstraps uv from Python 3.8 and supports launcher backup/replacement. Generated hosted bootstrap still rejects Python below 3.10, uses venv/pip and refuses conflicting source launchers. Hosted Windows installation explicitly raises an error. Build script also requires pip; the source uv flow does not seed pip. | [source installer](../scripts/install.py), [builder](../scripts/build_release.py), [client](../release_client.py) |
+| Upgrade preferences | release.json stores only the release URL; terminal-only/simulation selection is not saved for future updates. Reinstall must receive the desired flag again. No version pin/channel selector, downgrade policy or state backup/migration orchestration is present in the updater. | [client](../release_client.py) |
+| Public release | Existing deployment records state staging with unresolved valid HTTPS hosting. Public latest.json/wheel installation has not been verified in this audit. Documentation assertions about prior deployment are historical evidence, not a fresh network test. | [deployment](DEPLOYMENT.md) |
+
+Validation: `PYTHONPATH=tests python3.12 -m unittest test_releases -q` passed 4 tests (comparison, manifest rejection, HTTPS validation, hash failure before installation). Direct launcher checks ran under isolated LOOP_HOME/LOOP_STATE_DIR/XDG_STATE_HOME with task autostart disabled; no server was contacted or configured. Source CLI rejection was also reproduced. Current `.venv` was absent, so tests used available Python 3.12; no environment was reinstalled. These tests do not cover a successful cross-version upgrade, interruption recovery or real remote delivery.
+
+Suggested completion order (proposal, not implemented): (1) unify version/CLI entrypoints and record installation origin/options; (2) implement explicit update/check flow with a separately prepared runtime, smoke validation, process coordination and recoverable activation; (3) unify uv/bootstrap behavior and verify uninstall/update interactions; (4) validate immutable tagged release publication through a working HTTPS endpoint and a real old-to-new upgrade test. Keep stable-only versions unless preview channels are actually needed.

@@ -64,7 +64,7 @@ class BrandingTests(unittest.TestCase):
             result = subprocess.run([str(program), *args, "--version"], cwd=tempfile.gettempdir(),
                                     capture_output=True, text=True, timeout=15)
             self.assertEqual(result.returncode, 0, result.stderr)
-            self.assertEqual(result.stdout.strip(), "Loop ROS 0.1.0")
+            self.assertEqual(result.stdout.strip(), "Loop ROS " + __import__("_version").__version__)
 
     def test_home_compatibility(self):
         with tempfile.TemporaryDirectory() as directory:

@@ -15,7 +15,7 @@ Loop 的任务完成条件是配置的验收项得到实际工具回执支持，
 | Loop Node | 设备/运行时插件的常驻执行进程 | 既有 `/node`；与 LLM 子 Agent 和监督器不同 |
 | 旧前台 Scheduler | 兼容 `/after`、`/every`、`/jobs` | 仅终端打开时执行；新后台周期任务使用下面的配置，不暗中迁移旧任务 |
 
-默认配置：[task_runtime.json](../configs/task_runtime.json)。状态目录存在同名配置时优先使用它，`/tasks config` 显示实际路径和内容。配置更改后 `/tasks stop`，待 `/tasks` 显示进程停止，再 `/tasks start`。配置不包含凭据、shell 命令或可执行 Python；凭据复用当前提供商的现有入口，内存 Key 仅通过子进程环境传递，不写任务账本。
+默认配置：[task_runtime.json](../configs/task_runtime.json)。覆盖顺序为状态目录同名文件 → `~/.loop/task_runtime.json`（或 `LOOP_HOME` 下同名文件）→ 发行默认配置，`/tasks config` 显示实际路径和内容。配置更改后 `/tasks stop`，待 `/tasks` 显示进程停止，再 `/tasks start`。配置不包含凭据、shell 命令或可执行 Python；凭据复用当前提供商的现有入口，内存 Key 仅通过子进程环境传递，不写任务账本。
 
 `task_service.lock` 保证同状态目录只有一个监督进程；`tasks.sqlite` 保存任务、工具意图/回执、评审、触发事件、定时游标和进程心跳；`task_agents.jsonl` 保存子进程事件；`task_service.log` 保存进程错误。`/tasks status ID` 查看它们关联的任务反馈。Linux 核对 PID、argv 和进程启动标识，本轮实机验证为 Linux；没有安装 systemd/开机自启服务。
 

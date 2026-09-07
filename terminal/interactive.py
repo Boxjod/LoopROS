@@ -15,7 +15,7 @@ from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from prompt_toolkit.enums import EditingMode
-from prompt_toolkit.layout.containers import VerticalAlign, DynamicContainer
+from prompt_toolkit.layout.containers import VerticalAlign, DynamicContainer, FloatContainer
 from prompt_toolkit.layout.screen import WritePosition
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.utils import get_cwidth
@@ -25,11 +25,9 @@ class CompactPrompt(DynamicContainer):
     """Do not turn the renderer's remembered height into blank transcript rows."""
     def write_to_screen(self, screen, mouse_handlers, write_position, parent_style, erase_bg, z_index):
         container = self.get_container()
-        from prompt_toolkit.application.current import get_app
-        if get_app().current_buffer.complete_state is None:
-            height = min(write_position.height,
-                         container.preferred_height(write_position.width, write_position.height).preferred)
-            write_position = WritePosition(write_position.xpos, write_position.ypos, write_position.width, height)
+        height = min(write_position.height,
+                     container.preferred_height(write_position.width, write_position.height).preferred)
+        write_position = WritePosition(write_position.xpos, write_position.ypos, write_position.width, height)
         container.write_to_screen(screen, mouse_handlers, write_position, parent_style, erase_bg, z_index)
 
 
@@ -180,10 +178,7 @@ class Terminal:
                 self.dismissed_completion = event.current_buffer.document
                 return
             if self.action_panel is not None:
-                self.action_panel = None
-                self.viewer_choice = None
-                self.selected_task = None
-                self.ui.invalidate()
+                self.close_panel()
                 return
             if self.pending:
                 self.stop()
@@ -207,12 +202,12 @@ class Terminal:
         self.session = PromptSession(
             input=get_app_session().input, output=get_app_session().output,
             message=self.prompt_text, multiline=True,
-            placeholder=self.input_placeholder,
+            placeholder=None,
             editing_mode=EditingMode.EMACS,
             prompt_continuation='  ', key_bindings=kb,
             completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"]), complete_while_typing=True,
             reserve_space_for_menu=0, complete_style=CompleteStyle.COLUMN, mouse_support=False, erase_when_done=True,
-            style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078'}))
+            style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold'}))
         # PromptSession normally stretches its editable window to absorb spare
         # renderer height. Keep the composer next to the transcript; spare
         # terminal rows belong below it, never between output and input.
@@ -220,6 +215,14 @@ class Terminal:
         for window in self.session.layout.find_all_windows():
             if getattr(window.content, 'buffer', None) is self.session.default_buffer:
                 window.dont_extend_height = to_filter(True)
+        # Keep completion state/key bindings, but render candidates in the
+        # normal footer instead of cursor-anchored floating menus.
+        def remove_floats(container):
+            if isinstance(container, FloatContainer):
+                container.floats = []
+            for child in container.get_children():
+                remove_floats(child)
+        remove_floats(self.session.layout.container)
         prompt_layout = self.session.layout.container
         self.session.layout.container = CompactPrompt(lambda: prompt_layout)
         self.ui = self.session.app
@@ -289,7 +292,45 @@ class Terminal:
         status = '{} | queued {} | attachments {}{}'.format(
             'Working' if self.pending else 'Ready', len(self.queue), len(self.attachments),
             ' | queue paused: /queue resume' if self.paused else ' | Esc stop · Enter send/queue · Ctrl-V image')
-        return [('class:separator', self.separator() + '\n'), ('', status)]
+        size = self.ui.output.get_size()
+        columns = max(1, size.columns)
+        input_rows = sum(max(1, (get_cwidth(line) + 2 + columns - 1) // columns)
+                         for line in self.input.text.split('\n'))
+        queue_rows = min(len(self.queue), max(1, min(3, size.rows - 6))) if self.queue else 0
+        available = max(0, min(8, size.rows - input_rows - queue_rows - bool(self.stream_text) - 3))
+        fragments = [('class:separator', self.separator() + '\n')]
+        state = self.input.buffer.complete_state
+        if state and state.completions and available:
+            status = '↑/↓ select · Enter apply · Esc close'
+            selected = state.complete_index if state.complete_index is not None else 0
+            count = min(available, len(state.completions))
+            start = min(max(0, selected - count + 1), len(state.completions) - count)
+            for index in range(start, start + count):
+                item = state.completions[index]
+                label = ('› ' if index == selected else '  ') + item.display_text
+                description = item.display_meta_text
+                if description:
+                    label += '  ' + description
+                fragments.append(('class:hint-selected' if index == selected else 'class:separator',
+                                  self.clip_hint(label, columns) + '\n'))
+        elif self.action_panel:
+            fragments.extend(self.panel_fragments(available))
+        elif not self.input.text and not self.attachments:
+            status = self.input_placeholder() + ' | ' + status
+        fragments.append(('class:separator', self.clip_hint(status, columns)))
+        return fragments
+
+    @staticmethod
+    def clip_hint(text, columns):
+        result, width = '', 0
+        for char in str(text):
+            char = char if char.isprintable() else ' '
+            size = get_cwidth(char)
+            if width + size > columns:
+                break
+            result += char
+            width += size
+        return result
 
     def append(self, kind, text):
         # Terminal control sequences returned by a model are displayed as text.
@@ -368,16 +409,37 @@ class Terminal:
         self.store.record('Operator', title + '\n' + text)
         self.ui.invalidate()
 
+    def close_panel(self):
+        self.action_panel = None
+        self.viewer_choice = None
+        self.selected_task = None
+        self.task_buttons = []
+        self.task_action = 0
+        self.panel_offset = 0
+        self.ui.invalidate()
+
     def select_task(self, step=0):
         tasks = [task for task in self.task_store.list(limit=None) if task['state'] == 'running']
         tasks.sort(key=lambda task: task['id'])
         if not tasks:
-            self.task_buttons = []
-            self.show_panel('/tasks', 'No running tasks.')
+            if self.action_panel is not None and step:
+                self.close_panel()
+            else:
+                self.task_buttons = []
+                self.show_panel('/tasks', 'No running tasks. ←/→ or Esc to return.')
             return
         ids = [task['id'] for task in tasks]
-        index = ids.index(self.selected_task) if self.selected_task in ids else (-1 if step > 0 else 0)
-        self.selected_task = ids[(index + step) % len(ids)]
+        if step:
+            # Include the conversation in navigation so Left undoes the first Right.
+            choices = [None, *ids]
+            index = choices.index(self.selected_task) if self.selected_task in choices else 0
+            selected = choices[(index + step) % len(choices)]
+            if selected is None:
+                self.close_panel()
+                return
+            self.selected_task = selected
+        elif self.selected_task not in ids:
+            self.selected_task = ids[0]
         self.task_action = 0
         self.panel_offset = 0
         self.render_task_panel()
@@ -402,7 +464,7 @@ class Terminal:
         feedback = task.get('feedback') or {}
         reason = feedback.get('reason') or feedback.get('review', {}).get('reason', '')
         lines = [task['id'] + ' · ' + task['state'],
-                 '←/→ tasks · ↑/↓ actions · Enter apply · Esc close']
+                 '←/→ tasks/chat · ↑/↓ actions · Enter apply · Esc close']
         lines += [('> ' if i == self.task_action else '  ') + '[' + label + ']' for i, (label, _) in enumerate(commands)]
         lines += [task['spec']['goal'], str(reason)]
         text = '\n'.join(lines)
@@ -468,10 +530,6 @@ class Terminal:
                     visible += char
                     cells += get_cwidth(char)
                 fragments.append(('class:separator', visible + '\n'))
-        columns = max(1, self.ui.output.get_size().columns)
-        input_rows = sum(max(1, (get_cwidth(line) + 2 + columns - 1) // columns) for line in self.input.text.split('\n'))
-        available = self.ui.output.get_size().rows - 3 - bool(preview) - queue_rows - input_rows
-        fragments.extend(self.panel_fragments(max(0, min(10, available))))
         fragments.append(('class:separator', self.separator() + '\n'))
         focus = getattr(self.app, 'node_focus', 'master')
         fragments.append(('class:prompt', ('[' + focus + '] ' if focus != 'master' else '') + '❯ '))

@@ -4,7 +4,7 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "loop-ros"
-version = "0.1.0"
+dynamic = ["version"]
 description = "Loop Robot Operating System: a terminal-first robotics agent"
 readme = "README.md"
 requires-python = ">=3.10"
@@ -30,3 +30,6 @@ include-package-data = false
 [tool.setuptools.package-data]
 loop_robot = ["configs/config.example.json", "configs/config.gpt6.example.json", "configs/agents.json", "configs/task_runtime.json", "examples/*.xml", "examples/deployments/*.json", "assets/logo.png"]
 "loop_robot.toolchain" = ["hardware_targets.json"]
+
+[tool.setuptools.dynamic]
+version = {attr = "loop_robot._version.__version__"}

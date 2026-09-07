@@ -11,9 +11,9 @@ from terminal.task_supervisor import load_policy
 
 
 def policy_path(state):
-    from terminal.config import ROOT
+    from terminal.config import user_config_file
     local=Path(state)/'task_runtime.json'
-    return local if local.exists() else ROOT/'configs/task_runtime.json'
+    return local if local.exists() else user_config_file('task_runtime.json')
 
 
 def status(state):
@@ -125,4 +125,7 @@ def main():
             app.nodes.close();app.scheduler.close();app.providers.close()
 
 
-if __name__=='__main__': main()
+if __name__=='__main__':
+    from release_runtime import runtime_session
+    with runtime_session():
+        main()

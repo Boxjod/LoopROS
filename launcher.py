@@ -11,19 +11,29 @@ def _bootstrap():
 
 def main():
     _bootstrap()
-    if sys.argv[1:] in (["--check-update"], ["ros", "--check-update"]):
-        from release_client import check_main
-        try:
-            check_main()
-        except Exception as error:
-            print("Update check failed: " + str(error), file=sys.stderr)
-            return 1
-        return 0
-    from terminal.app import main as run
-    return run()
+    args = sys.argv[1:]
+    if args[:1] in (["ros"], ["robot"]):
+        args = args[1:]
+    try:
+        if args == ["--check-update"] or args[:1] == ["update"]:
+            from release_client import update_main
+            return update_main(["--check"] if args == ["--check-update"] else args[1:])
+        from release_runtime import runtime_session
+        from terminal.app import main as run
+        with runtime_session():
+            return run()
+    except (ValueError, RuntimeError, OSError) as error:
+        print("Loop ROS: " + str(error), file=sys.stderr)
+        return 1
 
 
 def switch_main():
     _bootstrap()
+    from release_runtime import runtime_session
     from model_switch import main as run
-    return run()
+    try:
+        with runtime_session():
+            return run()
+    except (ValueError, RuntimeError, OSError) as error:
+        print("Loop ROS: " + str(error), file=sys.stderr)
+        return 1

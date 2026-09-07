@@ -8,7 +8,7 @@ root = Path(__file__).resolve().parent
 python = root / (".venv/Scripts/python.exe" if os.name == "nt" else ".venv/bin/python")
 if python.exists() and Path(sys.prefix) != root / ".venv":
     os.execv(str(python), [str(python), str(root / "loop"), *sys.argv[1:]])
-from terminal.app import main
+from launcher import main
 
 if __name__ == "__main__":
     raise SystemExit(main())

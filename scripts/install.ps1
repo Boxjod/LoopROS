@@ -12,6 +12,6 @@ if ($env:LOOP_PYTHON) {
 } elseif (Get-Command python -ErrorAction SilentlyContinue) {
     & python $installer @args
 } else {
-    throw 'Install an OS-compatible Python 3.10+ with pip/venv, then rerun. Windows 7/8 require remote SSH access.'
+    throw 'Install an OS-compatible Python 3.8+ for the uv bootstrap, then rerun. Windows 7/8 require remote SSH access.'
 }
 exit $LASTEXITCODE

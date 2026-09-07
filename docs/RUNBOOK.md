@@ -287,3 +287,124 @@ Rebuilt local 0.1.0 candidate has 94 wheel entries, excludes removed interceptor
 - `node --test tests/website.test.cjs`：1 项通过；网页 Logo 与 Windows 源码安装路径已更新。
 - `.venv/bin/python -m pip wheel --no-deps --wheel-dir artifacts/layout-check/wheels .` 成功。无隔离构建因本地缺少 setuptools 未通过，标准隔离构建成功；解包核对新资源齐全、无旧根路径资源和私有状态文件，并从临时目录验证配置/Agent/任务配置读取及 `python -m loop_robot --version`。
 - 修改的本地文档链接核对：新路径存在；原先指向项目外 `../../projects/reports/` 的缺失报告链接仍未修复。`git diff --check` 通过。
+
+
+## 双语 README 与透明 Logo（2026-09-07）
+
+新增根目录 `README.zh-CN.md`，与 `README.md` 互链，两份文档顶部引用 `assets/logo-transparent.png`（显示宽度 280）。保留 `assets/logo.png` 原图。使用内置 image_gen 编辑原图，肉眼核对无限环机器人、蓝色箭头、眼睛、天线与三个右侧端子；生成式编辑不保证逐像素一致。Pillow 只用于读取验证：PNG 为 RGBA，1672×941，alpha 范围 0–255，完全透明像素 1,155,325。两份 README 的本地引用全部存在，`git diff --check` 通过；未修改运行代码或启动仿真。
+
+最终图片提示词（内置工具模式）：
+
+> Use case: background-extraction. Edit the supplied Loop ROS logo for a repository README. Remove only the pale gray/white background, including the background visible through the infinity loops and around the antenna and circuit traces. Output a PNG with actual transparent alpha, no checkerboard painted into the image. Preserve exactly the existing infinity-shaped robot silhouette, crossing gap, dark strokes, blue arrow, blue eyes, antenna and three right-side terminals, their colors, proportions and arrangement. No redesign, no added text, no shadow, no new elements. Keep the full logo visible with a small transparent margin.
+
+
+## uv 安装引导（2026-09-07）
+
+`python3 scripts/install.py --terminal-only` 现在允许系统 Python 3.8 启动，自动准备用户级 uv，再创建 Python 3.12 `.venv` 并通过 `uv pip` 安装；已有可用 Python 3.10+ 环境复用。`--check` 不下载、不安装。已有损坏/低版本环境及非项目命令冲突均保留并报错。下载优先 curl，无 curl 时使用标准库 HTTPS；不关闭证书验证。
+
+验证：`PYTHONPATH=tests python3 -m unittest test_install test_platform_support -q`，8 项通过。使用本机 `/usr/bin/python3` 3.8.10、临时源码副本及隔离 HOME 完成真实 terminal-only 安装；uv 选择本机 Python 3.12.9 创建全新环境，项目外 `loop --version` 返回 0.1.0，重复安装成功。另在临时用户目录实际下载 uv 0.12.10，执行版本检查和未加入 PATH 的复用检查成功。Python 运行时自动下载分支和 Windows/macOS 原生安装未实测。最初 urllib 下载遇到本机 CA 验证失败，采用官方支持的 curl 下载方式后通过。没有替换当前项目 `.venv` 或修改系统 Python。
+
+
+## 用户配置归位与迁移验证（2026-09-07）
+
+用户 Agent 注册表现读取 `LOOP_HOME/agents.json`，缺省回退发行默认；任务策略优先级为状态目录 → `LOOP_HOME/task_runtime.json` → 发行默认。配置仍经过原有校验和工具权限门禁。Skills、harness、模型选择及状态目录沿用已有存储约定，未搬动当前用户实际配置/凭据/活动状态。`docs/USER_HOME.md#device-migration` 列出各类文件和跨设备步骤，也给出显式 `LOOP_STATE_DIR=$LOOP_HOME/state` 的单目录方案。
+
+验证命令：`PYTHONPATH=tests .venv/bin/python -m unittest test_user_portability test_home test_skills test_agents test_task_supervisor test_providers`。34 项通过；新增临时目录迁移测试覆盖完整 Skills 包、指令、全局配置、Agent加载、任务策略优先级、模型选择和凭据地址隔离。两份 README 和迁移文档的本地链接、`git diff --check` 通过。服务器只读检查见 DEPLOYMENT；IP下载链接仍因证书不匹配不可用，未执行发布或改动 nginx/TLS。
+
+
+2026-09-07：按用户最新要求，中英文 README 均恢复引用原始白色背景 `assets/logo.png`；透明版本保留为未使用备选。已核对两份文档的图片引用和文件存在性。
+
+
+## 源码卸载脚本（2026-09-07）
+
+新增 `scripts/uninstall.py`，系统 Python 3.8+ 可运行；`--check` 只读预览。仅移除本源码副本 `.venv` 及匹配的用户命令，保留其他副本命令、源码、用户配置/Skills、状态数据、uv、共享 Python 与 PATH。不自动停止进程，使用前退出 Loop 与后台服务。非虚拟环境目录拒绝删除；符号链接/junction 只移除链接。
+
+`PYTHONPATH=tests python3 -m unittest test_uninstall test_install test_platform_support -q`：12 项通过，含临时目录真实子进程执行预览、删除、重复卸载，以及用户数据/外部链接目标/其他命令保留；Windows launcher 与安装器格式匹配采用替身验证，Windows 原生删除未实测。本工作区仅执行 `python3 scripts/uninstall.py --check`；发现全局命令指向另一份 `Workspace/box2net/LoopROS`，按归属保留，未卸载当前环境。
+
+2026-09-07：中英文 README 顶部白底 Logo 改为 `width="100%"`，与正文容器同宽，保持原图宽高比；两份图片引用及 `git diff --check` 通过。
+
+
+## 卸载后旧副本命令阻挡重装（2026-09-07）
+
+根因：用户卸载 `Workspace/LoopROS/.venv`，但全局四个入口仍指向 `Workspace/box2net/LoopROS/.venv/bin/`；卸载按归属保留，安装随后因冲突拒绝。安装器新增 `--replace-launchers`，依赖成功安装后才将冲突入口备份为 `.loop-ros-backup.N` 并切换到当前副本；默认仍保护冲突入口，报错提供可执行处理命令。`--check` 同时核对入口冲突。备份不覆盖旧备份，不移动真实目录，卸载保留备份。
+
+验证：`PYTHONPATH=tests python3 -m unittest test_install test_uninstall test_platform_support -q`，14 项通过。覆盖只读预览、安装失败时原入口不变、成功后备份和切换、编号备份保留、卸载、目录冲突保护；新增冲突检查暴露旧测试未隔离 HOME，修正 fixture 后通过。在用户当前目录实际执行 `python3 scripts/install.py --terminal-only --replace-launchers` 成功，四个旧入口均备份为 `~/.local/bin/<name>.loop-ros-backup.1`；再次执行原命令 `python3 scripts/install.py --terminal-only` 成功。项目外 `/tmp` 执行全局 `loop --version` 返回 0.1.0，`loop-switch --help` 返回 0，四个符号链接目标均核实为当前源码 `.venv/bin`。没有删除旧项目、配置或运行数据，也没有启动仿真或后台任务。Windows 切换分支未做原生实测。
+
+
+## 卸载同时清理旧副本命令（2026-09-07）
+
+按用户纠正，卸载归属从“仅当前源码路径”调整为“确认属于 Loop ROS 的全局入口”，覆盖四个当前/旧别名。POSIX 静态解析入口脚本中的 `loop_robot.launcher` 顶层导入，Windows 匹配安装器标记及完整 cmd 模板；不执行旧入口。只删除全局入口和当前 `.venv`，不删除旧源码环境、用户数据或命令备份。其他软件及无法核实的入口保留；本项目断链可删除，其他目录不可核实的断链保留。本条替代此前“旧副本命令一律保留”的行为说明。
+
+验证：`PYTHONPATH=tests python3 -m unittest test_uninstall test_install test_platform_support -q`，17 项通过。临时源码副本和隔离 HOME 内完成真实子进程：清理指向旧副本的四个入口 → 用 Python 3.8 运行原始 terminal-only 安装命令（不加 replace 参数）→ uv 创建 Python 3.12 环境 → 项目外 `loop --version` 返回 0.1.0；旧副本入口文件仍存在。Windows 使用模板替身验证，未原生实测。当前用户环境只执行 `--check`，四个全局入口与 `.venv` 均列为待移除，保持已安装状态。
+
+
+## 启动模型连接检查与配置恢复（2026-09-07）
+
+交互启动在进入终端前，用当前模型/凭据发起一次无工具、无历史的短文本请求，连接超时上限取当前配置与 15 秒的较小值。失败或缺 Key 时进入共享 Switch setup，直接展示供应商、API类型（Chat Completions/Responses）、隐藏 Key 和模型；支持粘贴完整接口 URL 并提取基础地址。保存后重新检查，失败再次让用户配置，取消则退出；`--once`、非 TTY 和 `loop node` 跳过检查。保留已有模型档案与凭据优先级，不更改用户环境变量，不执行模型工具或仿真。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_setup test_setup_startup test_providers test_home test_terminal`。真实 PTY 使用本地 HTTP 替身验证旧 Key 401、隐藏输入新 Key、切换 Responses、连接成功进入终端及 `/exit`。首次 PTY 测试过早发送 `/exit` 超时，修正为等待输入提示符并使用回车后通过；不涉及产品退出逻辑修改。真实供应商 API、账户权限和 Windows/macOS 实机未测。
+
+
+## 模型连接误报修复（2026-09-07）
+
+用户当前选中的自定义服务、`gpt-5.6-sol`、Chat Completions 和已有保存 Key 原样复测：原失败在 TLS 握手阶段，`SSLCertVerificationError` / verify code 20（unable to get local issuer certificate），尚未进入模型鉴权。当前无同名环境 Key 覆盖。该 Python 默认 CA 文件/目录不存在，信任库计数为 0；系统 `/etc/ssl/certs/ca-certificates.crt` 含 147 个 CA。
+
+新增仅在默认 CA 路径/信任库均缺失且无显式证书环境覆盖时加载系统 CA 的处理，覆盖模型推理和模型列表请求；不关闭验证、不改用户 Key/URL/协议/profile。连接诊断使用受控错误类型显示 HTTP 状态、TLS、DNS、超时，不打印响应正文。启动检查不再强制缩短至 15 秒，遵从原 profile 的 timeout_s。修复后同一配置实际文本连接通过，耗时 2.76 秒。
+
+`PYTHONPATH=tests .venv/bin/python -m unittest test_model_connection test_setup test_setup_startup test_terminal test_providers`：32 项通过；覆盖 CA 回退、显式配置保护、受控错误、真实 PTY 与本地 HTTP 恢复流程。`git diff --check` 通过。已有进程须退出后重新运行 `loop` 才能加载修改。
+
+
+## 默认隐藏逐轮总结与 Switch 补全（2026-09-07）
+
+ChatAgent 继续生成并持久化逐轮总结，但不再向终端发送 `Summary` 显示事件；`/history`、历史会话预览和导出保持原有数据。`/switch ` 增加 setup/list/reload/master/expert 子命令及前缀补全。删除配置继续使用现有系统命令 `loop-switch remove NAME`，保留当前配置删除保护，本次未删除任何用户记录。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_completion test_session_resume test_session_render test_providers`，17 项全部通过，无跳过。当前环境缺少已声明的 test 依赖 pyte，使用 uv 安装 pyte 0.8.2 后完成真实 PTY 屏幕检查：中文流式期间输入草稿、无自动 Summary、空格后显示 setup、历史总结仍可预览，以及会话操作。`git diff --check` 通过；未启动仿真。重启 Loop 后生效。
+
+
+## 初始 0.0.1 版本、更新与服务器发布（2026-09-07）
+
+按用户纠正从 0.0.1 开始；0.1.0 和本轮早期 0.2.0 均为未发布候选。版本统一到 `_version.py`，pyproject 动态读取，源码/模块/安装入口共用 launcher。`loop update` 支持检查、指定稳定版本、显式源码迁移和回滚；独立更新控制器使回滚到早期程序后仍可升级。源码与托管安装共用 uv，模式/state 记录持久化。新环境验证后才原子切换 release.json，保留旧环境及 SQLite 状态备份；后台终端/服务/Agent/Node/viewer 持有进程 lease，更新互斥且不杀进程。未知状态 schema 和隐式降级拒绝。托管卸载保留用户数据和备份。
+
+最终相关回归：`PYTHONPATH=tests LOOP_TASK_AUTOSTART=0 .venv/bin/python -m unittest test_updates test_releases test_install test_uninstall test_platform_support test_branding test_terminal test_agents test_task_supervisor test_nodes.NodeRuntimeTests -q`，64 项通过（8.035s），[日志](../artifacts/release-validation/final-regression.log)。最初组合命令误列不存在的 test_task_service / NodeTests 名称，已纠正并完成上述实际模块验证。测试发现并修复独立 viewer 入口缺少包根搜索路径；维护锁在加载场景之前拒绝启动的子进程检查通过，没有打开/重启 GUI。
+
+完整离线传输替身＋真实 uv/进程安装：Python 3.8 shell/zipapp → 初始 0.0.1 → 独立更新控制器 → 无变更更新 → 卸载通过；[最终 bootstrap 日志](../artifacts/release-validation/bootstrap-final.log)。另在临时 HOME 安装真实 0.0.1 包，升级到仅用于测试、未发布的合成 0.0.2 wheel，回滚、再次切换、卸载均通过，用户配置/Skill/SQLite 会话保留；[升级日志](../artifacts/release-validation/e2e-0.0.1.log)。
+
+最终公开包 `artifacts/release-0.0.1-final/`：94 个 wheel 条目、9 个公开文件；无项目私有部署文档、运行数据库或凭据文件。`scripts/publish_release.py` 本地与远端校验白名单及 SHA256SUMS，版本化文件不同内容拒绝覆盖，并在发布锁下最后切换 latest.json。使用现有 root SSH 上传到 8.134.90.171，发布地址 `https://loopmaster.box2ai.com/LoopROS`。新增该子路径静态 nginx 配置，语法检查通过后平滑重载，原网站保留。发布目录与 wheel 哈希详见 [DEPLOYMENT](DEPLOYMENT.md)。
+
+真实 HTTPS 验收：所有清单文件匹配，隔离 HOME 运行服务器 install.sh --terminal-only、项目外 loop --version、update --check、update 无变更更新、ros --check-update、服务器 uninstall.sh 全部成功，测试 Skill 保留。[机器可读回执](../artifacts/release-validation/live-result.json)。原系统 Python、当前用户 profile/凭据和运行状态未迁移。公网已部署0.0.1，未创建 Git tag/GitHub Release、未执行 CI、未作 Windows/macOS 原生或模型/硬件验收。
+
+
+## 输入框下方提示与任务面板（2026-09-07）
+
+命令补全候选、←/→切换任务、Actions和快捷键提示统一放在输入框下分隔线之后。移除 PromptSession 的浮动候选层，保留原补全状态与按键选择；候选列表跟随选中项滚动，按窗口高度减少行数。候选和 Actions 共用下方区域，Esc 关闭候选后恢复 Actions。主屏对话仍使用原生滚动，输入随实际内容伸缩，菜单收起不留下旧渲染高度。
+
+最终验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_interactive test_completion test_session_render test_terminal_render`，28 项通过，42.511 秒。真实 PTY/pyte 覆盖中文流式期间编辑草稿、命令候选和任务面板位于输入框下方、任务切换/取消、历史预览、6×24窄屏、窗口缩放、Actions翻页/关闭及原生滚动。测试调整了候选与历史面板共用区域的预期，等待完整 Esc 识别时间；所有最终检查无跳过。`git diff --check` 通过，未启动或重启仿真。重启 Loop 后生效。
+
+
+## 介绍网页部署到发行地址（2026-09-07）
+
+按用户要求，将现有 website 页面发布到 `https://loopmaster.box2ai.com/LoopROS/`。保留品牌和布局，修正版本为0.0.1、Windows下载命令、公开安装指南及资源相对路径。新增 build_website/publish_website，只导出六个公开文件，远端发布锁下备份旧网页并更新网页校验值。原0.0.1 wheel/manifest/bootstrap/安装卸载脚本校验确认不变。发布构建器后续复用该网页，发布白名单增加五个网页资源。
+
+`node --check website/site.js`、`node --test tests/website.test.cjs` 通过（平台/terminal-only/复制成功及回退），不可变发布保护测试通过，导出网页本地链接核对通过。线上六个资源HTTPS内容逐一与导出产物一致。真实 Chrome 检查桌面1440×1000和手机390×844、logo、版本、平台切换、terminal-only、公开指南均通过，没有JS页面错误或手机横向溢出；截图已人工查看。Chrome初始旧headless参数不兼容，改为新headless模式后验证成功，未操作用户浏览器窗口。nginx补齐CSS/JS/PNG响应类型，检查通过后平滑重载。
+
+产物及回执在 `artifacts/website-live-20260907/`。仅网页更新，不重新安装用户环境、不启动仿真、不上传私有项目文档。
+
+
+## 任务面板返回对话（2026-09-07）
+
+修复左右键仅在任务之间循环的问题：导航中加入对话位置，右键进入首个任务后左键返回；经过最后一个任务也可回到对话。Esc 关闭时清除选中任务和按钮状态，不取消任务；没有运行任务的提示也可用左右键关闭。
+
+验证：`PYTHONPATH=tests .venv/bin/python -m unittest test_task_navigation`（2 项通过），`PYTHONPATH=tests .venv/bin/python -m unittest test_session_render.SessionRenderTests.test_task_buttons_and_permission_profiles`（真实 PTY 通过，7.781 秒），覆盖单任务、空任务、双任务左右返回、Esc关闭、不取消任务及原有显式取消/权限操作。`git diff --check` 通过。重启 Loop 后生效。
+
+
+## 并行 Agent 调度与 IPC 验证（2026-09-07）
+
+已有 AgentRuntime 使用 multiprocessing spawn + Pipe，默认最多3个独立进程。本次补齐子进程身份、agents_status 同伴发现、broker绑定发送者、通信权限检查、有效Key快照传递、启动失败Pipe清理和完成回执回收后的槽位复用。未改为自动持久任务或硬件并行执行；宿主工具仍串行。角色执行范围沿用原配置。
+
+最终命令：`PYTHONPATH=tests .venv/bin/python -m unittest test_agents test_agent_ipc test_providers test_harness_behavior test_user_portability`，27项通过，1.717秒。新测试用两个真实 Agent worker/ChatAgent 进程和本地HTTP服务，通过屏障验证请求同时在途，验证同伴发现、双向send_agent和结果回收；另测试冒充sender、递归spawn、取消同伴均拒绝，Master与子Agent通信使用同一权限门禁。无真实供应商调用、仿真或设备动作。
+
+早期额外运行的 `test_control.test_approval_preserves_complex_scene_args` 在当前缺少MuJoCo的环境未通过，其 viewer.ensure_installed 报安装依赖失败，另有一项仿真相关跳过；未为本次IPC任务补装仿真或改变该测试。相关控制权限在新增App级测试单独验证。完整仿真回归不属于上述27项通过结论。`git diff --check`通过。
+
+### 2026-09-07 bilingual website
+
+Export with `python3 scripts/build_website.py --output artifacts/website-bilingual-20260907` into a new output directory, then publish with `scripts/publish_website.py` as documented in [website README](../website/README.md). `node --test tests/website.test.cjs` passed for English/Chinese and all five platform commands. Live Chrome and HTTPS asset checks passed; see [deployment record](DEPLOYMENT.md#bilingual-website-and-github-docs--2026-09-07). GitHub Docs were published separately in documentation-only commit `af5ac4b`; do not push the unrelated working tree as part of website updates.

@@ -11,8 +11,8 @@
 </head>
 <body>
   <header class="nav wrap">
-    <a class="brand" href="#"><img src="../assets/logo.png" alt="" width="56" height="31"> Loop ROS<span class="version">0.1 / PREVIEW</span></a>
-    <nav aria-label="Main navigation"><a href="#system">The system</a><a href="#install">Install</a><a href="../docs/INSTALL.md">Docs ↗</a></nav>
+    <a class="brand" href="#"><img src="../assets/logo.png" alt="" width="56" height="31"> Loop ROS<span class="version">0.0.1</span></a>
+    <nav aria-label="Main navigation"><a href="#system">The system</a><a href="#install">Install</a><a href="https://github.com/Boxjod/LoopROS#readme" data-docs>Docs ↗</a><span class="languages" aria-label="Language"><a href="index.html" lang="en" aria-current="page">EN</a><a href="zh-CN.html" lang="zh-CN">中文</a></span></nav>
   </header>
   <main>
     <section class="hero wrap">
@@ -30,7 +30,7 @@
 ▟█▛   ▜██▄██▛   ▜██▄▄
 ▜█▙   ▟██▀██▙   ▟██▄▄
  ▀█████▀   ▀█████▀</pre>
-          <p><strong>Loop ROS</strong> <span class="muted">v0.1.0</span><br><span class="muted">Master · qwen-plus<br>Mode · sim / hardware disabled</span></p>
+          <p><strong>Loop ROS</strong> <span class="muted">v0.0.1</span><br><span class="muted">Master · qwen-plus<br>Mode · sim / hardware disabled</span></p>
           <div class="terminal-rule"></div><p><span class="blue">❯</span> Open a simulation workspace.</p>
           <p class="muted">● Master<br>  A local MuJoCo scene is the starting point.<br>  Observe. Execute. Review. Iterate.</p>
           <p><span class="blue">❯</span> <span class="cursor"> </span></p>
@@ -41,26 +41,26 @@
     <section id="system" class="system wrap">
       <div class="section-heading"><p class="eyebrow">A SMALL CORE. A COMPLETE FEEDBACK PATH.</p><h2>From intent to evidence.</h2><p>Master coordinates the work. Tools execute within permissions. Review records what actually happened.</p></div>
       <div class="cards">
-        <article><span class="number">01 / INTERACT</span><h3>Your terminal, your models.</h3><p>Configure an API URL and key. Use Qwen by default, switch providers, and keep user instructions in <code>~/.loop</code>.</p></article>
+        <article><span class="number">01 / INTERACT</span><h3>Your terminal, your models.</h3><p>Configure an API URL and key. Choose your provider, switch models, and keep user instructions in <code>~/.loop</code>.</p></article>
         <article><span class="number">02 / EXPERIMENT</span><h3>Start in simulation.</h3><p>MuJoCo scenes, trajectory tools, optional Mink kinematics and policy-service orchestration. Keep heavy dependencies optional.</p></article>
         <article><span class="number">03 / REVIEW</span><h3>Keep the feedback.</h3><p>Episodes and reviews make results inspectable. A tool returning success is not proof that the task succeeded.</p></article>
       </div>
-      <div class="boundary"><span>DEVELOPMENT PREVIEW</span><p>Hardware motion is disabled. Linux serial support is receive-only. Automatic model training and general-purpose robot manipulation are not shipped capabilities.</p></div>
+      <div class="boundary"><span>DEVELOPMENT PREVIEW</span><p>Hardware motion is disabled. Hardware access remains permission-gated. Automatic model training and general-purpose robot manipulation are not shipped capabilities.</p></div>
     </section>
     <section id="install" class="installation wrap">
-      <div class="section-heading"><p class="eyebrow">ONE COMMAND. THEN TYPE LOOP.</p><h2>A workspace on your terms.</h2><p>Linux/macOS: paste one command into your terminal to download and install Loop ROS. Windows: run the PowerShell installer from the source folder. A compatible Python 3.10+ with pip and venv is required.</p></div>
+      <div class="section-heading"><p class="eyebrow">ONE COMMAND. THEN TYPE LOOP.</p><h2>A workspace on your terms.</h2><p>Linux/macOS: paste one command into your terminal to download and install Loop ROS. Windows: download and run the PowerShell installer. Python 3.8+ starts the installer; uv creates an isolated Python 3.12 environment automatically.</p></div>
       <div class="install-box">
         <div class="platforms" role="group" aria-label="Select operating system">
-          <button type="button" data-platform="linux" aria-pressed="true">Linux</button><button type="button" data-platform="mac" aria-pressed="false">macOS</button><button type="button" data-platform="windows" aria-pressed="false">Windows</button><button type="button" data-platform="legacy" aria-pressed="false">Legacy / SSH</button>
+          <button type="button" data-platform="linux" aria-pressed="true">Linux</button><button type="button" data-platform="mac" aria-pressed="false">macOS</button><button type="button" data-platform="windows" aria-pressed="false">Windows · PowerShell</button><button type="button" data-platform="cmd" aria-pressed="false">Windows · CMD</button><button type="button" data-platform="legacy" aria-pressed="false">Legacy / SSH</button>
         </div>
         <label class="option"><input type="checkbox" id="light"> Terminal only — skip local simulation dependencies</label>
-        <div class="command-row"><code id="command">curl -fsSL https://8.134.90.171/LoopROS/install.sh | sh</code><button type="button" id="copy">Copy command</button></div>
-        <p id="platform-note" class="note">Ubuntu 20.04 tested with private Python 3.13. Ubuntu 16.04/18.04 need a compatible private Python or SSH. 22.04/24.04/25.04 are not individually verified.</p>
+        <div class="command-row"><code id="command">curl -fsSL https://loopmaster.box2ai.com/LoopROS/install.sh | sh</code><button type="button" id="copy">Copy command</button></div>
+        <p id="platform-note" class="note">Linux hosted installation tested with Python 3.8 bootstrapping a uv Python 3.12 runtime.</p>
         <p class="note">After installation: open a new terminal and run <code>loop</code> or <code>loop ros</code>. On Linux/macOS, add <code>~/.local/bin</code> to PATH if prompted.</p>
         <p id="copy-status" class="copy-status" role="status" aria-live="polite"></p>
       </div>
-      <noscript><p>macOS: <code>curl -fsSL https://8.134.90.171/LoopROS/install.sh | sh</code>. Windows 10/11: <code>powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1</code>. Old systems: SSH into a compatible host and run loop. See installation docs for details.</p></noscript>
-      <div class="install-bottom"><p>Download pending: HTTPS for 8.134.90.171 is not configured yet. This command is not available to run yet.</p><a href="../docs/INSTALL.md">Installation guide ↗</a><a href="../docs/PLATFORMS.md">Compatibility matrix ↗</a></div>
+      <noscript><p>macOS: <code>curl -fsSL https://loopmaster.box2ai.com/LoopROS/install.sh | sh</code>. Windows 10/11: <code>download install.ps1, then run powershell -NoProfile -ExecutionPolicy Bypass -File .\install.ps1</code>. Old systems: SSH into a compatible host and run loop. See installation docs for details.</p></noscript>
+      <div class="install-bottom"><p>Version 0.0.1 is available over verified HTTPS. After installation, use loop update to get newer releases.</p><a href="https://github.com/Boxjod/LoopROS#readme">Installation guide ↗</a><a href="https://github.com/Boxjod/LoopROS#installation-by-platform">Compatibility matrix ↗</a></div>
     </section>
     <section class="closing wrap"><img src="../assets/logo.png" width="100" height="55" alt="Loop ROS infinity robot logo"><h2>Keep learning.<br>Keep the loop visible.</h2><p>Context and tools today. A foundation for continual robotics learning.</p></section>
   </main>

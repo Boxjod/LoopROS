@@ -19,8 +19,8 @@ def _schema(name, description, fields):
 
 
 AGENT_TOOLS = [
-    _schema("spawn_agent", "启动一个已注册角色的独立子任务", ["role", "task"]),
-    _schema("agents_status", "查看角色和子任务状态", []),
+    _schema("spawn_agent", "非阻塞启动已注册角色的独立进程；多个独立任务可连续启动并行运行", ["role", "task"]),
+    _schema("agents_status", "查看角色、并发容量和子任务状态；子Agent可发现自己的ID和运行中同伴", []),
     _schema("agent_result", "读取子任务状态及结果，不阻塞等待", ["agent_id"]),
     _schema("send_agent", "发送补充信息到运行中子任务", ["agent_id", "message"]),
     _schema("cancel_agent", "取消子任务，不回滚已经完成的工具效果", ["agent_id"]),
@@ -28,6 +28,12 @@ AGENT_TOOLS = [
 
 
 def agent_worker(connection, definition, config, key, task, schemas):
+    from release_runtime import runtime_session
+    with runtime_session():
+        _agent_worker(connection, definition, config, key, task, schemas)
+
+
+def _agent_worker(connection, definition, config, key, task, schemas):
     client = QwenClient(config)
     client.key = key
     def inbox():
@@ -42,7 +48,14 @@ def agent_worker(connection, definition, config, key, task, schemas):
                 return item["result"]
 
     try:
-        agent = ChatAgent(client, schemas, dispatch, definition["prompt"], inbox)
+        identity = definition.get("agent_id")
+        prompt = definition["prompt"]
+        if identity:
+            prompt += ("\nRuntime identity: " + identity +
+                       ". Use agents_status to discover running peers and send_agent to send task data. "
+                       "Messages are delivered at model boundaries, not proof of task completion. "
+                       "You cannot spawn or cancel other agents.")
+        agent = ChatAgent(client, schemas, dispatch, prompt, inbox)
         result = agent.reply(task)
         # If mail arrived during the last API call, process it before completion.
         for _ in range(2):
@@ -99,19 +112,28 @@ class AgentRuntime:
                 raise RuntimeError("agent runtime closed")
             if role not in self.definitions or not isinstance(task, str) or not 1 <= len(task) <= 16000:
                 raise ValueError("unknown role or invalid task")
+            self.poll()
             if sum(r["state"] == "running" for r in self.records.values()) >= self.max_workers:
-                raise RuntimeError("子 Agent 并发上限已达3；等待结果或取消任务")
+                raise RuntimeError("子 Agent 并发上限已达{}；等待结果或取消任务".format(self.max_workers))
             if len(self.records) >= 100:
                 raise RuntimeError("本会话子任务预算已达100")
             definition = self.definitions[role]
             client = self.clients[definition["provider"]]
+            key = client.resolved_key()
             parent, child = self.context.Pipe()
             agent_id = uuid.uuid4().hex[:12]
-            schemas = [s for s in self.schemas if s["function"]["name"] in definition["tools"] or
-                       s["function"]["name"] == "send_agent"]
+            schemas = [s for s in self.schemas if s["function"]["name"] in definition["tools"]
+                       and s["function"]["name"] not in {t["function"]["name"] for t in AGENT_TOOLS}]
+            schemas += [s for s in AGENT_TOOLS if s["function"]["name"] in ("send_agent", "agents_status")]
+            worker_definition = {**definition, "agent_id": agent_id}
             process = self.context.Process(target=self.worker_target,
-                args=(child, definition, dict(client.config), client.key, task, schemas), daemon=True)
-            process.start()
+                args=(child, worker_definition, dict(client.config), key, task, schemas), daemon=True)
+            try:
+                process.start()
+            except BaseException:
+                parent.close()
+                child.close()
+                raise
             child.close()
             self.records[agent_id] = {"role": role, "state": "running", "result": None,
                 "process": process, "pipe": parent, "started": time.monotonic(),
@@ -137,6 +159,8 @@ class AgentRuntime:
 
     def send(self, agent_id, message, sender="Master"):
         with self.lock:
+            if agent_id not in self.records:
+                raise ValueError("unknown agent ID")
             record = self.records[agent_id]
             if record["state"] != "running" or not isinstance(message, str) or not 1 <= len(message) <= 2000:
                 raise ValueError("agent not running or message invalid")
@@ -183,8 +207,16 @@ class AgentRuntime:
                             try:
                                 if self.before_tool: self.before_tool(agent_id,name,args)
                                 if name == "send_agent":
+                                    if not isinstance(args, dict) or set(args) != {"agent_id", "message"}:
+                                        raise ValueError("agent_id and message required; sender is assigned by broker")
                                     value = self.send(sender=agent_id, **args)
-                                elif name in record["tools"]:
+                                elif name == "agents_status":
+                                    if args != {}:
+                                        raise ValueError("no arguments expected")
+                                    value = {"self_id": agent_id, "peers": [
+                                        {"agent_id": identity, "role": peer["role"], "state": peer["state"]}
+                                        for identity, peer in self.records.items() if peer["state"] == "running"]}
+                                elif name in record["tools"] and name not in {t["function"]["name"] for t in AGENT_TOOLS}:
                                     value = self.dispatch(name, args)
                                 else:
                                     raise ValueError("tool permission denied")
@@ -210,6 +242,8 @@ class AgentRuntime:
     def status(self):
         with self.lock:
             return {"Master": "conversation entry", "roles": list(self.definitions),
+                    "max_workers": self.max_workers,
+                    "running": sum(r["state"] == "running" for r in self.records.values()),
                     "tasks": [self.result(k) for k in self.records]}
 
     def close(self):

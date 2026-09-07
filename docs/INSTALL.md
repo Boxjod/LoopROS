@@ -1,10 +1,10 @@
 # Install Loop ROS
 
-Hosted `curl` installation and `loop --check-update`: see [release instructions](RELEASES.md). Server publication is pending a deployment destination; placeholder URLs are not live.
+Hosted `curl` installation and `loop --check-update`: see [release instructions](RELEASES.md). The release base URL is `https://loopmaster.box2ai.com/LoopROS`; actual deployment receipts are recorded in [DEPLOYMENT](DEPLOYMENT.md).
 
 **Loop Robot Operating System**. Commands: `loop` or `loop ros`; `loop-switch` configures providers. Legacy `loop robot`, `looper`, `looper-switch` remain compatible. Distribution: `loop-ros`; source directory: `LoopROS`; Python import: `loop_robot`, independent of the checkout directory name.
 
-Install from this source directory; no public PyPI release is assumed. Requires OS-compatible Python 3.10+ with pip and venv. See [platform limits](PLATFORMS.md).
+Install from this source directory; no public PyPI release is assumed. The bootstrap script accepts Python 3.8+; uv creates the Python 3.12 `.venv` used to run Loop ROS. See [platform limits](PLATFORMS.md).
 
 ## One-command source installers
 
@@ -18,7 +18,7 @@ After obtaining the source folder, run inside it:
 | Windows 10/11, terminal only | `powershell -NoProfile -ExecutionPolicy Bypass -File .\scripts\install.ps1 --terminal-only` |
 | Windows 7/8 or incompatible older OS | SSH to an already installed compatible host; not native installation |
 
-Compatible Python 3.10+ with pip/venv must already be installed. Scripts do not replace system Python or request administrator access. `LOOP_PYTHON` can select an explicit interpreter path. Existing project venv takes precedence otherwise. Add `--check` to inspect prerequisites without installing. PowerShell Bypass affects only that new process, not permanent policy; inspect the local script first. No public download host has been configured, so no executable curl/irm URL is advertised.
+Python 3.8+ is enough to launch the installer. It reuses uv from PATH or `~/.local/bin`, or downloads Astral’s official standalone installer there without editing shell profiles. uv creates `.venv` with Python 3.12, downloading that interpreter if needed, and installs dependencies with `uv pip`. System pip/venv packages are not required. Scripts do not replace system Python or request administrator access. `LOOP_PYTHON` can select an explicit interpreter path. An existing usable Python 3.10+ project venv takes precedence otherwise. Broken/older environments are preserved with an instruction to move them aside before retrying. Add `--check` for a read-only environment check; it does not test downloads. PowerShell Bypass affects only that new process, not permanent policy; inspect the local script first. Hosted uv bootstrap and update commands are documented in [RELEASES](RELEASES.md).
 
 The [English introduction page](../website/index.html) includes platform selection and command copying. Open that file directly in a browser; no server is required. Do not expose the project root (which may contain local configuration/state) through a public file server. See [website notes](../website/README.md).
 
@@ -46,9 +46,9 @@ export PATH="$HOME/.local/bin:$PATH"
 loop
 ```
 
-Default installation includes MuJoCo/NumPy. For only the API terminal use `python3 scripts/install.py --terminal-only`. Add the PATH export to your shell startup file for persistence; the installer does not edit it. If Ubuntu's packaged Python lacks venv, use `sudo apt install python3-venv` with working repositories. This package does not provide venv for separately managed interpreters.
+Default installation includes MuJoCo/NumPy. For only the API terminal use `python3 scripts/install.py --terminal-only`. Add the PATH export to your shell startup file for persistence; the installer does not edit it. uv does not require the distribution’s `python3-venv` package.
 
-Ubuntu 16.04/18.04/20.04 stock Python is below 3.10. Do not replace `/usr/bin/python3`. Use a compatible private Python: `/absolute/path/to/python3 scripts/install.py --terminal-only`. Verify TLS, libc and wheel compatibility on that machine. If no compatible interpreter is available, use SSH below. Local Ubuntu 20.04 was tested with private Python 3.13, not stock Python 3.8.
+Ubuntu 20.04 stock Python 3.8 can run `python3 scripts/install.py --terminal-only`; uv prepares the runtime without replacing `/usr/bin/python3`. On older systems, start with a Python 3.8+ bootstrap interpreter. TLS, libc and wheel compatibility still apply; use SSH below if compatible runtimes are unavailable.
 
 ## Windows 10/11 — native validation pending
 
@@ -69,7 +69,7 @@ Rerun without `--terminal-only` for simulation, subject to compatible wheels/gra
 
 ## macOS — native validation pending
 
-Use an OS/CPU-compatible Python 3.10+ distribution, matching Intel or Apple Silicon. Do not replace Apple's system Python:
+Use an OS/CPU-compatible Python 3.8+ bootstrap distribution, matching Intel or Apple Silicon. Do not replace Apple's system Python:
 
 ```sh
 python3 scripts/install.py --check
@@ -92,7 +92,7 @@ Replace USER/HOST. On Windows 7/8, use a compatible SSH client to open a normal 
 
 ## Setup, state and updates
 
-Without a Master key, interactive startup opens the URL + hidden-key wizard. `loop-switch` opens the same setup; model/protocol options are advanced. See [Quick setup](QUICK_SETUP.md).
+Interactive startup checks the selected model with a short text request; missing/invalid access opens the provider, API-type, hidden-key and model wizard. `loop-switch setup` opens the same setup. See [Quick setup](QUICK_SETUP.md).
 
 Configuration uses `~/.loop` (Windows: `%USERPROFILE%\.loop`). If only `.looper` exists it is renamed to `.loop` on configuration load; if both exist, `.loop` wins without merging. `LOOP_HOME` overrides this, with `LOOPER_HOME` retained for explicit legacy overrides. Saved credentials are plaintext; POSIX mode 0600 is enforced, Windows relies on the user's directory ACL. See [User home](USER_HOME.md). Existing keys and history are preserved. Installed runtime state now defaults to `loop-ros`; legacy state migration preserves a directory link for saved paths (see User home). Source checkouts retain `artifacts/terminal`.
 
@@ -119,3 +119,19 @@ Real hardware motion remains disabled. `/stop` is not a physical emergency stop.
 The checkout directory can be named `LoopROS` or another name. The installed Python package remains `loop_robot`; do not change imports to match the folder. Source launchers locate files relative to themselves. Python virtualenv launch scripts and editable installations contain absolute paths, so moving an existing `.venv` still requires repairing/recreating its launchers and reinstalling the editable package at the new location. Project-owned user command links must point to the new `.venv/bin` directory.
 
 Scene indexes now store paths relative to the state directory and survive moves; old absolute indexes remain supported when their paths still exist. During this machine's move from `loop_robot` to `LoopROS`, the current index was converted after checking the saved scene. Historical logs retain their original paths. See [RUNBOOK](RUNBOOK.md) for verified relocation results.
+
+uv behavior references (checked 2026-09-07): [standalone installation](https://docs.astral.sh/uv/getting-started/installation/) and [Python environments](https://docs.astral.sh/uv/pip/environments/). These document uv bootstrapping and interpreter selection; cross-platform native validation remains pending.
+
+## Uninstall a source installation
+
+Stop Loop ROS and its background services first. From the checkout, use system Python 3.8+: `python3 scripts/uninstall.py --check` previews removal; `python3 scripts/uninstall.py` removes this checkout’s environment and recognized Loop ROS launchers, including links to old checkouts. On Windows use `py -3`. Do not launch the uninstaller with the environment being deleted. Settings, Skills, sessions, runtime data, source, uv, shared Python and user PATH are retained. Unrelated or unverified launchers, other checkouts’ environments and launcher backups remain unchanged. See the [script](../scripts/uninstall.py) and [README](../README.md#uninstall).
+
+## Existing launcher conflicts
+
+The source uninstaller removes recognized Loop ROS launchers even when they point at another checkout; unrelated or unverified launchers are preserved. To switch those commands to the current checkout, run `python3 scripts/install.py --terminal-only --replace-launchers` (Windows: `py -3`). After dependencies install successfully, conflicting launcher files/symlinks are renamed to `<command>.loop-ros-backup.N` in the same user bin directory, then current launchers are created. Existing backups are preserved; real directories are refused. Other source trees and their environments/data are not removed. `--check` now validates command conflicts too, and with `--replace-launchers` previews the switch without writes. Later uninstall removes recognized Loop ROS launchers and retains backups; it does not automatically restore a previous checkout.
+
+Uninstall recognizes POSIX Python entrypoints by a top-level import of the expected function from `loop_robot.launcher`, without executing the target. Windows recognition matches the installer’s complete marked `.cmd` format and command name. Broken links into the current checkout are removable; broken links elsewhere without verifiable ownership remain untouched.
+
+## Managed release updates
+
+`loop update --check` checks stable versions; `loop update` installs into a fresh environment and activates after verification; `loop update --rollback` selects the previous runtime without reverting user data. Close active terminals/services/viewers first. A source checkout requires explicit `loop update --migrate --terminal-only` (plus `--state-dir` if needed). Managed installs remember dependency selection and state location. For hosted runtime removal use the server `uninstall.sh`, not source `.venv` deletion. See [release details](RELEASES.md).

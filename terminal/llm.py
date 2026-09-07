@@ -1,7 +1,10 @@
 import json
 import os
+import ssl
+import socket
+from pathlib import Path
 from urllib.error import HTTPError, URLError
-from urllib.request import Request, build_opener, HTTPRedirectHandler
+from urllib.request import Request, build_opener, HTTPRedirectHandler, HTTPSHandler
 from terminal.home import saved_key
 from terminal.protocols import encode, decode
 
@@ -9,6 +12,25 @@ from terminal.protocols import encode, decode
 class NoRedirect(HTTPRedirectHandler):
     def redirect_request(self, req, fp, code, msg, headers, newurl):
         return None  # Never forward an Authorization header to another endpoint.
+
+
+class ModelAPIError(RuntimeError):
+    """Diagnostic built from local constants, never an API response body."""
+
+
+def model_https_handler():
+    context = ssl.create_default_context()
+    paths = ssl.get_default_verify_paths()
+    # Some standalone Python builds point at a build machine's OpenSSL prefix.
+    # Use the OS CA bundle only when no default trust paths or explicit overrides exist.
+    if (not paths.cafile and not paths.capath and not context.cert_store_stats()['x509_ca']
+            and not any(os.environ.get(name) for name in ('SSL_CERT_FILE', 'SSL_CERT_DIR'))):
+        for path in ('/etc/ssl/certs/ca-certificates.crt', '/etc/pki/tls/certs/ca-bundle.crt',
+                     '/etc/ssl/cert.pem'):
+            if Path(path).is_file():
+                context.load_verify_locations(cafile=path)
+                break
+    return HTTPSHandler(context=context)
 
 
 class QwenClient:
@@ -36,7 +58,7 @@ class QwenClient:
             if not model:
                 request = Request(base + '/models', headers={'Authorization': 'Bearer ' + key})
                 try:
-                    with build_opener(NoRedirect()).open(request, timeout=self.config['timeout_s']) as response:
+                    with build_opener(NoRedirect(), model_https_handler()).open(request, timeout=self.config['timeout_s']) as response:
                         payload = response.read(2 * 1024 * 1024 + 1)
                     if len(payload) > 2 * 1024 * 1024:
                         raise ValueError('Model catalog too large')
@@ -65,7 +87,7 @@ class QwenClient:
                           headers={"Authorization": "Bearer " + key,
                                    "Content-Type": "application/json"})
         try:
-            with build_opener(NoRedirect()).open(request, timeout=self.config["timeout_s"]) as response:
+            with build_opener(NoRedirect(), model_https_handler()).open(request, timeout=self.config["timeout_s"]) as response:
                 if streaming:
                     return read_stream(response, on_event, stop_event)
                 payload = response.read(2 * 1024 * 1024 + 1)
@@ -76,11 +98,24 @@ class QwenClient:
                 raise ValueError("invalid message")
             return message
         except HTTPError as exc:
-            raise RuntimeError("Model API HTTP {}; check region, model and API key".format(exc.code)) from None
-        except (URLError, TimeoutError):
-            raise RuntimeError("Model API network error or timeout") from None
+            hints = {400: "check API type, model ID and request parameters",
+                     401: "API key rejected", 403: "account or model access denied",
+                     404: "API endpoint or model not found; check URL and API type",
+                     429: "rate limit or account quota exceeded"}
+            raise ModelAPIError("Model API HTTP {}: {}".format(exc.code, hints.get(exc.code, "provider request failed"))) from None
+        except (URLError, TimeoutError, ssl.SSLError, ConnectionError) as exc:
+            reason = exc.reason if isinstance(exc, URLError) else exc
+            if isinstance(reason, ssl.SSLCertVerificationError):
+                message = "TLS certificate verification failed; check the Python/system CA certificates and server certificate"
+            elif isinstance(reason, (TimeoutError, socket.timeout)):
+                message = "Model API timed out after {}s; check connectivity or increase profile timeout_s".format(self.config['timeout_s'])
+            elif isinstance(reason, socket.gaierror):
+                message = "Model API DNS lookup failed; check hostname and network"
+            else:
+                message = "Model API connection failed; check network, proxy and TLS settings"
+            raise ModelAPIError(message) from None
         except (KeyError, IndexError, ValueError):
-            raise RuntimeError("Unsupported model API response format") from None
+            raise ModelAPIError("Unsupported model API response format; check Chat Completions vs Responses API type") from None
 
 
 def read_stream(response, emit, stop_event=None):
@@ -164,7 +199,7 @@ class ChatAgent:
         self.defer_answer = None
 
     def reply(self, text, attachments=None):
-        from terminal.turn_summary import summarize, display
+        from terminal.turn_summary import summarize
         events=[]
         emit=self.on_event
         def capture(kind,value):
@@ -198,7 +233,6 @@ class ChatAgent:
                     summary['handoff_error']=str(exc)
                     emit('Task','后台交接失败：'+str(exc)+'；不能标记任务已完成')
             self.turn_summaries.append(summary)
-            emit('Summary',display(summary))
 
     def _reply(self, text, attachments=None):
         if len(text) > 16000:

@@ -8,6 +8,14 @@ ROOT = Path(__file__).resolve().parents[1]
 DEFAULT_STATE_DIR = runtime_state_dir(ROOT)
 
 
+def user_config_file(name):
+    """User-owned overrides live outside the installed package."""
+    if name not in ("agents.json", "task_runtime.json"):
+        raise ValueError("Unknown user configuration file")
+    path = loop_home() / name
+    return path if path.exists() else ROOT / "configs" / name
+
+
 def validate_provider(provider):
     import re
     required = {"base_url", "model", "api_key_env", "timeout_s"}

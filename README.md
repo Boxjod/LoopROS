@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="assets/logo.png" alt="Loop ROS infinity robot logo" width="100%">
+</p>
+
 # Loop ROS
 
 **English** · [简体中文](README.zh-CN.md)
@@ -6,7 +10,39 @@
 
 Loop connects a user-selected model to tools, persistent tasks and robot runtimes. Its central contract is **goal → execute → observe → review → revise**. Execution receipts and task success are recorded separately.
 
-Initial hosted release **0.0.1** is available on the [official website](https://loopmaster.box2ai.com/LoopROS/). GitHub source and hosted release are separate snapshots; no GitHub Release has been created.
+Initial version **0.0.1**. Hosted release delivery and updates are supported; GitHub publication is a separate workflow.
+
+## Quick start
+
+From a source checkout, Python 3.8+ can start the installer. It prepares uv and creates a Python 3.12 `.venv` automatically (reuses an existing Python 3.10+ environment):
+
+```sh
+python3 scripts/install.py --terminal-only
+loop
+```
+
+For the optional MuJoCo environment, use `python3 scripts/install.py`. Interactive startup checks the model connection. Missing keys or failed connections open the `loop-switch setup` wizard: choose a provider or custom URL, API type, hidden key and model. Loop rechecks the saved configuration before opening the conversation. Existing profiles are retained.
+
+**Recommended: GPT-6 Astra through your custom API or OpenAI Responses API.** Use the exact model ID exposed by your endpoint. See [GPT-6 and custom API setup](docs/QUICK_SETUP.md); configuring a model does not verify account access or tool support. Other compatible providers remain supported.
+
+If installation reports `Destination already exists` and you want commands to use this checkout, run:
+
+```sh
+python3 scripts/install.py --terminal-only --replace-launchers
+```
+
+This backs up conflicting launchers as `~/.local/bin/<command>.loop-ros-backup.N` after dependencies install successfully, then switches commands to this checkout. Previous checkouts and their data remain intact. Add `--check` to preview; Windows uses `py -3` and backs up `.cmd` launchers. Without this option, conflicting commands are preserved and installation stops.
+
+## Uninstall
+
+Close Loop ROS and its background services, then run from this source checkout using system Python (Python 3.8+):
+
+```sh
+python3 scripts/uninstall.py --check  # Preview only
+python3 scripts/uninstall.py
+```
+
+On Windows, use `py -3 scripts/uninstall.py`. The [uninstaller](scripts/uninstall.py) removes this checkout’s `.venv` and recognized Loop ROS user command launchers, including those pointing at older checkouts. Source, settings, Skills, sessions, runtime data, uv and shared Python installations are retained. Unrelated or unverified launchers, other checkouts’ environments and launcher backups are preserved. PATH entries are retained because the user command directory can contain other tools. A `.venv` symlink/junction is removed without deleting its target; an unrecognized directory is left unchanged.
 
 ## Installation by platform
 
@@ -49,7 +85,7 @@ ssh -t USER@HOST '$HOME/.local/bin/loop'
 
 SSH does not include local USB/camera forwarding. Linux HTTPS installation is verified; native macOS and Windows installation remains unverified. After installation, reopen the terminal and run `loop` to configure the model connection.
 
-## Hosted updates and uninstall
+## Updates
 
 ```sh
 loop update --check
@@ -57,28 +93,15 @@ loop update
 loop update --rollback
 ```
 
-Close Loop terminals and background services first. Updating retains settings and Skills; rollback switches the runtime without reverting user data.
+Close Loop ROS terminals, background services and viewers before updating. A new runtime is installed and checked before activation; the previous runtime is retained. Configuration, Skills, state and terminal-only selection are preserved. Rollback changes the runtime, not user data. Source installs use `loop update --migrate --terminal-only` to explicitly switch to hosted releases; local source edits remain untouched. See [release details](docs/RELEASES.md).
 
-Linux/macOS uninstall:
+Uninstall a hosted release with `curl -fsSL https://loopmaster.box2ai.com/LoopROS/uninstall.sh | sh`; user data and uv are retained.
 
-```sh
-curl -fsSL https://loopmaster.box2ai.com/LoopROS/uninstall.sh | sh
-```
+## User settings, Skills and device migration
 
-User configuration, sessions and uv are retained.
+Keep personal files in `~/.loop` (`%USERPROFILE%\.loop` on Windows): `config.json`, optional `agents.json` and `task_runtime.json`, `AGENTS.md`, `harness/*.md`, and complete `skills/<name>/` packages. Packaged `configs/` files remain defaults. `LOOP_HOME` selects an alternative user directory.
 
-## Source checkout
-
-Requires Python 3.10+. From a source checkout:
-
-```sh
-python3 scripts/install.py --terminal-only
-loop
-```
-
-For the optional MuJoCo environment, use `python3 scripts/install.py`. First launch without a key opens `loop-switch`; select a provider or enter your own API base URL and hidden key. Existing profiles are retained.
-
-**Recommended: GPT-6 Astra through your custom API or OpenAI Responses API.** Use the exact model ID exposed by your endpoint. See [GPT-6 and custom API setup](docs/QUICK_SETUP.md); configuring a model does not verify account access or tool support. Other compatible providers remain supported.
+Model profiles, permission settings and history are in the runtime state directory, so migrating only `~/.loop` does not preserve them. Stop Loop and its background services, then transfer both the user directory and the state directory to the new device. Keep credentials private and restore their permissions; copy whole Skill folders so supporting scripts and references survive. Do not copy the runtime virtual environment between devices. See [storage rules and migration steps](docs/USER_HOME.md#device-migration) for paths, precedence and a single-directory setup.
 
 ## Capabilities
 
@@ -86,12 +109,12 @@ For the optional MuJoCo environment, use `python3 scripts/install.py`. First lau
 | --- | --- | --- |
 | Conversation and coding | Streaming on Chat Completions, files/search/edit, images/URLs, Python execution | Python runs as the host user; Responses currently returns buffered answers |
 | Feedback and evidence | Bounded execution loops, Episodes, Reviews, persistent task supervision, resume/cancel | A successful tool call is not proof of the user goal |
-| Runtime coordination | Master and optional child Agents, persistent Loop Nodes, carrier/instance routing | Remote carrier assignments are not connected transports |
+| Runtime coordination | Master and up to 3 parallel child Agents with interprocess messaging, persistent Loop Nodes, carrier/instance routing | Remote carrier assignments are not connected transports |
 | Memory and extension | Session history, summaries, experience retrieval, revisioned learning notes, Skills/harness | No weight training or automatic candidate release |
 | Robotics tools | MuJoCo scenes/assets, window control, joint trajectories, position IK, torque/PID/model analysis | Simulated results do not establish real-world success |
 | Device access | Serial enumeration/receive, Feetech scanning/status, STS3215 Host primitives | Terminal hardware motion remains gated off; hardware acceptance is separate |
 | Supporting tools | Search/web/weather, scheduling, inference-service hooks, ROS read-only adapter, resource budgets | ROS communication and actual policy model backends are not end-to-end verified |
-| Distribution | CLI installers, wheel build, platform smoke workflow, update-check client | Hosted Linux installation is verified; native macOS/Windows validation remains pending |
+| Distribution | CLI installers, wheel build, platform smoke workflow, update-check client | Cross-platform native validation and hardware certification remain separate |
 
 The default model context exposes 21 general tools. Specialist toolsets (robotics, tasks, agents) load only when the model requests them and reset each turn. No robot keyword routing, automatic scene/device/weather execution or implicit background task creation is used. MuJoCo, hardware adapters and policy integrations remain optional tools. All Agent roles use the currently selected model and credentials. Session history and resume remain available; model input is bounded separately from saved history.
 

@@ -1,4 +1,4 @@
-"""Shared first-run and standalone Switch setup; no inference requests."""
+"""Shared provider setup and interactive startup connection recovery."""
 import getpass
 import hashlib
 import json
@@ -6,7 +6,7 @@ from urllib.request import Request, build_opener
 
 from terminal.config import validate_provider
 from terminal.home import save_key
-from terminal.llm import NoRedirect
+from terminal.llm import NoRedirect, QwenClient, ModelAPIError, model_https_handler
 
 # Public endpoints, not subscriptions or guarantees of account access.
 PRESETS = [
@@ -22,7 +22,7 @@ def discover_models(config, key):
     request = Request(config["base_url"].rstrip("/") + "/models",
                       headers={"Authorization": "Bearer " + key})
     try:
-        with build_opener(NoRedirect()).open(request, timeout=15) as response:
+        with build_opener(NoRedirect(), model_https_handler()).open(request, timeout=15) as response:
             raw = response.read(1024 * 1024 + 1)
         if len(raw) > 1024 * 1024:
             raise ValueError()
@@ -48,23 +48,30 @@ def quick_setup(store, slot="master", read=None, secret=None, write=print):
         url = read("API base URL: ").strip() if choice.lower() == "c" else choice
         model = next((m for _, u, m in PRESETS if u == url.rstrip("/")), "")
     url = url.rstrip("/")
-    if url.endswith(("/chat/completions", "/responses")):
-        raise ValueError("Enter the base URL, not a full chat/completions or responses endpoint")
+    protocol = "openai-responses" if url == "https://api.openai.com/v1" else "openai"
+    for suffix, kind in (("/chat/completions", "openai"), ("/responses", "openai-responses")):
+        if url.endswith(suffix):
+            url, protocol = url[:-len(suffix)], kind
+            write("Full endpoint detected; using its API base URL.")
+            break
     config = {"base_url": url, "model": model or "pending", "timeout_s": 60,
               "api_key_env": "LOOP_KEY_" + hashlib.sha256(url.encode()).hexdigest()[:16].upper(),
-              "protocol": "openai-responses" if url == "https://api.openai.com/v1" else "openai"}
+              "protocol": protocol}
     validate_provider(config)  # Reject credential URLs before asking for a secret.
+    write("API type: 1. OpenAI-compatible Chat Completions  2. OpenAI Responses")
+    default = "2" if protocol == "openai-responses" else "1"
+    choice = read("API type [{}] (0 to cancel): ".format(default)).strip() or default
+    if choice == "0":
+        return None
+    kinds = {"1": "openai", "2": "openai-responses", "openai": "openai", "openai-responses": "openai-responses"}
+    if choice not in kinds:
+        raise ValueError("Choose 1 (Chat Completions) or 2 (Responses); nothing saved")
+    config["protocol"] = kinds[choice]
     write("The key will be saved locally in Loop ROS user home (plaintext, private permissions).")
     key = secret("API key (hidden; Enter to cancel): ").strip()
     if not key:
         return None
-    advanced = read("Enter to save defaults, or 'a' for advanced model/protocol: ").strip().lower()
-    if advanced not in ("", "a"):
-        raise ValueError("Expected Enter or a; nothing saved")
-    if advanced == "a":
-        config["protocol"] = read("Protocol [{}] (openai / openai-responses): ".format(config["protocol"])).strip() or config["protocol"]
-        model = read("Model ID [{}]: ".format(model or "auto-discover")).strip() or model
-    validate_provider(config)
+    model = read("Model ID [{}]: ".format(model or "auto-discover")).strip() or model
     if not model:
         write("Discovering models from the selected URL only (GET /models; no inference).")
         try:
@@ -92,20 +99,44 @@ def quick_setup(store, slot="master", read=None, secret=None, write=print):
     return name
 
 
+def check_connection(client):
+    """Check the selected inference endpoint without tools or conversation history."""
+    key = client.resolved_key()
+    if not key:
+        raise ModelAPIError("No API key configured")
+    probe = QwenClient(dict(client.config))
+    probe.key = key
+    result = probe.complete([{"role": "user", "content": "Reply with OK only."}], [])
+    if not isinstance(result, dict) or not isinstance(result.get("content"), str) or not result["content"].strip():
+        raise ModelAPIError("Model returned no text; check the model ID and API type")
+
+
 def ensure_setup(app, interactive):
-    if not interactive or app.client.resolved_key():
+    if not interactive:
         return True
-    print("No Master API key configured. Opening Loop Switch.")
     while True:
         try:
-            name = quick_setup(app.providers)
-            break
+            print("Checking model connection (short request, no tools)...", flush=True)
+            check_connection(app.client)
+            print("Model connected.")
+            return True
         except (EOFError, KeyboardInterrupt):
-            print("\nSetup cancelled.")
+            print("\nConnection check cancelled.")
             return False
-        except (ValueError, OSError) as exc:
-            print("Setup error: " + str(exc))
-    if name is None:
-        return False
-    app.apply_profiles()
-    return True
+        except (RuntimeError, ValueError, OSError) as exc:
+            # No raw exception/response text: gateways and local paths may contain secrets.
+            print("Model connection failed. " + (str(exc) if isinstance(exc, ModelAPIError)
+                  else "Check API URL, key, model ID and API type."))
+            print("Opening Loop Switch setup. Environment keys take precedence over saved keys.")
+        while True:
+            try:
+                name = quick_setup(app.providers)
+                if name is None:
+                    return False
+                app.apply_profiles()
+                break
+            except (EOFError, KeyboardInterrupt):
+                print("\nSetup cancelled.")
+                return False
+            except (ValueError, OSError):
+                print("Setup could not be saved. Check the URL, API type and user configuration permissions.")

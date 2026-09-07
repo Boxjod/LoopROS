@@ -1,0 +1,44 @@
+name: Build tagged Loop ROS release
+on:
+  push:
+    tags: ['v[0-9]*']
+  workflow_dispatch:
+permissions:
+  contents: read
+jobs:
+  release:
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Check tag and version
+        env:
+          REF_TYPE: ${{ github.ref_type }}
+          REF_NAME: ${{ github.ref_name }}
+        run: |
+          python - <<'PY'
+          import os
+          from _version import __version__
+          if os.environ['REF_TYPE'] == 'tag':
+              assert os.environ['REF_NAME'] == 'v' + __version__, 'Tag/version mismatch'
+          PY
+      - run: python scripts/install.py --terminal-only
+      - name: Release and CLI regressions
+        run: PYTHONPATH=tests .venv/bin/python -m unittest test_releases test_updates test_install test_uninstall test_platform_support test_branding test_terminal -q
+      - name: Build public bundle
+        run: .venv/bin/python scripts/build_release.py --url https://loopmaster.box2ai.com/LoopROS --output artifacts/public
+      - uses: actions/upload-artifact@v4
+        with:
+          name: loop-ros-public-release
+          path: artifacts/public/
+      - name: Publish immutable tagged artifacts to GitHub
+        if: github.ref_type == 'tag'
+        env:
+          GH_TOKEN: ${{ github.token }}
+          TAG_NAME: ${{ github.ref_name }}
+        run: |
+          gh release create "$TAG_NAME" artifacts/public/*.whl artifacts/public/bootstrap.pyz artifacts/public/install.sh artifacts/public/uninstall.sh artifacts/public/install.ps1 artifacts/public/SHA256SUMS artifacts/public/latest.json --verify-tag --title "Loop ROS $TAG_NAME" --notes-file docs/CHANGELOG.md

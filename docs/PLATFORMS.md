@@ -6,7 +6,7 @@ Loop ROS separates the API terminal, simulation and hardware adapters. Terminal 
 | --- | --- | --- |
 | Ubuntu 16.04 | Compatible private Python 3.10+, otherwise SSH | Untested; stock Python insufficient; libc/TLS/wheels may block installation |
 | Ubuntu 18.04 | Compatible private Python 3.10+, otherwise SSH | Untested; stock Python insufficient |
-| Ubuntu 20.04 | Private Python 3.10+ | Verified on 20.04.6 x86_64 with Python 3.13.14, not stock Python 3.8 |
+| Ubuntu 20.04 | Python 3.8 bootstrap → uv Python 3.12 `.venv` | Fresh terminal install, external launcher and repeat install verified locally on 2026-09-07; runtime also previously verified with Python 3.13.14 |
 | Ubuntu 22.04 | Compatible Python + installer | CI configured, not run here |
 | Ubuntu 24.04 | Compatible Python + installer | CI configured, not run here |
 | Ubuntu 25.04 | Compatible Python + installer | Untested; check repository/lifecycle availability |

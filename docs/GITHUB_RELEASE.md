@@ -1,6 +1,6 @@
 # GitHub release preparation
 
-Target scope: Loop ROS 0.1.0 initial candidate. Version remains consistent with `pyproject.toml`; this is not a published tag.
+Target scope: Loop ROS 0.0.1 initial candidate. Version remains sourced from `_version.py` through `pyproject.toml`; this is not a published tag.
 
 Use the existing README, changelog, `pyproject.toml` and platform-smoke workflow as the repository entry points. Reference PhyAgentOS for clear task/execution/evidence boundaries and explicit implementation status, rather than importing its entire framework.
 
@@ -14,7 +14,7 @@ Use the existing README, changelog, `pyproject.toml` and platform-smoke workflow
 
 ## Current preparation
 
-README, changelog, GPT-6 example, simplified prompts and first-run recommendation are prepared locally. Existing user profiles and downloaded assets are preserved. The local wheel and SHA256SUMS are under `artifacts/release-candidate/`; inventory and project-external startup checks passed (existing interpreter dependencies). No Git repository, remote push, tag or GitHub release has been created by this preparation.
+README, changelog, GPT-6 example, simplified prompts and first-run recommendation are prepared locally. Existing user profiles and downloaded assets are preserved. The local wheel and SHA256SUMS are under `artifacts/release-candidate/`; inventory and project-external startup checks passed (existing interpreter dependencies). The local repository exists. No new remote push, tag or GitHub Release is created by this preparation; hosted publication is recorded separately in DEPLOYMENT. The tag workflow is configured in `.github/workflows/release.yml`, not yet run on GitHub.
 
 ## Framework follow-ups
 
