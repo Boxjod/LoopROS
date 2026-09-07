@@ -8,14 +8,14 @@ CONTROL_COMMANDS = {
     "/permissions": "[default|plan|cautious|yolo] Profiles; [allow|ask|deny action] Edit a rule",
     "/requests": "Inspect pending approvals and exact arguments",
     "/approve": "ID Approve once; /approve reject ID to reject",
-    "/mode": "[plan|sim] Show or change execution mode",
+    "/mode": "[plan|sim|real] Show or change execution mode",
     "/plan": "Enter planning-only mode",
     "/tools": "List tools and permission rules",
     "/doctor": "Inspect Python and optional modules; no device connections",
-    "/config": "Show provider configuration without API keys",
-    "/context": "Show message and character counts",
+    "/config": "[TARGET] Inspect settings; set TARGET JSON changes configuration without exposing keys",
+    "/context": "Show stored history, model window and character budgets",
     "/history": "Show in-memory conversation history",
-    "/compact": "Keep the last four turns; no generated summary",
+    "/compact": "Reduce the model window; preserve complete session history",
     "/robot": "Inspect the simulation body and joint limits",
     "/devices": "Discover local serial ports; Linux also lists USB/camera/input nodes",
     "/joints": "Read the current simulated joint state",
@@ -24,7 +24,7 @@ CONTROL_COMMANDS = {
     "/stop": "Stop simulation and cancel subagents; NOT a hardware E-stop",
     "/commands": "Count and list all slash commands",
 }
-BASE_COMMANDS = "/after /agents /cancel /clear /complex /every /exit /expert-key /help /jobs /key /model /policy /quit /result /scene /send /shortcuts /sim /spawn /status /stop-agent /switch /viewer /node /models /model-load".split()
+BASE_COMMANDS = "/skills /after /agents /agent-messages /cancel /clear /complex /every /exit /expert-key /fast /help /jobs /key /model /policy /quit /result /scene /send /shortcuts /sim /spawn /status /stop-agent /switch /viewer /node /models /model-load".split()
 
 
 def operator_command(app, command, tail):
@@ -70,11 +70,20 @@ def operator_command(app, command, tail):
                      "os": platform.system(), "release": platform.release(), "machine": platform.machine(),
                      "linux_serial_adapter": sys.platform.startswith("linux"),
                      "modules_found_not_import_tested": {n: bool(importlib.util.find_spec(n)) for n in ("mujoco", "mink", "rclpy", "genesis")}})
+    if command == "/config" and tail.strip():
+        from terminal.settings import read, update, TARGETS
+        parts = tail.strip().split(maxsplit=2)
+        if len(parts) == 1 and parts[0] in TARGETS:
+            return dump(read(app, parts[0]))
+        if len(parts) == 3 and parts[0] == 'set' and parts[1] in TARGETS:
+            return dump(update(app, parts[1], json.loads(parts[2])))
+        raise ValueError('Usage: /config TARGET or /config set TARGET JSON')
     if command == "/config":
         return dump({"master": app.client.config, "expert": app.expert.config,
                      "mode": app.permissions.snapshot()["mode"]})
     if command == "/context":
-        return dump({"messages": len(app.agent.history), "characters_not_tokens": sum(len(json.dumps(m["content"], ensure_ascii=False)) for m in app.agent.history)})
+        from terminal.context_window import select
+        return dump(select(app.agent.history, app.agent.history_message_limit)[2])
     if command == "/history":
         history = []
         for message in app.agent.history:
@@ -84,8 +93,13 @@ def operator_command(app, command, tail):
             history.append(record)
         return dump(history)
     if command == "/compact":
-        app.agent.history = app.agent.history[-8:]
-        return "Kept the last four turns. Earlier context was removed; no summary was generated."
+        if tail.strip() not in ("", "reset"):
+            raise ValueError("Usage: /compact [reset]")
+        if tail.strip() == "reset":
+            app.agent.history_message_limit = 32
+            return "Default model window restored. Full session history preserved."
+        app.agent.history_message_limit = 8
+        return "Model window reduced to 8 messages plus bounded user excerpts. Full session history preserved; no model request made."
     if command == "/robot":
         return dump({"body": "sim-arm", "backend": "mujoco", "joints": ["j1", "j2"],
                      "limits_rad": [[-1, 1], [-1, 1]], "real_control": False, "session_state": app.sim_body is not None})

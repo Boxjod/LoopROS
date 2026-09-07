@@ -98,13 +98,54 @@ class ExperienceTests(unittest.TestCase):
         identity = self.learning.record_task(task)
         self.assertEqual(self.store.read('workspace-A', identity)['outcome'], 'cancelled')
 
+    def test_connection_hint_without_tools_survives_session_change(self):
+        identity = self.learning.record_turn({'request': 'Jetson 使用 ssh jetson@192.168.1.19 -p 22，通过现有 SSH 密钥连接'}, [], session_id='session-one')
+        reopened = Learning(self.store.path, lambda: 'workspace-A')
+        context = reopened.context('Jetson 的运行时怎么查看')
+        for value in (identity, '192.168.1.19', 'ssh', 'session-one', 'user_statement_not_verified'):
+            self.assertIn(value, context)
+        self.assertEqual(reopened.context('今天的天气如何'), '')
+        self.assertIn('192.168.1.19', reopened.context('上次机器人的连接方式'))
+        self.assertEqual(Learning(self.store.path, lambda: 'workspace-B').context('Jetson 地址'), '')
+        self.assertIsNone(reopened.record_turn({'request': '好的谢谢'}, []))
+
+    def test_connection_correction_keeps_sources_and_budget(self):
+        for address in ('192.168.1.19', '192.168.1.20'):
+            self.learning.record_turn({'request': '记住 Jetson 地址 ' + address + '，ssh 连接'}, [])
+        context = self.learning.context('Jetson 地址')
+        self.assertIn('192.168.1.19', context)
+        self.assertIn('192.168.1.20', context)
+        self.assertLess(context.index('192.168.1.20'), context.index('192.168.1.19'))
+        self.assertLess(len(context), 4200)
+        self.learning.record_turn({'request': '记住 Jetson 地址 192.168.1.20，ssh 连接'}, [])
+        context = self.learning.context('Jetson 地址')
+        self.assertEqual(context.count('user_statement_not_verified'), 2)
+
+    def test_memory_redacts_credentials_and_never_learns_assistant_claim(self):
+        identity = self.learning.record_turn({'request': '记住 Jetson 192.168.1.19 密码：hidden https://user:pass@example.com configured-private-key',
+                                              'answer_excerpt': 'SSH succeeded and robot is online'}, [])
+        data = json.dumps(self.store.read('workspace-A', identity), ensure_ascii=False)
+        for secret in ('hidden', 'user:pass', 'configured-private-key', 'SSH succeeded'):
+            self.assertNotIn(secret, data)
+        self.assertIn('user_statement_not_verified', data)
+
+    def test_structured_observation_tags_not_stdout_or_success_claims(self):
+        events = [('tool', 'observe({})'), ('result', json.dumps({'connection': {'host': '192.168.1.19', 'transport': 'ssh', 'username': 'jetson'},
+                   'stdout': 'password=private and connected successfully', 'ok': True}))]
+        identity = self.learning.record_turn({'request': '查询 Jetson 连接信息'}, events)
+        data = self.store.read('workspace-A', identity)
+        self.assertEqual(data['outcome'], 'observed')
+        self.assertEqual(data['payload']['memories'][0]['evidence'], 'historical_tool_observation_not_current_state')
+        self.assertNotIn('private', json.dumps(data))
+        self.assertIn('192.168.1.19', self.learning.context('Jetson 地址'))
+
     def test_background_worker_reuses_experience_then_records_verified_result(self):
         self.record(request='motor serial')
         store = TaskStore(self.path / 'tasks.sqlite')
         policy = {'max_workers': 1, 'attempt_timeout_s': 10, 'retry_initial_s': 1, 'retry_max_s': 2,
                   'stalled_attempts': 2, 'worker_tools': ['observe'], 'scheduled_tools': ['observe'],
                   'schedules': [], 'triggers': []}
-        supervisor = TaskSupervisor(store, policy, {'llm': SimpleNamespace(config={}, key=None)}, [],
+        supervisor = TaskSupervisor(store, policy, {'llm': SimpleNamespace(config={}, key=None, resolved_key=lambda: None)}, [],
                                     lambda name, args: {'ok': args['value']}, self.path / 'agents.jsonl', [],
                                     worker_target=recall_worker, learning=self.learning)
         try:
@@ -169,6 +210,27 @@ class LearningAppTests(unittest.TestCase):
         self.assertFalse(self.app.tool('experience_read', {'note': 'serial-baud'})['active'])
         self.app.workspace_root = self.root / 'other'
         self.assertEqual(self.app.tool('experience_search', {'query': 'serial baud'})['matches'], [])
+
+    def test_conversation_only_memory_is_available_to_next_session_model(self):
+        from terminal.session_task import SessionTask
+        self.app.session_task = SessionTask(identity='first-session')
+        with patch.object(self.app.client, 'complete', return_value={'content': '已记录地址，尚未验证连接'}) as complete:
+            self.app.agent.reply('记住 Jetson 使用 ssh jetson@192.168.1.19 -p 22')
+            self.assertEqual(complete.call_count, 1)
+        source = self.app.agent.turn_summaries[-1]['experience_id']
+        record = self.app.learning.store.read(self.app.learning.scope(), source)
+        self.assertEqual(record['payload']['session_id'], 'first-session')
+        self.assertEqual(record['payload']['task_id'], self.app.session_task.data['id'])
+        self.app.session_task = SessionTask(identity='second-session')
+        self.app.agent.history = []
+        self.app.agent.turn_summaries = []
+        with patch.object(self.app.client, 'complete', return_value={'content': '历史记录中为该地址，需要确认当前状态'}) as complete:
+            self.app.agent.reply('上次机器人的连接方式是什么')
+            self.assertEqual(complete.call_count, 1)
+            system = complete.call_args.args[0][0]['content']
+            self.assertIn('192.168.1.19', system)
+            self.assertIn('user_statement_not_verified', system)
+            self.assertIn(source, system)
 
     def test_permission_gate_disables_recall_and_plan_blocks_note_changes(self):
         identity = self.app.learning.store.record(self.app.learning.scope(), 'test', 'serial baud', 'observed', {'observations': []})

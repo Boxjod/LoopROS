@@ -25,10 +25,14 @@ def tool(app,name,args):
     if not isinstance(args,dict) or set(args)-{'path','content','expected_sha256'}: raise ValueError('Unsupported arguments')
     if name=='harness_read' and not args:
         root=loop_home()
-        return {'files':['AGENTS.md']+[str(p.relative_to(root)) for p in sorted((root/'harness').glob('*.md'))]}
+        return {'files': sorted({'AGENTS.md', 'harness/workflow.md'} | {str(p.relative_to(root)) for p in (root/'harness').glob('*.md')})}
     path=target(args.get('path'))
     if name=='harness_read':
         if set(args)!={'path'}: raise ValueError('harness_read takes path only')
+        if args['path'] == 'harness/workflow.md' and not path.exists():
+            from terminal.config import ROOT
+            return {'path': args['path'], 'content': (ROOT / 'configs/workflow_harness.md').read_text(encoding='utf-8'),
+                    'sha256': None, 'inherited_default': True}
         data=path.read_bytes()
         if len(data)>96000: raise ValueError('Harness file too large')
         return {'path':args['path'],'content':data.decode('utf-8'),'sha256':hashlib.sha256(data).hexdigest()}

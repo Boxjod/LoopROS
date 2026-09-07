@@ -29,6 +29,26 @@ class SkillsModuleTests(unittest.TestCase):
         self.assertEqual(discover(self.directory), [])
         self.assertEqual(prompt(self.directory), "")
 
+    def test_folded_and_literal_descriptions_and_duplicate_metadata(self):
+        for style in ('>', '>-', '|', '|-'):
+            package=self.directory/'sim-camera';package.mkdir(exist_ok=True)
+            (package/'SKILL.md').write_text('---\nname: sim-camera\ndescription: '+style+'\n  Capture calibrated\n  RGB and depth.\nmetadata:\n  owner: example\n---\nBody')
+            self.assertEqual(discover(self.directory),[{'name':'sim-camera','description':'Capture calibrated RGB and depth.'}])
+        (package/'SKILL.md').write_text('---\nname: sim-camera\ndescription: a\ndescription: b\n---\nBody')
+        self.assertEqual(discover(self.directory),[])
+
+    def test_discovery_rejects_external_symlink_and_bounds_catalog(self):
+        outside = self.directory/'outside.md'
+        outside.write_text('---\nname: escape\ndescription: private\n---\nBody')
+        (self.directory/'escape').mkdir()
+        (self.directory/'escape/SKILL.md').symlink_to(outside)
+        self.assertEqual(discover(self.directory), [])
+        for index in range(20):
+            write(self.directory, 'skill-'+str(index), 'd'*1000, 'body')
+        catalog=prompt(self.directory)
+        self.assertLess(len(catalog), 12200)
+        self.assertIn('Additional skills omitted', catalog)
+
     def test_read_unknown_skill_raises(self):
         with self.assertRaises(ValueError):
             read(self.directory, "missing")
@@ -82,3 +102,22 @@ class SkillToolPermissionTests(unittest.TestCase):
         self.app.tool("skill_write", {"name": "demo", "description": "d", "content": "c"})
         self.assertEqual(self.app.tool("skill_list", {}), {"skills": [{"name": "demo", "description": "d"}]})
         self.assertIn("c", self.app.tool("skill_read", {"name": "demo"})["content"])
+
+
+    def test_resource_pagination_and_escape_denied(self):
+        self.app.dispatch('/permissions allow skill_write')
+        self.app.tool('skill_write', {'name':'demo','description':'d','content':'Read references/guide.md'})
+        package=Path(self.home.name)/'skills/demo'
+        (package/'references').mkdir()
+        (package/'references/guide.md').write_text('one\ntwo\nthree')
+        value=self.app.tool('skill_read',{'name':'demo','path':'references/guide.md','offset':2,'limit':1})
+        self.assertEqual(value['content'],'two')
+        self.assertEqual(value['next_offset'],3)
+        self.assertIn('references/guide.md',value['resources'])
+        (package/'references/escape').symlink_to(Path(self.home.name)/'credentials.json')
+        for path in ('../other','/etc/passwd','references/escape'):
+            with self.assertRaises(ValueError):
+                self.app.tool('skill_read',{'name':'demo','path':path})
+        self.app.dispatch('/permissions deny skill_read')
+        with self.assertRaises(PermissionError):
+            self.app.tool('skill_read',{'name':'demo'})

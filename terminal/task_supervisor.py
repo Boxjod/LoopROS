@@ -4,7 +4,7 @@ import json
 from pathlib import Path
 import time
 from core.tasks import assess, validate_spec
-from terminal.agents import AgentRuntime
+from terminal.agents import AgentRuntime, ResourceBusy
 
 FEEDBACK_TOOL={'type':'function','function':{'name':'task_feedback','description':'报告本轮反馈和下一步；不能自行宣布验收成功。缺输入/外部条件时明确等待原因。','parameters':{'type':'object','properties':{'state':{'type':'string','enum':['continue','needs_input']},'reason':{'type':'string'},'next_step':{'type':'string'}},'required':['state','reason','next_step'],'additionalProperties':False}}}
 PROMPT='''你是持久任务的执行子Agent。每轮依据原始目标、明确验收条件和上轮实际反馈修正方案。
@@ -21,10 +21,10 @@ def load_policy(path,allowed_tools):
     data.pop('success_profiles', None)
     expected={'version','max_workers','attempt_timeout_s','retry_initial_s','retry_max_s','stalled_attempts','worker_tools','scheduled_tools','schedules','triggers'}
     if set(data)!=expected or data['version']!=1: raise ValueError('Invalid task_runtime.json schema')
-    for key,lo,hi in [('max_workers',1,3),('attempt_timeout_s',5,3600),('retry_initial_s',1,3600),('retry_max_s',1,86400),('stalled_attempts',1,20)]:
+    for key,lo,hi in [('max_workers',1,108),('attempt_timeout_s',5,3600),('retry_initial_s',1,3600),('retry_max_s',1,86400),('stalled_attempts',1,20)]:
         if type(data[key]) is not int or not lo<=data[key]<=hi: raise ValueError('Invalid '+key)
     if data['retry_max_s']<data['retry_initial_s']: raise ValueError('retry_max_s must be >= retry_initial_s')
-    forbidden={'task_submit','task_resume','task_signal','task_cancel','spawn_agent','send_agent','skill_write','policy_start','carrier_start','carrier_command','carrier_stop','feetech_scan','feetech_read','run_python'}
+    forbidden={'tool_read','tool_write','tool_run','python_check','session_task_read','session_task_update','settings_update','settings_read','task_submit','task_resume','task_signal','task_cancel','spawn_agent','send_agent','skill_write','policy_start','carrier_start','carrier_command','carrier_stop','feetech_scan','feetech_read','run_python'}
     for key in ('worker_tools','scheduled_tools'):
         if not isinstance(data[key],list) or len(data[key])!=len(set(data[key])) or not set(data[key])<=set(allowed_tools) or set(data[key]) & forbidden: raise ValueError('Invalid tool grants: '+key)
     if not set(data['scheduled_tools'])<=set(data['worker_tools']): raise ValueError('Scheduled grants cannot exceed worker grants')
@@ -42,14 +42,14 @@ def load_policy(path,allowed_tools):
 
 
 class TaskSupervisor:
-    def __init__(self,store,policy,clients,schemas,dispatch,event_path,provider,worker_target=None,learning=None):
+    def __init__(self,store,policy,clients,schemas,dispatch,event_path,provider,worker_target=None,learning=None,admission=None):
         self.learning = learning
         self.store,self.policy,self.dispatch,self.provider=store,policy,dispatch,provider
         definitions={name:{'provider':'llm','tools':policy[key]+['task_feedback'],'prompt':PROMPT} for name,key in [('TaskWorker','worker_tools'),('TaskScheduled','scheduled_tools')]}
         definitions['TaskReplanner']={'provider':'llm','tools':['task_feedback'],'prompt':PROMPT+'\n本轮只重新规划：分析重复失败的根因，明确不同于上轮的下一步；不执行原始动作，不自称验收通过。'}
         options={'worker_target':worker_target} if worker_target else {}
         self.runtime=AgentRuntime(definitions,clients,schemas+[FEEDBACK_TOOL],self.tool,event_path,
-                                  max_workers=policy['max_workers'],timeout_s=policy['attempt_timeout_s'],**options)
+                                  max_workers=policy['max_workers'],timeout_s=policy['attempt_timeout_s'],admission=admission,**options)
         self.runtime.before_tool=self.before_tool;self.runtime.after_tool=self.after_tool
         self.running={};self.round_receipts={};self.stopping=False
         for task in store.list(limit=None):
@@ -73,6 +73,14 @@ class TaskSupervisor:
 
     def after_tool(self,agent,name,args,result):
         identity=self.running[agent]
+        if self.learning:
+            try:
+                from terminal.connection_memory import fallback
+                feedback = fallback(self.learning, result)
+                if feedback:
+                    result['memory_feedback'] = feedback
+            except Exception as exc:
+                self.store.event(identity, 'learning_error', {'error': type(exc).__name__})
         receipt={'agent_id':agent,'tool':name,'arguments':args,'result':result}
         self.round_receipts[agent].append(receipt)
         self.store.event(identity,'tool_result',receipt)
@@ -167,9 +175,15 @@ class TaskSupervisor:
                             prompt = enriched
                 except Exception as exc:
                     self.store.event(task['id'], 'learning_error', {'error': type(exc).__name__})
-            spawned=self.runtime.spawn(role,prompt)
+            try:
+                spawned=self.runtime.spawn(role,prompt,queue_if_busy=False)
+            except ResourceBusy as exc:
+                reason = 'Waiting for resources: ' + str(exc)
+                if task['feedback'].get('resource_wait') != reason:
+                    self.store.update(task['id'], task['state'], {**task['feedback'], 'resource_wait': reason})
+                break
             agent=spawned['agent_id'];self.running[agent]=task['id'];self.round_receipts[agent]=[]
-            self.store.update(task['id'],'running',agent_id=agent,attempt=task['attempt']+1)
+            self.store.update(task['id'],'running',{k:v for k,v in task['feedback'].items() if k != 'resource_wait'},agent_id=agent,attempt=task['attempt']+1)
             self.store.event(task['id'],'attempt',{'agent_id':agent,'pid':self.runtime.records[agent]['process'].pid,'attempt':task['attempt']+1})
 
     def fire_events(self):

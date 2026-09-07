@@ -11,6 +11,7 @@ from terminal.config import load_config
 from terminal.interactive import Terminal
 
 app = App(load_config(), Path(sys.argv[1]))
+app.startup_fast_status = 'available'  # Simulated capability for banner/stream PTY coverage.
 viewer_fixture=Path(sys.argv[1]).parent/'viewer-state.json'
 if viewer_fixture.exists():
     app.viewer.status=lambda: json.loads(viewer_fixture.read_text())

@@ -27,12 +27,13 @@ master
 
 节点随本终端会话存活，切换焦点不停止后台节点，退出终端会回收所有节点。当前不是系统守护服务，其他终端不能attach到该运行时；不持久恢复运行进程、不自动重放或重启运动。已停止节点可用相同start命令手动重新启动，生成新的instance_id。
 
-## 两种已实现节点
+## 已实现节点
 
 | kind | 实际行为 | 边界 |
 | --- | --- | --- |
 | sim_arm | 独立MuJoCo双关节模型，持续推进物理、保持控制目标、上报q/dq/接触/时间；move执行现有Loop反馈与评审 | 弧度目标；无夹爪、抓放或GUI控制；不是硬实时控制 |
 | serial_rx | 独占指定串口，持续读取，报告连接状态、累计字节、最近hex与接收时间 | Linux接收适配；不发送；未知协议不能提供电机角度、健康或型号 |
+| process | 从用户配置启动本地程序或 SSH，独立 PTY、输出尾部、行输入和停止命令 | 不进行模型轮询；与 CLI 同生命周期；服务就绪与远端停止须另外验证，见 [进程工作流](PROCESS_NODES.md) |
 
 明确端口与波特率后可用：
 
@@ -58,11 +59,11 @@ flowchart LR
     S --> E
 ```
 
-- core仅标准库；可信工厂注册与设备实现位于[插件](../toolchain/node_workers.py)。模型不能提交shell命令或任意模块路径。现有LLM子Agent仍用AgentRuntime管理一次性推理任务，未强行迁移为设备node。
+- core仅标准库；可信工厂注册与设备实现位于[插件](../toolchain/node_workers.py)。process 通过用户目录中的配置与哈希启动命令，需要既有 run_python=allow；启动工具不接受内联命令或任意模块路径。它与 run_python 同属宿主代码执行能力，并非硬件隔离。现有LLM子Agent仍用AgentRuntime管理一次性推理任务。
 - supervisor独立线程持续收取消息；节点约200ms发布一次心跳，默认3s过期为unresponsive。判定依据包括进程存活与心跳时间，不把旧snapshot当成新观测。
 - 每个节点最多一个待完成命令；命令内容上限4096字符，开始执行前检查5s有效期。未知完成结果为inconclusive。节点启动失败或异常退出显示failed；不会把内存中旧结果当成重启后结果。
 - 默认最多8个活动节点、64个逻辑名字；同一资源键不能被两个节点占用。串口按解析后的设备路径去重，操作系统锁还用于排除其他串口会话；模拟节点各有独立本体。
-- stop先发停止事件，等待500ms；必要时terminate、kill并回收。取消中的动作可能已经部分执行，不能承诺回滚。`/stop`停止模拟节点；`/plan`回收所有node；相关deny规则会回收受影响node。
+- stop先发停止事件，普通节点等待500ms，process节点最多等待6s以执行停止配置；必要时terminate、kill并回收。取消中的动作可能已经部分执行，不能承诺回滚。`/stop`停止模拟节点；`/plan`回收所有node；相关deny规则会回收受影响node。
 - node_start和node_command通过统一权限门禁。serial_rx还要求open_serial/read_serial为allow；一次性串口approval不能授权常驻接收。node move要求move_sim为allow，逐命令审批使用node_command规则。定时任务不能启动、控制或停止节点。
 - 生命周期和命令记录保存在state-dir/nodes/events.jsonl，内存仅保留100条近期事件；每次运行独立SQLite证据和输出.log。状态结果包含文件路径。serial_rx结束时记录Episode和inconclusive Review，不能将原始接收称作任务成功。强制退出且缺少命令回执时，supervisor追加inconclusive证据。
 

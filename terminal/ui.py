@@ -20,7 +20,7 @@ LOGO = (
 )
 
 
-def welcome(master, expert, mode, cwd=None, color=None, width=None):
+def welcome(master, expert, mode, cwd=None, color=None, width=None, fast_status=None):
     width = width or shutil.get_terminal_size((80, 24)).columns
     # Retain the color argument for callers; use the terminal foreground only.
     location = str(cwd or Path.cwd())
@@ -38,6 +38,11 @@ def welcome(master, expert, mode, cwd=None, color=None, width=None):
     else:
         lines = [art.ljust(logo_width) + "  " + (info[i] if i < len(info) else "")
                  for i, art in enumerate(LOGO)]
+    fast_label = {'available': 'available (probe only)',
+                  'active': 'active (provider default)',
+                  'unknown': 'not confirmed'}.get(fast_status)
+    if fast_label:
+        lines += ['', '  Fast · ' + fast_label]
     lines += ["", "  Ready. You are talking to Master.",
               "  · /switch setup  Configure API URL and key",
               "  · /switch    Choose a provider and model",

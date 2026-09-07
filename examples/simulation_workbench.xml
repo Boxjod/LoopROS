@@ -1,0 +1,25 @@
+<mujoco model="loop_camera_arm">
+  <compiler angle="radian"/>
+  <option timestep="0.002"/>
+  <visual><global offwidth="1024" offheight="1024"/></visual>
+  <default><joint damping="1"/><geom rgba="0.3 0.6 0.8 1"/></default>
+  <worldbody>
+    <light pos="0 -1 3"/>
+    <geom name="floor" type="plane" size="3 3 0.1" rgba="0.25 0.25 0.25 1"/>
+    <body name="table" pos="0 0 0.3"><geom name="table_geom" type="box" size="0.6 0.5 0.05" rgba="0.5 0.35 0.2 1"/></body>
+    <body name="arm" pos="-0.3 0 0.4">
+      <joint name="shoulder" type="hinge" axis="0 0 1" range="-1.5 1.5"/>
+      <geom type="capsule" fromto="0 0 0 0.3 0 0" size="0.035" mass="0.2"/>
+      <body name="wrist" pos="0.3 0 0">
+        <joint name="elbow" type="hinge" axis="0 0 1" range="-1.5 1.5"/>
+        <geom type="capsule" fromto="0 0 0 0.2 0 0" size="0.025" mass="0.1"/>
+        <site name="tip" pos="0.2 0 0" size="0.01"/>
+      </body>
+    </body>
+    <body name="cube" pos="0.3 0.2 0.4"><freejoint name="cube_free"/><geom name="cube_geom" type="box" size="0.05 0.05 0.05" mass="0.05" rgba="0.9 0.2 0.1 1"/></body>
+  </worldbody>
+  <actuator>
+    <position name="shoulder_target" joint="shoulder" kp="10" ctrlrange="-1.5 1.5"/>
+    <position name="elbow_target" joint="elbow" kp="10" ctrlrange="-1.5 1.5"/>
+  </actuator>
+</mujoco>

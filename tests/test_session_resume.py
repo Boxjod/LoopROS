@@ -96,5 +96,5 @@ class SessionResumeTests(unittest.TestCase):
         rows=[{'id':'abc123','title':'衣柜','turns':2,'updated':'2026-09-05'}]
         completer=SlashCompleter('',sessions=lambda:rows)
         result=list(completer.get_completions(Document('/resume a'),CompleteEvent()))
-        self.assertEqual(result[0].text,'abc123')
+        self.assertEqual(result[0].text,'衣柜')
         self.assertEqual(result[0].start_position,-1)

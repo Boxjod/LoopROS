@@ -431,7 +431,7 @@ class ResumeInteractionTests(unittest.IsolatedAsyncioTestCase):
                         for _ in range(len(state.completions)):
                             pipe.send_text('\x1b[B')
                             await asyncio.sleep(.06)
-                            if terminal.input.buffer.complete_state.current_completion.text == target:
+                            if terminal.store.resolve(app.client.config, terminal.input.buffer.complete_state.current_completion.text) == target:
                                 break
                         pipe.send_text('\r')
                         await asyncio.sleep(.3)

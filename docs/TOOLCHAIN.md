@@ -80,10 +80,20 @@ pool.close()
 
 示例 load／unload 是调用方回调，不是内置模型函数。估计预算必须涵盖权重、KV、视觉输入、推理工作区和加载峰值；系统／仿真留量由调用方从总预算扣除。活跃模型绝不自动卸载；预算不足只淘汰闲置模型，仍不足即拒绝加载。
 
-单线程协作式管理，无 nvidia-smi 监测、OS 硬限制或跨进程调度；预算是声明量而非实测。回调负责释放真实资源及部分加载失败清理，Python 外部引用可能阻止释放。`empty_cache` 不能替代模型卸载。Jetson 统一内存不能简单把 RAM 与 VRAM 预算当独立物理池。
+ModelPool 本身是单线程协作式管理，无 OS 硬限制；预算是声明量而非实测。共享 [ResourceManager](../core/resources.py) 与 [HostMonitor](../toolchain/admission.py) 为各工作负载采集资源状态并跨进程预留额度。ModelPool 可传入 `resources=app.resources` 与 `gpu_index`；模型闲置继续持有预留，直到卸载。接入与未覆盖边界见 [资源基础层](RESOURCE_RUNTIME.md)。回调负责释放真实资源及部分加载失败清理，Python 外部引用可能阻止释放。`empty_cache` 不能替代模型卸载。Jetson 统一内存不能简单把 RAM 与 VRAM 预算当独立物理池。
 
 ## 来源与限制
 
 接口依据本地源码及 [MuJoCo Python API](https://mujoco.readthedocs.io/en/stable/python.html)、[Mink 官方示例](https://github.com/kevinzakka/mink/blob/main/examples/docs/tasks_and_limits.py)、[ROS 2 rclpy 生命周期](https://docs.ros.org/en/iron/p/rclpy/api/init_shutdown.html)核对。仅依赖这些基础 API，不宣称已实现所有最新特性。
 
 依赖版本见 [scripts/requirements-sim.txt](../scripts/requirements-sim.txt)，测试与命令见 [RUNBOOK](RUNBOOK.md)。没有真机操作、模型权重下载、训练、ROS 网络接入或上游全流程执行。
+
+## 待审查的通用工具
+
+LeRobot 等第三方训练库的源码、独立环境与训练项目建议放在项目外，本项目只维护调用适配器；具体建议及尚未实现的边界见 [训练库布局](research/training-library-layout.md)。
+
+候选目录：[network_discovery](../toolchain/candidates/network_discovery/README.md)。由项目根脚本迁入，读取 Linux 本机网卡、路由、邻居缓存和 ROS 环境变量；独立目录包含源码、说明与测试，可单独上传审查。尚未注册为正式 Agent 工具，导入不执行采集；具体设备/网段脚本不纳入这一通用候选。使用与已验证边界见目录 README。
+
+## 独立仿真与学习数据工作台
+
+[Simulation Workbench](SIMULATION_WORKBENCH.md) 提供原生 `sim_*` 与 `loop mcp` 共用工具入口。MuJoCo 直接运行独立实例，Isaac 使用本机认证桥，由 Isaac 自带 Python 操作 USD/PhysX/Replicator。相机返回 RGB、深度、分割、内外参与时间；数据侧提供有界 HDF5 演示、ACT 动作块与 Gymnasium 接口。重依赖按需导入，不启动既有 GUI，不据采集完成推断任务成功或模型收敛。

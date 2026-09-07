@@ -22,6 +22,20 @@ def fake_worker(pipe, definition, config, key, task, schemas):
     elif task == "tool":
         pipe.send({"type": "tool", "name": "run_sim", "arguments": {}})
         pipe.send({"type": "result", "result": json.dumps(pipe.recv())})
+    elif task == "bad-type":
+        pipe.send({"type": []})
+        time.sleep(1)
+    elif task == "burst":
+        for _ in range(40):
+            pipe.send({"type":"inbox"})
+        pipe.send({"type":"result", "result":"burst complete"})
+        time.sleep(.2)
+    elif task == "malformed":
+        pipe.send(["invalid"])
+        time.sleep(1)
+    elif task == "reader":
+        pipe.send({"type":"tool", "name":"read_file", "arguments":{"path":"README.md"}})
+        pipe.send({"type":"result", "result":json.dumps(pipe.recv())})
     elif task == "crash":
         pipe.close()
     else:
@@ -40,7 +54,7 @@ class AgentTests(unittest.TestCase):
         self.temp = tempfile.TemporaryDirectory()
         config = load_config()
         clients = {key: QwenClient(config[key]) for key in ("llm", "expert")}
-        definitions = AgentRuntime.load_definitions(ROOT / "configs/agents.json", {"run_sim", "generate_scene"})
+        definitions = AgentRuntime.load_definitions(ROOT / "configs/agents.json", {"run_sim", "generate_scene", "read_file", "list_files", "search_files"})
         self.called = []
         def dispatch(name, args):
             self.called.append(name)
@@ -61,6 +75,44 @@ class AgentTests(unittest.TestCase):
                 return result
             time.sleep(0.01)
         self.fail("worker timed out in test")
+
+    def test_threaded_submissions_and_malformed_worker_isolation(self):
+        from concurrent.futures import ThreadPoolExecutor
+        with ThreadPoolExecutor(max_workers=2) as pool:
+            ids = list(pool.map(lambda task: self.runtime.spawn('Planner',task)['agent_id'], ['malformed','healthy']))
+        self.assertEqual(self.wait_result(ids[0])['state'],'failed')
+        self.assertEqual(self.wait_result(ids[1])['result'],'healthy')
+
+    def test_burst_drains_fairly_and_invalid_type_does_not_escape(self):
+        identity=self.runtime.spawn('Planner','burst')['agent_id']
+        self.assertEqual(self.wait_result(identity)['result'],'burst complete')
+        identity=self.runtime.spawn('Planner','bad-type')['agent_id']
+        self.assertEqual(self.wait_result(identity)['state'],'failed')
+
+    def test_reader_and_observer_failure_preserve_actual_result(self):
+        self.runtime.after_tool = lambda *a: (_ for _ in ()).throw(RuntimeError('observer failed'))
+        identity=self.runtime.spawn('Reader','reader')['agent_id']
+        result=json.loads(self.wait_result(identity)['result'])['result']
+        self.assertEqual(result['observer_error'],'RuntimeError')
+        self.assertEqual(result['result'],{'review':'pass'})
+        self.assertEqual(self.called,['read_file'])
+
+    def test_stable_choices_and_delivery_receipts(self):
+        identity=self.runtime.spawn('Planner','mail')['agent_id']
+        self.assertEqual(self.runtime.resolve('@1'),identity)
+        self.assertEqual(self.runtime.resolve('mail'),identity)
+        sent=self.runtime.send(identity,"Don't change  the target")
+        self.assertEqual(sent['message_id'],'@1:1')
+        self.assertEqual(self.runtime.messages(identity)['messages'][0]['delivery'],'queued')
+        self.assertIn("Don't change  the target",self.wait_result(identity)['result'])
+        self.assertEqual(self.runtime.messages(identity)['messages'][0]['delivery'],'delivered')
+        self.assertEqual(self.runtime.result(identity)['messages_delivered'],1)
+        other=self.runtime.spawn('Planner','wait')['agent_id']
+        self.assertEqual(self.runtime.resolve('@2'),other)
+        self.runtime.send(other,'not received')
+        self.runtime.cancel(other)
+        self.assertEqual(self.runtime.messages(other)['messages'][0]['delivery'],'not_delivered')
+        self.assertEqual(self.runtime.choices()[0]['reference'],'@1')
 
     def test_parallel_contexts_and_results(self):
         a = self.runtime.spawn("Planner", "first")["agent_id"]

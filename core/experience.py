@@ -63,7 +63,8 @@ class ExperienceStore:
                        (identity, scope, origin, request[:2000], outcome, encoded, time.time()))
             row = db.execute('SELECT id FROM experience WHERE scope=? AND origin=?', (scope, origin)).fetchone()
             if row['id'] == identity:
-                self.index(db, scope, 'experience', identity, request[:2000])
+                hints = [{k: m[k] for k in ('text', 'values', 'tags') if k in m} for m in payload.get('memories', [])]
+                self.index(db, scope, 'experience', identity, request[:2000] + ' ' + json.dumps(hints, ensure_ascii=False))
             return row['id']
 
     def read(self, scope, identity):
@@ -129,9 +130,14 @@ class ExperienceStore:
                               [scope, *tokens]).fetchall()
         matches = []
         for row in rows:
-            if row['score'] < min(2, len(tokens)):
-                continue
             data = self.read(scope, row['id']) if row['kind'] == 'experience' else self.lesson(scope, row['id'])
+            if row['score'] < min(2, len(tokens)):
+                # A named entity such as Jetson is a useful anchor even when
+                # the rest of the new question uses different vocabulary.
+                tags = {tag.casefold() for m in data.get('payload', {}).get('memories', []) for tag in m.get('tags', [])}
+                anchors = {t for t in tokens if re.fullmatch(r'[a-z][a-z0-9_]{3,}', t)}
+                if not tags.intersection(anchors):
+                    continue
             if row['kind'] == 'lesson' and not data['active']:
                 continue
             matches.append({'kind': row['kind'], 'score': row['score'], **data})

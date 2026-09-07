@@ -31,7 +31,7 @@ class TaskSupervisorTests(unittest.TestCase):
         self.store=TaskStore(self.path/'tasks.sqlite')
         self.policy={'max_workers':2,'attempt_timeout_s':10,'retry_initial_s':1,'retry_max_s':3,'stalled_attempts':2,
                      'worker_tools':['observe'],'scheduled_tools':['observe'],'schedules':[],'triggers':[]}
-        self.supervisor=TaskSupervisor(self.store,self.policy,{'llm':SimpleNamespace(config={},key=None)},[],lambda name,args:{'value':args['value']},self.path/'agents.jsonl',[],worker_target=worker)
+        self.supervisor=TaskSupervisor(self.store,self.policy,{'llm':SimpleNamespace(config={},key=None,resolved_key=lambda: None)},[],lambda name,args:{'value':args['value']},self.path/'agents.jsonl',[],worker_target=worker)
 
     def tearDown(self): self.supervisor.close();self.temp.cleanup()
 
@@ -80,7 +80,7 @@ class TaskSupervisorTests(unittest.TestCase):
         self.assertFalse(self.supervisor.running)
         other=self.add('wait');self.store.update(other,'running',agent_id='lost')
         self.supervisor.close()
-        self.supervisor=TaskSupervisor(self.store,self.policy,{'llm':SimpleNamespace(config={},key=None)},[],lambda *a:None,self.path/'other.jsonl',[],worker_target=worker)
+        self.supervisor=TaskSupervisor(self.store,self.policy,{'llm':SimpleNamespace(config={},key=None,resolved_key=lambda: None)},[],lambda *a:None,self.path/'other.jsonl',[],worker_target=worker)
         self.assertEqual(self.store.get(other)['state'],'waiting_observation')
         self.supervisor.poll();self.assertEqual(self.store.get(other)['attempt'],0)
 
@@ -100,7 +100,7 @@ class TaskSupervisorTests(unittest.TestCase):
     def test_invalid_policy_and_failed_receipt(self):
         from terminal.app import TOOLS
         policy=load_policy(ROOT/'configs/task_runtime.json',{t['function']['name'] for t in TOOLS})
-        self.assertEqual(policy['max_workers'],2)
+        self.assertEqual(policy['max_workers'],108)
         checks=[{'tool':'observe','path':'value','equals':True}]
         self.assertEqual(assess(checks,[{'tool':'observe','result':{'value':1}}])['verdict'],'fail')
         self.assertEqual(assess(checks,[{'tool':'observe','result':{'value':True,'error':'bad'}}])['verdict'],'fail')

@@ -11,10 +11,12 @@ TERMINAL={'succeeded','cancelled'}
 
 
 def validate_spec(spec):
-    if not isinstance(spec,dict) or set(spec)-{'goal','checks','origin','provider'}:
+    if not isinstance(spec,dict) or set(spec)-{'goal','checks','origin','provider','session_id'}:
         raise ValueError('Task fields: goal, checks, origin, provider')
     if not isinstance(spec.get('goal'),str) or not 1<=len(spec['goal'])<=16000:
         raise ValueError('Task requires a goal of 1..16000 characters')
+    if 'session_id' in spec and (not isinstance(spec['session_id'], str) or not 1 <= len(spec['session_id']) <= 64):
+        raise ValueError('Invalid session_id')
     checks=spec.get('checks',[])
     if not isinstance(checks,list) or len(checks)>20: raise ValueError('At most 20 success checks')
     for check in checks:
@@ -54,6 +56,10 @@ class TaskStore:
             CREATE TABLE IF NOT EXISTS triggers(id INTEGER PRIMARY KEY,name TEXT,payload TEXT,consumed INTEGER DEFAULT 0);
             CREATE TABLE IF NOT EXISTS schedules(name TEXT PRIMARY KEY,due REAL);
             ''')
+            db.execute('BEGIN IMMEDIATE')
+            if 'session_id' not in {r[1] for r in db.execute('PRAGMA table_info(tasks)')}:
+                db.execute('ALTER TABLE tasks ADD COLUMN session_id TEXT')
+            db.execute('CREATE INDEX IF NOT EXISTS tasks_session ON tasks(session_id, updated)')
         self.path.chmod(0o600)
 
     @contextmanager
@@ -69,7 +75,7 @@ class TaskStore:
     def submit(self,spec):
         validate_spec(spec);identity=uuid.uuid4().hex[:12]
         with self.db() as db:
-            db.execute('INSERT INTO tasks(id,spec,state,due,updated) VALUES(?,?,?,?,?)',(identity,json.dumps(spec,ensure_ascii=False),'queued',time.time(),time.time()))
+            db.execute('INSERT INTO tasks(id,spec,state,due,updated,session_id) VALUES(?,?,?,?,?,?)',(identity,json.dumps(spec,ensure_ascii=False),'queued',time.time(),time.time(),spec.get('session_id')))
             db.execute('INSERT INTO events(task_id,kind,data,created) VALUES(?,?,?,?)',(identity,'submitted',json.dumps(spec,ensure_ascii=False),time.time()))
         return self.get(identity)
 
@@ -78,8 +84,17 @@ class TaskStore:
         if not row: raise ValueError('Unknown task ID')
         result=dict(row);result['spec']=json.loads(result['spec']);result['feedback']=json.loads(result['feedback']);return result
 
-    def list(self,limit=100):
-        with self.db() as db: ids=[r[0] for r in db.execute("SELECT id FROM tasks ORDER BY updated DESC"+(" LIMIT ?" if limit is not None else ""), (limit,) if limit is not None else ())]
+    def list(self,limit=100,session_id=None):
+        query = 'SELECT id FROM tasks'
+        args = []
+        if session_id is not None:
+            query += ' WHERE session_id=?'
+            args.append(session_id)
+        query += ' ORDER BY updated DESC'
+        if limit is not None:
+            query += ' LIMIT ?'
+            args.append(limit)
+        with self.db() as db: ids=[r[0] for r in db.execute(query, args)]
         return [self.get(i) for i in ids]
 
     def update(self,identity,state,feedback=None,delay=0,agent_id=None,attempt=None):
@@ -124,7 +139,12 @@ class TaskStore:
         with self.db() as db: rows=db.execute('SELECT kind,data,created FROM events WHERE task_id=? ORDER BY id DESC LIMIT 100',(identity,)).fetchall()
         return [{'kind':r['kind'],'data':json.loads(r['data']),'created':r['created']} for r in reversed(rows)]
 
-    def notifications(self,after=0):
+    def notifications(self,after=0,session_id=None):
         with self.db() as db:
-            rows=db.execute("SELECT id,task_id,data FROM events WHERE id>? AND kind='state' ORDER BY id LIMIT 50",(after,)).fetchall()
+            query = "SELECT e.id,e.task_id,e.data FROM events e JOIN tasks t ON t.id=e.task_id WHERE e.id>? AND e.kind='state'"
+            args = [after]
+            if session_id is not None:
+                query += ' AND t.session_id=?'
+                args.append(session_id)
+            rows=db.execute(query + ' ORDER BY e.id LIMIT 50', args).fetchall()
         return [{'id':r['id'],'task_id':r['task_id'],**json.loads(r['data'])} for r in rows]

@@ -15,6 +15,9 @@ def main():
     if args[:1] in (["ros"], ["robot"]):
         args = args[1:]
     try:
+        if args[:1] == ['mcp']:
+            from terminal.sim_mcp import main as run_mcp
+            return run_mcp(args[1:])
         if args == ["--check-update"] or args[:1] == ["update"]:
             from release_client import update_main
             return update_main(["--check"] if args == ["--check-update"] else args[1:])

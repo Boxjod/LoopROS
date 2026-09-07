@@ -13,9 +13,10 @@ class ModelSpec:
 
 
 class ModelPool:
-    def __init__(self, ram_bytes, vram_bytes):
+    def __init__(self, ram_bytes, vram_bytes, resources=None, gpu_index=0):
         self.budget = self._size(ram_bytes, vram_bytes)
         self.specs, self.loaded, self.active = {}, {}, set()
+        self.resources, self.gpu_index, self.leases = resources, gpu_index, {}
 
     @staticmethod
     def _size(ram, vram):
@@ -39,6 +40,8 @@ class ModelPool:
         value = self.loaded[name]
         self.specs[name].unload(value)
         del self.loaded[name]
+        if name in self.leases:
+            self.resources.release(self.leases.pop(name))
 
     @contextmanager
     def lease(self, name):
@@ -61,7 +64,20 @@ class ModelPool:
                 if fits():
                     break
                 self.evict(old)
-            self.loaded[name] = spec.load()
+            token = None
+            if self.resources:
+                from core.resources import ResourceBusy
+                token = self.resources.inspect(acquire=True, workload='model', request=dict(
+                    ram_mb=spec.ram_bytes / 1048576, cpu_cores=0,
+                    vram_mb=spec.vram_bytes / 1048576, gpu_index=self.gpu_index))
+                if token is None:
+                    raise ResourceBusy('Waiting for resources: ' + self.resources.last['reason'])
+            try:
+                self.loaded[name] = spec.load()
+            except BaseException:
+                if token: self.resources.release(token)
+                raise
+            if token: self.leases[name] = token
         self.active.add(name)
         try:
             yield self.loaded[name]

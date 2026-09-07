@@ -20,6 +20,7 @@ class NodeDefinition:
     factory: object
     validate: object
     resource: object
+    stop_timeout_s: float = .5
 
 
 def _worker(pipe, stopping, factory, config):
@@ -65,7 +66,8 @@ def _run_worker(pipe, stopping, factory, config):
 
 
 class NodeRuntime:
-    def __init__(self, definitions, directory, max_nodes=8, stale_after=3.0):
+    def __init__(self, definitions, directory, max_nodes=8, stale_after=3.0, admission=None):
+        self.admission = admission
         self.definitions = dict(definitions)
         self.directory = Path(directory)
         self.directory.mkdir(parents=True, exist_ok=True)
@@ -114,14 +116,28 @@ class NodeRuntime:
             stopping = self.context.Event()
             process = self.context.Process(target=_worker, args=(child, stopping, definition.factory, config),
                                            name='loop-node-' + name, daemon=True)
+            token = None
             try:
+                if self.admission:
+                    from core.resources import ResourceBusy
+                    token = self.admission.inspect(acquire=True, workload='node', request={})
+                    if token is None:
+                        raise ResourceBusy('Waiting for resources: ' + self.admission.last['reason'])
                 process.start()
-            except Exception:
+                if token: self.admission.bind(token, process.pid)
+            except BaseException:
+                if process.pid is not None:
+                    if process.is_alive(): process.terminate()
+                    process.join(timeout=1)
+                    if process.is_alive():
+                        process.kill()
+                        process.join(timeout=1)
+                if token: self.admission.release(token)
                 parent.close()
                 child.close()
                 raise
             child.close()
-            record = {'name': name, 'kind': kind, 'instance_id': instance, 'process': process,
+            record = {'lease': token, 'name': name, 'kind': kind, 'instance_id': instance, 'process': process,
                       'pipe': parent, 'stopping': stopping, 'state': 'starting', 'snapshot': {},
                       'heartbeat': None, 'started': time.monotonic(), 'error': None, 'resource': resource,
                       'pending': {}, 'results': deque(maxlen=32), 'events': deque(maxlen=100),
@@ -200,6 +216,8 @@ class NodeRuntime:
                 record['process'].join(timeout=0)
                 record['pipe'].close()
                 record['reaped'] = True
+                if record.get('lease'):
+                    self.admission.release(record.pop('lease'))
                 if record['state'] != 'stopped':
                     record['state'] = 'failed'
                     record['error'] = record['error'] or 'Node exited unexpectedly'
@@ -243,7 +261,7 @@ class NodeRuntime:
                 record['state'] = 'stopping'
                 record['stopping'].set()
                 process = record['process']
-                process.join(timeout=.5)
+                process.join(timeout=self.definitions[record['kind']].stop_timeout_s)
                 forced = process.is_alive()
                 if forced:
                     process.terminate()

@@ -7,6 +7,7 @@ import uuid
 from contextlib import closing
 from terminal.web import WEB_NAMES
 from terminal.robotics import ROBOT_NAMES
+from terminal.simulation import NAMES as SIM_NAMES, READ_NAMES as SIM_READ_NAMES
 
 ACTION_NAMES = {"simulator_control", "load_model", "node_start", "node_command", "open_serial", "read_serial", "run_sim", "move_sim", "generate_scene", "expert_advice", "spawn_agent", "policy_start", "devices", "open_simulator"}
 PLAN_BLOCKED = {"simulator_control", "load_model", "node_start", "node_command", "open_serial", "read_serial", "run_sim", "move_sim", "generate_scene", "spawn_agent", "policy_start", "open_simulator"}
@@ -17,15 +18,22 @@ PLAN_BLOCKED.add("pid_trial")
 PLAN_BLOCKED |= {"feetech_scan", "feetech_read"}
 ACTION_NAMES |= {"carrier_list", "carrier_status", "carrier_start", "carrier_command", "carrier_stop"}
 PLAN_BLOCKED |= {"carrier_start", "carrier_command"}
-ACTION_NAMES |= {"send_agent", "agents_status", "agent_result", "cancel_agent"}
+ACTION_NAMES |= {"send_agent", "agents_status", "agent_result", "agent_messages", "cancel_agent"}
 PLAN_BLOCKED.add("send_agent")
-ACTION_NAMES.add("skill_write")
-ACTION_NAMES.add("run_python")
-PLAN_BLOCKED.add("run_python")
+ACTION_NAMES |= {"skill_list", "skill_read", "skill_write", "session_task_read", "session_task_update"}
+ACTION_NAMES |= {"skill_executables", "skill_run", "skill_export", "resource_status", "run_python", "settings_read", "settings_update"}
+PLAN_BLOCKED |= {"skill_run", "skill_export", "run_python", "tool_write", "tool_run"}
+ACTION_NAMES |= {"tool_read", "tool_write", "tool_run", "python_check"}
 ACTION_NAMES |= {"experience_search", "experience_read", "learning_note", "learning_forget"}
 PLAN_BLOCKED |= {"learning_note", "learning_forget"}
 ACTION_NAMES |= {"read_file","read_image","read_url","list_files","search_files","write_file","edit_file","harness_read","harness_write"}
 PLAN_BLOCKED |= {"write_file","edit_file","harness_write","skill_write"}
+ACTION_NAMES |= SIM_NAMES
+PLAN_BLOCKED |= SIM_NAMES - SIM_READ_NAMES - {'sim_close'}
+
+
+class ApprovalPreconditionError(ValueError):
+    """A verified precondition failed before any requested mutation began."""
 
 
 class PermissionGate:
@@ -34,6 +42,7 @@ class PermissionGate:
         self.lock = threading.RLock()
         self.local = threading.local()
         self.pending = {}
+        self.approving = set()
         with closing(sqlite3.connect(str(self.path))) as db, db:
             db.execute("CREATE TABLE IF NOT EXISTS rules (action TEXT PRIMARY KEY, rule TEXT)")
             db.execute("CREATE TABLE IF NOT EXISTS settings (key TEXT PRIMARY KEY, value TEXT)")
@@ -43,13 +52,13 @@ class PermissionGate:
         with closing(sqlite3.connect(str(self.path))) as db, db:
             rules = dict(db.execute("SELECT action,rule FROM rules"))
             mode = db.execute("SELECT value FROM settings WHERE key='mode'").fetchone()[0]
-        defaults = {name: 'ask' if name in ('policy_start', 'skill_write', 'harness_write', 'run_python') else 'allow' for name in sorted(ACTION_NAMES)}
+        defaults = {name: 'ask' if name in ('skill_export', 'policy_start', 'skill_write', 'harness_write', 'run_python', 'settings_update', 'tool_write', 'tool_run', 'sim_record') else 'allow' for name in sorted(ACTION_NAMES)}
         effective = {name: rules.get(name, rule) for name, rule in defaults.items()}
         profile = ('plan' if mode == 'plan' else 'yolo' if all(rule == 'allow' for rule in effective.values())
                    else 'cautious' if all(rule == 'ask' for rule in effective.values())
                    else 'default' if effective == defaults else 'custom')
         return {"mode": mode, "profile": profile, "rules": effective,
-                "real_hardware": "disabled",
+                "real_hardware": "driver_required" if mode == "real" else "disabled",
                 "python_execution": "host_user_privileges; not sandboxed; subject to run_python rule"}
 
     def set_rule(self, action, rule):
@@ -80,8 +89,9 @@ class PermissionGate:
         return self.snapshot()
 
     def set_mode(self, mode):
-        if mode not in ("plan", "sim"):
-            raise ValueError("Only plan/sim modes are supported; real hardware is not implemented")
+        mode = {"hardware": "real"}.get(mode, mode)
+        if mode not in ("plan", "sim", "real"):
+            raise ValueError("Supported modes: plan, sim, real (hardware alias); hardware requires an installed validated driver")
         with closing(sqlite3.connect(str(self.path))) as db, db:
             db.execute("UPDATE settings SET value=? WHERE key='mode'", (mode,))
 
@@ -109,8 +119,31 @@ class PermissionGate:
 
     def approve(self, request_id, execute):
         with self.lock:
-            request = self.pending.pop(request_id)
-        return self.confirmed(request["action"], request["args"], execute)
+            if request_id not in self.pending:
+                raise ValueError('Approval ID not found or already consumed. Use /requests; if absent, submit the original request again.')
+            if request_id in self.approving:
+                raise ValueError('This approval is already executing; wait for its result')
+            request = self.pending[request_id]
+            self.approving.add(request_id)
+        try:
+            result = self.confirmed(request['action'], request['args'], execute)
+        except ApprovalPreconditionError as exc:
+            with self.lock:
+                request['blocked_reason'] = str(exc)
+            raise ApprovalPreconditionError(str(exc) + '. Approval ' + request_id + ' retained; resolve the blocker, then approve the same ID.') from None
+        except BaseException:
+            # An action may already have effects. Never turn an arbitrary error
+            # into an approval that can blindly replay that action.
+            with self.lock:
+                self.pending.pop(request_id, None)
+            raise
+        else:
+            with self.lock:
+                self.pending.pop(request_id, None)
+            return result
+        finally:
+            with self.lock:
+                self.approving.discard(request_id)
 
     def confirmed(self, action, args, execute):
         request = {"action": action, "args": args}
@@ -124,4 +157,8 @@ class PermissionGate:
 
     def reject(self, request_id):
         with self.lock:
+            if request_id in self.approving:
+                raise ValueError('This approval is already executing; rejection cannot undo it')
+            if request_id not in self.pending:
+                raise ValueError('Approval ID not found or already consumed. Use /requests.')
             self.pending.pop(request_id)

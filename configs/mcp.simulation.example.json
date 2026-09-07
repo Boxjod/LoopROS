@@ -1,0 +1,9 @@
+{
+  "mcpServers": {
+    "loop-simulation": {
+      "command": "loop",
+      "args": ["mcp"],
+      "env": {"MUJOCO_GL": "egl"}
+    }
+  }
+}

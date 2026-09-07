@@ -90,7 +90,7 @@ def main():
             # The normal broker gate is still authoritative for every action.
             return app.tool(name,arguments)
         provider=[app.client.config['base_url'].rstrip('/'),app.client.config['model'],app.client.config.get('protocol','openai')]
-        supervisor=TaskSupervisor(store,config,{'llm':app.client},TOOLS,dispatch,state/'task_agents.jsonl',provider,learning=app.learning)
+        supervisor=TaskSupervisor(store,config,{'llm':app.client},TOOLS,dispatch,state/'task_agents.jsonl',provider,learning=app.learning,admission=app.resources)
         serial_paths=None
         def poll_os_events():
             nonlocal serial_paths

@@ -11,6 +11,7 @@ All default installations use `Path.home() / ".loop"`: `/home/<user>/.loop` on L
   AGENTS.md          Optional user instructions for Master
   harness/*.md       Additional Master instructions, sorted by filename
   skills/            SKILL.md packages; metadata discovery and tool-based read/write
+  tools/             Portable user Python tools (NAME.json); inspect, write and run via tool_*
 ```
 
 The directory and harness/skills folders are initialized on configuration load; existing files are preserved. New installations may create the optional AGENTS.md and config.json files manually. This machine’s provider setup is recorded in the workspace docs/RUNBOOK.md; keys remain only in the user credential store and the user-managed source environment file.
@@ -25,7 +26,7 @@ Credentials are local plaintext, not encrypted or stored in an OS keychain. New 
 
 ## Configuration and harness
 
-Configuration merge order: packaged defaults → `.loop/config.json` → explicit `--config` file, or the existing project `config.local.json` when no explicit file is supplied. Existing provider database selections remain authoritative once created; edit profiles with `loop-switch` to change those values. Global defaults do not overwrite saved selections.
+Configuration merge order: packaged defaults → `.loop/config.json` → explicit `--config` file, or the existing project `config.local.json` when no explicit file is supplied. Existing provider database selections remain authoritative once created; edit profiles with `loop-switch` or the session `settings_update` profiles target to change those values. Global defaults do not overwrite saved selections.
 
 Master reads AGENTS.md followed by harness/*.md before every model call, up to 24000 characters total. Master instruction edits reload without restart. These are user instructions, not executable hooks or permission grants. They do not automatically propagate to child agents or isolated timer conversations. Skills load as a name/description catalog; skill_read expands the body, and skill_write creates or updates packages. harness_read/harness_write manage Loop Markdown instructions. See [coding tools](CODING_AGENT.md).
 
@@ -76,3 +77,13 @@ Personal customization belongs to the Loop user directory, not the installed Pyt
 5. Verify `loop-switch list`, `loop --once /status`, Skills discovery and `/resume`. Check device names, deployment host IDs and external absolute paths before explicitly resuming tasks. Copying history does not make old serial ports, remote hosts, live processes or absolute asset paths valid on the new device.
 
 2026-09-07: temporary-directory copy test verifies configuration, complete Skills, harness, Agent overrides, task-policy precedence, selected profiles and endpoint-bound credentials after relocation. No actual device configuration, credential or runtime database was moved by this change.
+
+Session configuration tools and `/config set TARGET JSON` cover permissions, provider profiles, global defaults, roles, task policy and deployment bindings. See [configuration management](CONTROL_SURFACE.md). File writes report persistence and effective timing separately; credentials continue to use hidden `/key save`.
+
+A Session persists the current foreground work with its own task ID, goal, plan, checks and feedback in conversation.sqlite. Tasks have independent IDs and an owning session_id; one Session may own multiple supervised tasks. Copy STATE after closing writers to retain it. Copy `~/.loop/tools/` for reusable Python tool sources; dependencies must exist on the destination. `harness/workflow.md` overrides the packaged workflow and reloads on the next model call. Details: [coding workflow](CODING_AGENT.md).
+
+Agent resource admission settings live in the `resources` section of `~/.loop/config.json`; `settings_read` with target `config` exposes effective values. See [AGENT_RUNTIME](AGENT_RUNTIME.md) for RAM/CPU/GPU estimates and the configurable 1..108 ceiling. Configuration changes take effect on next Loop/supervisor start; existing lower task policy ceilings remain effective.
+
+Long-running local/SSH program profiles live in `~/.loop/processes/*.json` (or `LOOP_HOME/processes`). They contain argv, absolute local cwd, optional stop argv and environment variable names; never credentials. Copy profiles privately and recheck host paths and dependencies before starting them. Live process nodes are not migrated or resumed automatically. See [process nodes](PROCESS_NODES.md).
+
+Executable Skills use `skills/NAME/run.json` and `scripts/` alongside SKILL.md. `/skills save PROFILE NAME TITLE` exports an existing process profile for offline selection without replacing existing packages. Copy the whole package on migration and inspect external dependencies; see [OFFLINE_SKILLS](OFFLINE_SKILLS.md).

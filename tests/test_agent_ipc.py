@@ -1,4 +1,5 @@
 """Real spawned Agent workers with concurrent local HTTP and brokered peer messages."""
+from types import SimpleNamespace
 import json
 from pathlib import Path
 import re
@@ -105,6 +106,27 @@ class AgentIPCTests(unittest.TestCase):
             server.shutdown()
             server.server_close()
             thread.join(timeout=5)
+
+    def test_peer_result_read_uses_broker_permission(self):
+        with tempfile.TemporaryDirectory() as directory:
+            client=SimpleNamespace(config={},resolved_key=lambda:'fixture')
+            roles={'Planner':{'provider':'llm','tools':[],'prompt':'test'}}
+            runtime=AgentRuntime(roles,{'llm':client},[],lambda *a:None,Path(directory)/'events.jsonl',worker_target=request_worker)
+            try:
+                peer=runtime.spawn('Planner','wait')['agent_id']
+                runtime.cancel(peer)
+                target=runtime.spawn('Planner',json.dumps({'name':'agent_result','arguments':{'agent_id':peer}}))['agent_id']
+                deadline=time.monotonic()+5
+                while runtime.result(target)['state']=='running' and time.monotonic()<deadline:
+                    runtime.poll();time.sleep(.01)
+                self.assertEqual(json.loads(runtime.result(target)['result'])['result']['state'],'cancelled')
+                runtime.before_tool=lambda *args: (_ for _ in ()).throw(PermissionError('denied'))
+                blocked=runtime.spawn('Planner',json.dumps({'name':'agent_result','arguments':{'agent_id':peer}}))['agent_id']
+                deadline=time.monotonic()+5
+                while runtime.result(blocked)['state']=='running' and time.monotonic()<deadline:
+                    runtime.poll();time.sleep(.01)
+                self.assertEqual(json.loads(runtime.result(blocked)['result'])['result']['error'],'PermissionError')
+            finally: runtime.close()
 
     def test_sender_binding_permissions_and_no_recursive_spawn(self):
         from terminal.permissions import PermissionGate

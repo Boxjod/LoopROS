@@ -41,7 +41,8 @@ class ControlTests(unittest.TestCase):
 
     def test_inventory_and_diagnostics(self):
         data = json.loads(self.app.dispatch("/commands"))
-        self.assertEqual(data["entries"], 45)
+        self.assertEqual(data["entries"], len(data["commands"]))
+        self.assertIn("/fast", data["commands"])
         self.assertIn("/node", data["commands"])
         self.assertEqual(len(data["commands"]), len(set(data["commands"])))
         for command in ("/permissions", "/mode", "/tools", "/doctor", "/config", "/context", "/history", "/robot", "/joints"):
@@ -54,8 +55,9 @@ class ControlTests(unittest.TestCase):
                 self.app.dispatch(command)
         with self.assertRaises(PermissionError):
             self.app.tool("run_sim", {})
-        with self.assertRaises(ValueError):
-            self.app.dispatch("/mode real")
+        self.app.dispatch("/mode real")
+        self.assertEqual(self.app.permissions.snapshot()["mode"], "real")
+        self.assertEqual(self.app.permissions.snapshot()["real_hardware"], "driver_required")
 
     def test_ask_approve_exactly_once(self):
         self.app.dispatch("/permissions ask devices")
@@ -64,7 +66,7 @@ class ControlTests(unittest.TestCase):
         request_id = next(iter(self.app.permissions.requests()))
         with patch("terminal.app.list_devices", return_value={"opened": False}):
             self.assertFalse(json.loads(self.app.dispatch("/approve " + request_id))["opened"])
-        with self.assertRaises(KeyError):
+        with self.assertRaisesRegex(ValueError, "Approval ID not found"):
             self.app.dispatch("/approve " + request_id)
         with self.assertRaises(PermissionError):
             self.app.tool("devices", {})
@@ -94,7 +96,8 @@ class ControlTests(unittest.TestCase):
         self.assertEqual(other.snapshot()["rules"]["spawn_agent"], "deny")
         self.app.agent.history = [{"role": "user" if i % 2 == 0 else "assistant", "content": str(i)} for i in range(12)]
         self.app.dispatch("/compact")
-        self.assertEqual(len(self.app.agent.history), 8)
+        self.assertEqual(len(self.app.agent.history), 12)
+        self.assertEqual(self.app.agent.history_message_limit, 8)
 
     def test_hidden_policy_tool_requires_approval(self):
         with self.assertRaises(PermissionError):

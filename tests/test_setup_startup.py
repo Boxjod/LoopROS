@@ -21,6 +21,17 @@ class StartupSetupTests(unittest.TestCase):
         requests = []
 
         class Handler(BaseHTTPRequestHandler):
+            def do_GET(self):
+                requests.append((self.path, self.headers.get('Authorization'), {}))
+                self.send_response(200)
+                self.send_header('Content-Type', 'application/json')
+                self.end_headers()
+                self.wfile.write(json.dumps({'data': [
+                    {'id': 'gpt-2026-09-01', 'owned_by': 'openai'},
+                    {'id': 'claude-2026-08-01', 'owned_by': 'anthropic'},
+                    {'id': 'claude-2026-09-01', 'owned_by': 'anthropic'},
+                ]}).encode())
+
             def do_POST(self):
                 body = json.loads(self.rfile.read(int(self.headers['Content-Length'])))
                 requests.append((self.path, self.headers.get('Authorization'), body))
@@ -30,6 +41,7 @@ class StartupSetupTests(unittest.TestCase):
                 else:
                     self.send_response(200)
                     payload = {'status': 'completed', 'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': 'OK'}]}]}
+                    payload['service_tier'] = 'priority' if body.get('service_tier') == 'priority' else 'default'
                 self.send_header('Content-Type', 'application/json')
                 self.end_headers()
                 self.wfile.write(json.dumps(payload).encode())
@@ -80,9 +92,13 @@ class StartupSetupTests(unittest.TestCase):
                     os.write(master, b'2\n')
                     expect(b'API key (hidden; Enter to cancel): ')
                     os.write(master, b'startup-new-key\n')
-                    expect(b'Model ID [auto-discover]: ')
-                    os.write(master, b'new-model\n')
+                    expect(b'1. claude-2026-09-01')
+                    expect(b'2. claude-2026-08-01')
+                    expect(b'3. gpt-2026-09-01')
+                    expect(b'Model number or ID [1]')
+                    os.write(master, b'2\n')
                     expect(b'Model connected.')
+                    expect('Fast · available (probe only)'.encode())
                     # Exit through the terminal after the startup gate succeeds.
                     expect('❯'.encode())
                     os.write(master, b'/exit\r')
@@ -91,9 +107,11 @@ class StartupSetupTests(unittest.TestCase):
                     self.assertEqual(process.returncode, 0)
                     self.assertNotIn(b'startup-new-key', output)
                     self.assertNotIn(b'private response body', output)
-                    self.assertEqual([item[0] for item in requests], ['/v1/chat/completions', '/v1/responses'])
+                    self.assertEqual([item[0] for item in requests], ['/v1/chat/completions', '/v1/models', '/v1/responses', '/v1/responses'])
+                    self.assertNotIn('service_tier', requests[2][2])
+                    self.assertEqual(requests[3][2]['service_tier'], 'priority')
                     self.assertEqual(requests[1][1], 'Bearer startup-new-key')
-                    self.assertEqual(requests[1][2]['model'], 'new-model')
+                    self.assertEqual(requests[2][2]['model'], 'claude-2026-08-01')
                     self.assertTrue(all('tools' not in item[2] for item in requests))
                 finally:
                     if process.poll() is None:

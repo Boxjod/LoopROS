@@ -53,6 +53,8 @@ def load_config(path=None):
             if key not in config:
                 raise ValueError("unknown config section: " + key)
             config[key].update(value)
+    from core.resources import validate_policy
+    config["resources"] = validate_policy(config.get("resources", {}))
     validate_provider(config["llm"])
     config["expert"] = dict(config["llm"])  # Accept legacy files without a second provider.
     if config["scene"]["backend"] != "mujoco":

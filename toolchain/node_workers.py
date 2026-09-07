@@ -1,4 +1,5 @@
 """Trusted node plugins. Hardware adapters stay outside the core supervisor."""
+import os
 from pathlib import Path
 import time
 import uuid
@@ -120,5 +121,7 @@ class SerialReceiveNode:
 
 
 def definitions():
+    from toolchain.process_node import ProcessNode, config, resource
     return {'sim_arm': NodeDefinition(SimArmNode, sim_config, sim_resource),
-            'serial_rx': NodeDefinition(SerialReceiveNode, serial_config, serial_resource)}
+            'serial_rx': NodeDefinition(SerialReceiveNode, serial_config, serial_resource),
+            'process': NodeDefinition(ProcessNode, config, resource, stop_timeout_s=11 if os.name == 'nt' else 6)}

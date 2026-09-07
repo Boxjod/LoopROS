@@ -14,6 +14,9 @@ dependencies = ["prompt-toolkit>=3.0.50,<4", "pyserial>=3.5,<4; sys_platform == 
 feetech = ["pyserial>=3.5,<4"]
 sim = ["mujoco>=3.3,<4", "numpy>=1.26"]
 kinematics = ["mink>=1,<2"]
+mcp = ["mcp>=1.12,<2"]
+dataset = ["h5py>=3.10", "numpy>=1.26"]
+learning = ["gymnasium>=1,<2", "h5py>=3.10", "numpy>=1.26"]
 test = ["pyte>=0.8,<1"]
 
 [project.scripts]
@@ -28,7 +31,7 @@ package-dir = {loop_robot = "."}
 include-package-data = false
 
 [tool.setuptools.package-data]
-loop_robot = ["configs/config.example.json", "configs/config.gpt6.example.json", "configs/agents.json", "configs/task_runtime.json", "examples/*.xml", "examples/deployments/*.json", "assets/logo.png"]
+loop_robot = ["configs/config.example.json", "configs/config.gpt6.example.json", "configs/workflow_harness.md", "configs/agents.json", "configs/task_runtime.json", "configs/skills/*/SKILL.md", "scripts/install_sim_skills.py", "examples/*.xml", "examples/*.urdf", "configs/mcp.simulation.example.json", "examples/deployments/*.json", "assets/logo.png"]
 "loop_robot.toolchain" = ["hardware_targets.json"]
 
 [tool.setuptools.dynamic]

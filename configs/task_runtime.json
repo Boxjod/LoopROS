@@ -1,6 +1,6 @@
 {
   "version": 1,
-  "max_workers": 2,
+  "max_workers": 108,
   "attempt_timeout_s": 180,
   "retry_initial_s": 5,
   "retry_max_s": 300,

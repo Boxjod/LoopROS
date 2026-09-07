@@ -1,4 +1,4 @@
-"""Editable composer, scrollable transcript and serial follow-up queue."""
+"""Editable composer, scrollable transcript and boundary-delivered user steering."""
 import asyncio
 from collections import deque
 import shlex
@@ -15,7 +15,7 @@ from prompt_toolkit.completion import CompleteEvent
 from prompt_toolkit.patch_stdout import patch_stdout
 from prompt_toolkit.styles import Style
 from prompt_toolkit.enums import EditingMode
-from prompt_toolkit.layout.containers import VerticalAlign, DynamicContainer, FloatContainer
+from prompt_toolkit.layout.containers import VerticalAlign, DynamicContainer, FloatContainer, ConditionalContainer
 from prompt_toolkit.layout.screen import WritePosition
 from prompt_toolkit.shortcuts import CompleteStyle
 from prompt_toolkit.utils import get_cwidth
@@ -62,6 +62,7 @@ class Terminal:
         self.pending_command = None
         self.completion_refresh_pending = False
         self.dismissed_completion = None
+        self.model_choices = []
         self.timer = None
         self.continuations = 0
         self.command_busy = False
@@ -103,12 +104,18 @@ class Terminal:
             state = buffer.complete_state
             matches = list(self.session.completer.get_completions(buffer.document, CompleteEvent()))
             selected = state.current_completion if state else None
+            if selected:
+                original_matches = self.session.completer.get_completions(state.original_document, CompleteEvent())
+                if (state.new_text_and_position()[0] != buffer.text or
+                        not any(c.text == selected.text and c.start_position == selected.start_position for c in original_matches)):
+                    selected = None
             exact = any(c.text == buffer.text for c in matches)
             if selected:
                 buffer.apply_completion(selected)
             elif matches and not exact:
                 buffer.apply_completion(matches[0])
-            if buffer.text.strip() in ('/permissions ask', '/permissions deny', '/permissions allow'):
+            if (buffer.text.strip() in ('/permissions ask', '/permissions deny', '/permissions allow')
+                    or len(buffer.text.split()) == 2 and buffer.text.split()[0] in ('/spawn', '/send')):
                 buffer.insert_text(' ')
                 buffer.start_completion(select_first=False)
                 return
@@ -205,7 +212,8 @@ class Terminal:
             placeholder=None,
             editing_mode=EditingMode.EMACS,
             prompt_continuation='  ', key_bindings=kb,
-            completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"]), complete_while_typing=True,
+            completer=SlashCompleter(HELP, sessions=lambda: self.store.list_sessions(self.app.client.config, limit=None), permissions=lambda: self.app.permissions.snapshot()["rules"], models=lambda: self.model_choices, agents=self.agent_choices, roles=lambda: list(self.app.runtime.definitions)),
+            complete_while_typing=Condition(lambda: self.session.default_buffer.text.startswith('/')),
             reserve_space_for_menu=0, complete_style=CompleteStyle.COLUMN, mouse_support=False, erase_when_done=True,
             style=Style.from_dict({'prompt': 'ansicyan bold', 'bottom-toolbar': 'noreverse', 'separator': '#637078', 'hint-selected': 'ansicyan bold'}))
         # PromptSession normally stretches its editable window to absorb spare
@@ -220,12 +228,52 @@ class Terminal:
         def remove_floats(container):
             if isinstance(container, FloatContainer):
                 container.floats = []
+            if (isinstance(container, ConditionalContainer)
+                    and getattr(container.content, 'style', None) == 'class:bottom-toolbar'):
+                container.filter &= Condition(lambda: self.session.app.output.get_size().rows >= 2)
             for child in container.get_children():
                 remove_floats(child)
         remove_floats(self.session.layout.container)
         prompt_layout = self.session.layout.container
         self.session.layout.container = CompactPrompt(lambda: prompt_layout)
         self.ui = self.session.app
+        erase = self.ui.renderer.erase
+        def erase_frame(leave_alternate_screen=True):
+            renderer = self.ui.renderer
+            size = self.ui.output.get_size()
+            old = renderer._last_size
+            screen = renderer._last_screen
+            if old and screen and size.columns < old.columns:
+                # Reflow can insert rows throughout the old UI, including its
+                # footer below the cursor. Include them in the relative erase.
+                from prompt_toolkit.data_structures import Point
+                cursor = renderer._cursor_pos
+                rows = cursor.y
+                for y in range(screen.height):
+                    if y == cursor.y:
+                        continue
+                    line = screen.data_buffer[y]
+                    used = max((x + max(1, char.width) for x, char in line.items()
+                                if char.char.strip()), default=0)
+                    rows += max(0, (used + size.columns - 1) // size.columns - 1)
+                renderer._cursor_pos = Point(min(cursor.x, size.columns - 1), rows)
+            erase(leave_alternate_screen=leave_alternate_screen)
+        self.ui.renderer.erase = erase_frame
+        # Measure layout and fragments using one snapshot per frame.
+        render = self.ui.renderer.render
+        def render_frame(*args, **kwargs):
+            output = self.ui.output
+            get_size = output.get_size
+            size = get_size()
+            output.get_size = lambda: size
+            try:
+                if self.ui.renderer._last_size and size != self.ui.renderer._last_size:
+                    erase_frame(leave_alternate_screen=False)
+                    self.ui._request_absolute_cursor_position()
+                return render(*args, **kwargs)
+            finally:
+                output.get_size = get_size
+        self.ui.renderer.render = render_frame
         # Resolve a lone Esc promptly while retaining Alt-Enter key sequences.
         self.ui.ttimeoutlen = .1
         self.ui.timeoutlen = .3
@@ -234,6 +282,10 @@ class Terminal:
         self.input.buffer.on_cursor_position_changed += self.schedule_completion_refresh
         self.store = SessionStore(app.state_dir / 'conversation.sqlite')
         saved = self.store.load(app.client.config)
+        from terminal.session_task import SessionTask
+        self.store.session_id = self.store.session_id or app.session_id
+        app.session_id = self.store.session_id
+        app.session_task = SessionTask(saved.get('task'), identity=self.store.session_id, history=saved.get('history', []))
         app.agent.history = saved.get('history', app.agent.history)
         app.agent.turn_summaries = saved.get('summaries', [])
         self.queue.extend(saved.get('queue', []))
@@ -242,10 +294,22 @@ class Terminal:
         self.paused = bool(self.queue)
         from core.tasks import TaskStore
         self.task_store=TaskStore(app.state_dir/'tasks.sqlite')
-        self.task_cursor=self.task_store.meta('terminal_seen_event') or 0
+        self.task_cursor=self.task_store.meta('terminal_seen_event:' + app.session_id) or 0
         self.task_poll_at=0
 
+    def agent_choices(self):
+        # Do not leak task titles through completion when status reading is denied.
+        if self.app.permissions.snapshot()['rules'].get('agents_status') != 'allow':
+            return []
+        return self.app.runtime.choices()
+
     def schedule_completion_refresh(self, buffer):
+        if not buffer.text.startswith('/'):
+            if buffer.complete_state is not None:
+                document = buffer.document
+                buffer.cancel_completion()
+                buffer.document = document
+            return
         # Insertions already trigger prompt_toolkit completion; deletion and
         # cursor edits don't. Defer until text and cursor are both updated.
         if buffer.document != self.dismissed_completion:
@@ -268,7 +332,17 @@ class Terminal:
         draft = self.input.text
         if draft.strip() in ('/exit', '/quit'):
             draft = ''
-        self.store.save(self.app.client.config, self.app.agent.history, self.queue, draft, self.attachments, self.app.agent.turn_summaries)
+        self.store.save(self.app.client.config, self.app.agent.history, self.queue, draft, self.attachments, self.app.agent.turn_summaries, self.app.session_task.snapshot())
+        self.bind_task_scope()
+
+    def bind_task_scope(self):
+        if self.app.session_id != self.store.session_id:
+            self.app.session_id = self.store.session_id
+            self.task_cursor = self.task_store.meta('terminal_seen_event:' + self.app.session_id) or 0
+            self.task_poll_at = 0
+            self.selected_task = None
+        with self.app.session_task.lock:
+            self.app.session_task.data['session_id'] = self.app.session_id
 
 
 
@@ -286,7 +360,23 @@ class Terminal:
         return visible
 
     def separator(self):
-        return '─' * max(1, self.ui.output.get_size().columns)
+        # Leave the terminal's final column empty: a full-width border can be
+        # reflowed into transcript rows while the user drags the window edge.
+        return '─' * max(0, self.ui.output.get_size().columns - 1)
+
+    def display_budget(self):
+        """Reserve editable rows before optional chrome, using one shared budget."""
+        size = self.ui.output.get_size()
+        columns, rows = max(1, size.columns), max(1, size.rows)
+        top, bottom, hint = rows >= 3, rows >= 4, rows >= 2
+        input_rows = sum(max(1, (get_cwidth(line.expandtabs(4)) + 2) // columns + 1)
+                         for line in self.input.text.split('\n'))
+        available = max(0, rows - top - bottom - hint - input_rows)
+        stream = bool(self.stream_text) and available > 0
+        available -= stream
+        queue = min(len(self.queue), 3, available)
+        return {'top': top, 'bottom': bottom, 'stream': stream, 'queue': queue,
+                'panel': min(8, available - queue)}
 
     def status_text(self):
         status = '{} | queued {} | attachments {}{}'.format(
@@ -294,16 +384,14 @@ class Terminal:
             ' | queue paused: /queue resume' if self.paused else ' | Esc stop · Enter send/queue · Ctrl-V image')
         size = self.ui.output.get_size()
         columns = max(1, size.columns)
-        input_rows = sum(max(1, (get_cwidth(line) + 2 + columns - 1) // columns)
-                         for line in self.input.text.split('\n'))
-        queue_rows = min(len(self.queue), max(1, min(3, size.rows - 6))) if self.queue else 0
-        available = max(0, min(8, size.rows - input_rows - queue_rows - bool(self.stream_text) - 3))
-        fragments = [('class:separator', self.separator() + '\n')]
+        budget = self.display_budget()
+        available = budget['panel']
+        fragments = [('class:separator', self.separator() + '\n')] if budget['bottom'] else []
         state = self.input.buffer.complete_state
         if state and state.completions and available:
             status = '↑/↓ select · Enter apply · Esc close'
             selected = state.complete_index if state.complete_index is not None else 0
-            count = min(available, len(state.completions))
+            count = min(5, available, len(state.completions))
             start = min(max(0, selected - count + 1), len(state.completions) - count)
             for index in range(start, start + count):
                 item = state.completions[index]
@@ -348,6 +436,8 @@ class Terminal:
                 self.write_line('Tool › ' + self.tool_display.call(text))
             else:
                 self.write_line('  ↳ ' + self.tool_display.result(text, event_id))
+            if kind == 'result':
+                self.checkpoint()
             self.ui.invalidate()
             return
         delta = kind.endswith('_delta')
@@ -360,7 +450,7 @@ class Terminal:
             self.stream_text += text
             while '\n' in self.stream_text:
                 line, self.stream_text = self.stream_text.split('\n', 1)
-                self.write_stream_line(line)
+                self.write_stream_line(line, line_end=True)
             # Commit screen-width chunks even when a model never emits newline.
             # Keep only the unfinished last row in the live prompt.
             budget = max(4, self.ui.output.get_size().columns - 4)
@@ -394,8 +484,8 @@ class Terminal:
             return '  '
         return '✻ ' if self.stream_kind == 'reasoning_delta' else '● '
 
-    def write_stream_line(self, text):
-        rendered = self.markdown.ansi(text)
+    def write_stream_line(self, text, line_end=False):
+        rendered = self.markdown.ansi(text, line_end=line_end)
         self.write_line(self.stream_prefix() + rendered if rendered else '')
         if text:
             self.stream_started = True
@@ -418,15 +508,47 @@ class Terminal:
         self.panel_offset = 0
         self.ui.invalidate()
 
+    async def redraw_session(self):
+        from terminal.session_display import history_lines
+        from terminal.tool_display import ToolDisplay
+        self.close_panel()
+        self.stream_kind = None
+        self.stream_text = ''
+        self.stream_started = self.streamed_answer = False
+        self.markdown = BoldText()
+        self.tool_display = ToolDisplay()
+        # Save the new identity before yielding to terminal rendering/background polling.
+        self.checkpoint()
+
+        def redraw():
+            output = self.ui.output
+            output.reset_attributes()
+            output.erase_screen()
+            output.cursor_goto(0, 0)
+            # Legacy Win32 erase_screen already clears its complete buffer.
+            if not hasattr(output, 'get_win32_screen_buffer_info'):
+                output.write_raw('\x1b[3J')
+            output.write('Session · ' + self.store.title(self.app.client.config) + '\n\n')
+            for line in history_lines(self.app.agent.history):
+                output.write_raw(line + '\n')
+            if not self.app.agent.history:
+                output.write('No messages yet.\n')
+            output.flush()
+
+        await run_in_terminal(redraw)
+
     def select_task(self, step=0):
-        tasks = [task for task in self.task_store.list(limit=None) if task['state'] == 'running']
+        tasks = [task for task in self.task_store.list(limit=None, session_id=self.app.session_id) if task['state'] not in ('succeeded', 'cancelled')]
         tasks.sort(key=lambda task: task['id'])
         if not tasks:
             if self.action_panel is not None and step:
                 self.close_panel()
             else:
                 self.task_buttons = []
-                self.show_panel('/tasks', 'No running tasks. ←/→ or Esc to return.')
+                current = self.app.session_task.snapshot()
+                self.show_panel('/tasks', 'Current work: ' + self.store.title(self.app.client.config) + ' · ' + current['state'] + '\n'
+                                + (current['goal'] or 'Ready for a task description.') + '\n'
+                                + current.get('next_step', '') + '\nNo unfinished background tasks in this session. /tasks all for history. ←/→ or Esc to return.')
             return
         ids = [task['id'] for task in tasks]
         if step:
@@ -448,14 +570,15 @@ class Terminal:
         task = self.task_store.get(self.selected_task)
         commands = [('View details', '/tasks status ' + task['id'])]
         if task['state'] not in ('succeeded', 'cancelled'):
-            if task['state'] != 'running':
+            if task['state'].startswith('waiting_'):
                 commands.append(('Resume', '/tasks resume ' + task['id']))
             commands.append(('Cancel task', '/tasks cancel ' + task['id']))
         return commands
 
     def render_task_panel(self):
         task = self.task_store.get(self.selected_task)
-        if task['state'] != 'running':
+        if task['state'] in ('succeeded', 'cancelled') or task.get('session_id') != self.app.session_id:
+            self.selected_task = None
             self.select_task()
             return
         commands = self.task_commands()
@@ -463,7 +586,8 @@ class Terminal:
         self.task_action = min(self.task_action, len(commands) - 1)
         feedback = task.get('feedback') or {}
         reason = feedback.get('reason') or feedback.get('review', {}).get('reason', '')
-        lines = [task['id'] + ' · ' + task['state'],
+        from terminal.titles import task_title
+        lines = [task_title(task) + ' · ' + task['state'],
                  '←/→ tasks/chat · ↑/↓ actions · Enter apply · Esc close']
         lines += [('> ' if i == self.task_action else '  ') + '[' + label + ']' for i, (label, _) in enumerate(commands)]
         lines += [task['spec']['goal'], str(reason)]
@@ -481,6 +605,8 @@ class Terminal:
             chunk, width = '', 0
             for char in line:
                 size = get_cwidth(char)
+                if size > columns:
+                    char, size = '\ufffd', 1
                 if width + size > columns:
                     lines.append(chunk)
                     chunk, width = '', 0
@@ -491,14 +617,18 @@ class Terminal:
         self.panel_page_size = height
         self.panel_offset = min(self.panel_offset, max(0, len(lines) - max(1, height)))
         heading = 'Actions · ' + title + ' · PgUp/PgDn scroll · Esc close'
-        heading = heading[:columns]
+        heading = self.clip_hint(heading, columns)
         return [('class:prompt', heading + '\n'),
                 ('', '\n'.join(lines[self.panel_offset:self.panel_offset + height]) + ('\n' if height else ''))]
 
     def prompt_text(self):
         # The unfinished line belongs to the renderer, never raw stdout. Limit
         # the live preview; flush_stream retains the complete text in scrollback.
+        layout = self.display_budget()
         budget = max(0, self.ui.output.get_size().columns - get_cwidth(self.stream_prefix()) - 2)
+        clipped = get_cwidth(self.stream_text.replace('\t', ' ')) > budget
+        if clipped:
+            budget = max(0, budget - 1)  # Reserve a cell for the ellipsis itself.
         width, tail = 0, []
         for char in reversed(self.stream_text.replace('\t', ' ')):
             cell_width = get_cwidth(char)
@@ -507,30 +637,25 @@ class Terminal:
             width += cell_width
             tail.append(char)
         preview = ''.join(reversed(tail))
-        if len(self.stream_text) > len(preview) and budget:
+        if clipped and budget:
             preview = '…' + preview
         fragments = []
-        if preview:
+        if preview and layout['stream']:
             fragments.append(('', self.stream_prefix()))
             fragments.extend(self.markdown.preview(preview))
             fragments.append(('', '\n'))
-        queue_rows = 0
-        if self.queue:
+        if layout['queue']:
             columns = self.ui.output.get_size().columns
-            count = min(len(self.queue), max(1, min(3, self.ui.output.get_size().rows - 6)))
-            queue_rows = count
+            count = layout['queue']
             for i, (text, files) in enumerate(list(self.queue)[-count:]):
                 label = ('Queued {} · '.format(len(self.queue)) if i == 0 else '  ') + '❯ '
                 line = label + ' '.join(text.split()) + (' [media]' if files else '')
-                visible, cells = '', 0
-                for char in line:
-                    if cells + get_cwidth(char) > columns - 1:
-                        visible += '…'
-                        break
-                    visible += char
-                    cells += get_cwidth(char)
+                visible = self.clip_hint(line, max(0, columns - 1))
+                if get_cwidth(line) > columns - 1 and columns > 1:
+                    visible = self.clip_hint(line, max(0, columns - 2)) + '…'
                 fragments.append(('class:separator', visible + '\n'))
-        fragments.append(('class:separator', self.separator() + '\n'))
+        if layout['top']:
+            fragments.append(('class:separator', self.separator() + '\n'))
         focus = getattr(self.app, 'node_focus', 'master')
         fragments.append(('class:prompt', ('[' + focus + '] ' if focus != 'master' else '') + '❯ '))
         return fragments
@@ -544,7 +669,7 @@ class Terminal:
     def flush_stream(self):
         if self.stream_text:
             self.write_stream_line(self.stream_text)
-        if self.markdown.pending:
+        if self.markdown.pending or self.markdown.fence_pending:
             self.write_line(self.markdown.ansi('', final=True))
         self.markdown = BoldText()
         self.stream_text = ''
@@ -606,7 +731,7 @@ class Terminal:
                 self.stop()
             elif text == '/queue resume':
                 self.paused = False
-            elif text in ('/tasks', '/tasks list'):
+            elif text in ('/task', '/tasks', '/tasks list'):
                 self.select_task()
             elif first_word in ('/rename', '/sessions', '/export'):
                 if self.pending:
@@ -621,26 +746,30 @@ class Terminal:
                     self.show_panel('/export', 'Exported: ' + str(path))
                 else:
                     rows = self.store.list_sessions(self.app.client.config, query=argument)
-                    self.show_panel('/sessions', '\n'.join(row['id'] + ' | ' + row['title'] for row in rows) or 'No matching conversations')
+                    self.show_panel('/sessions', '\n'.join(row['label'] + ' | ' + row['updated'] for row in rows) or 'No matching conversations')
             elif first_word in ('/resume','/history','/new'):
                 if self.pending:
                     raise ValueError('Wait for the active turn before browsing or switching sessions')
-                parts=text.split()
-                if len(parts)>2 or (parts[0]=='/new' and len(parts)>1):
-                    raise ValueError('Usage: /resume [session ID], /history [session ID], /new')
+                parts=text.split(maxsplit=1)
                 self.checkpoint()
                 if parts[0]=='/new':
                     if self.queue or self.attachments:
                         raise ValueError('Clear queued messages and attachments before starting a new session')
                     self.store.new_session()
+                    from terminal.session_task import SessionTask
+                    self.app.session_task = SessionTask(identity=self.store.session_id)
+                    goal = text[len('/new'):].strip()
+                    if goal:
+                        self.app.session_task.update({'goal': goal, 'state': 'active'})
                     self.app.agent.history=[]
                     self.app.agent.turn_summaries=[]
-                    self.show_panel('/new','New session: '+self.store.session_id)
+                    await self.redraw_session()
+                    self.show_panel('/new','New conversation: '+self.store.title(self.app.client.config) + '\nSend a message to begin; /tasks shows the current work.')
                 elif parts[0]=='/resume' and len(parts)==1:
                     rows=self.store.list_sessions(self.app.client.config)
-                    lines=['Saved conversations — /history ID to preview, /resume ID to continue, /new to start fresh.']
+                    lines=['Saved conversations — choose a title to resume; /history TITLE to preview, /new to start fresh.']
                     for row in rows:
-                        lines.append('{} | {} | {} turns | {}'.format(row['id'],row['updated'],row['turns'],row['title']))
+                        lines.append('{} | {} | {} turns'.format(row['label'],row['updated'],row['turns']))
                         if row['last_summary']:
                             from terminal.turn_summary import display
                             lines.append('  '+display(row['last_summary'][0]))
@@ -666,6 +795,8 @@ class Terminal:
                     if self.queue or self.attachments:
                         raise ValueError('Clear queued messages and attachments before switching sessions')
                     data=self.store.resume(self.app.client.config,parts[1])
+                    from terminal.session_task import SessionTask
+                    self.app.session_task = SessionTask(data.get('task'), identity=self.store.session_id, history=data.get('history', []))
                     self.app.agent.history=data.get('history',[])
                     self.app.agent.turn_summaries=data.get('summaries',[])
                     self.queue.extend(data.get('queue',[]))
@@ -673,8 +804,9 @@ class Terminal:
                     self.input.text=data.get('draft','')
                     self.input.buffer.cursor_position=len(self.input.text)
                     self.paused=bool(self.queue)
-                    title=next((row['title'] for row in self.store.list_sessions(self.app.client.config) if row['id']==parts[1]), parts[1])
-                    self.show_panel('/resume','Resumed: '+title+' ('+parts[1]+'). Continue typing to chat; /history shows this conversation.' + (' Queued messages are paused; /queue resume to run them.' if self.queue else ''))
+                    title=self.store.title(self.app.client.config)
+                    await self.redraw_session()
+                    self.show_panel('/resume','Resumed: '+title+'. History restored above. Continue typing to chat.' + (' Queued messages are paused; /queue resume to run them.' if self.queue else ''))
             elif text == '/queue clear':
                 self.queue.clear()
                 self.append('Queue', 'Cleared')
@@ -698,10 +830,37 @@ class Terminal:
                 self.add_attachments(additions)
             elif text.startswith('/') or text in self.aliases:
                 command = self.aliases.get(text, text)
-                if self.pending and command.split()[0] not in ('/node', '/tasks', '/agents', '/send', '/result', '/stop-agent', '/help', '/stop', '/permissions', '/requests', '/mode', '/plan'):
+                if self.pending and command.split()[0] not in ('/node', '/tasks', '/agents', '/spawn', '/send', '/result', '/agent-messages', '/stop-agent', '/help', '/stop', '/permissions', '/requests', '/mode', '/plan'):
                     raise ValueError('Wait for the active turn before using this command')
                 if command == '/stop':
                     self.stop()
+                agent_commands = ('/agents', '/spawn', '/send', '/result', '/agent-messages', '/stop-agent')
+                if command in agent_commands[1:]:
+                    data = await asyncio.to_thread(self.app.tool, 'agents_status', {})
+                    self.show_panel(command, ('Choose a role, then enter a task.' if command == '/spawn' else
+                                             format_command_result('/agents', data)))
+                    if not self.input.text:
+                        self.input.text = command + ' '
+                        self.input.buffer.cursor_position = len(self.input.text)
+                        if self.ui.is_running:
+                            self.input.buffer.start_completion(select_first=False)
+                    return
+                if command == '/model':
+                    from terminal.setup import discover_models
+                    self.model_choices = []
+                    config = dict(self.app.client.config)
+                    key = self.app.client.resolved_key()
+                    if not key:
+                        raise ValueError('Configure the current provider key before listing models')
+                    self.show_panel('/model', 'Discovering models from the current provider...')
+                    self.model_choices = await asyncio.to_thread(discover_models, config, key)
+                    self.show_panel('/model', 'Choose a model · company A–Z, newest catalog date first. Catalog listing does not verify tool support.' if self.model_choices else 'No models listed. Enter /model MODEL_ID manually.')
+                    if not self.input.text:
+                        self.input.text = '/model '
+                        self.input.buffer.cursor_position = len(self.input.text)
+                        if self.ui.is_running:
+                            self.input.buffer.start_completion(select_first=False)
+                    return
                 if command.split()[0] in ('/viewer', '/scene', '/complex', '/sim', '/models', '/model-load'):
                     self.app.stop_event.clear()
                     self.pending_command = command
@@ -709,20 +868,23 @@ class Terminal:
                     self.checkpoint()
                     return
                 # Existing hidden-key and approval prompts temporarily own the terminal.
-                result = await self.run_prompt(lambda: self.app.dispatch(command))
+                result = (await asyncio.to_thread(self.app.dispatch, command) if command.split()[0] in agent_commands
+                          else await self.run_prompt(lambda: self.app.dispatch(command)))
                 task_selection = self.selected_task
                 self.show_panel(command, format_command_result(command, result))
                 if task_selection and command.startswith(('/tasks cancel ', '/tasks resume ')):
                     self.selected_task = task_selection
                     self.task_action = 0
                     self.render_task_panel()
-                if command == '/permissions':
-                    self.input.text='/permissions '
+                if command in ('/permissions', '/mode'):
+                    self.input.text=command + ' '
                     self.input.buffer.cursor_position=len(self.input.text)
                     if self.ui.is_running:
                         self.input.buffer.start_completion(select_first=False)
+                if command.split()[0] in ('/switch', '/key', '/expert-key'):
+                    self.model_choices = []
                 if command in ('/help', '/shortcuts'):
-                    self.append('Editor', 'Type / to find commands · Tab/↑/↓ choose · Enter runs selected command · Esc dismisses · Arrows/Home/End edit · Enter send/queue · Alt-Enter newline · Ctrl-C clear/stop/exit · Esc stop · Ctrl-V or /paste clipboard image · drop media paths then Enter to attach · /attach PATH · /detach · /queue [clear|resume] · /resume [ID] · /history [ID] · /new · /details [ID] expands a tool result. Scroll using your terminal.')
+                    self.append('Editor', 'Type / to find commands · Tab/↑/↓ choose · Enter runs selected command · Esc dismisses · Arrows/Home/End edit · Enter send/queue · Alt-Enter newline · Ctrl-C clear/stop/exit · Esc stop · Ctrl-V or /paste clipboard image · drop media paths then Enter to attach · /attach PATH · /detach · /queue [clear|resume] · /resume [TITLE] · /history [TITLE] · /new · /details [ID] expands a tool result. Scroll using your terminal.')
             elif self.app.node_focus != 'master':
                 from terminal.nodes import focused_reply
                 focus = self.app.node_focus
@@ -767,21 +929,31 @@ class Terminal:
         while True:
             self.poll_viewer()
             if time.monotonic()>=self.task_poll_at:
-                for feedback in self.task_store.notifications(self.task_cursor):
+                for feedback in self.task_store.notifications(self.task_cursor, session_id=self.app.session_id):
                     details=feedback.get('feedback') or {}
                     reason=details.get('reason') or details.get('review',{}).get('reason','')
-                    self.append('Task feedback',feedback['task_id']+' · '+feedback['state']+(' · '+str(reason)[:200] if reason else ''))
+                    from terminal.titles import task_title
+                    self.append('Task feedback',task_title(self.task_store.get(feedback['task_id']))+' · '+feedback['state']+(' · '+str(reason)[:200] if reason else ''))
                     self.task_cursor=feedback['id']
-                self.task_store.meta('terminal_seen_event',self.task_cursor)
+                self.task_store.meta('terminal_seen_event:' + self.app.session_id,self.task_cursor)
                 if self.selected_task:
                     self.render_task_panel()
                 self.task_poll_at=time.monotonic()+1
-            self.app.runtime.poll()
-            with self.app.runtime.lock:
-                notifications, self.app.runtime.notifications = self.app.runtime.notifications, []
-                has_mail = bool(self.app.runtime.mail)
+            notifications, has_mail = await asyncio.get_running_loop().run_in_executor(
+                self.poll_executor, self.app.runtime.poll_notifications)
             for event in notifications:
-                self.append('Agent', '{} {} {}'.format(event['role'], event['agent_id'], event['state']))
+                self.append('Agent', '{} · {} {} · {}'.format(event.get('title', event['role']), event['role'], event.get('reference', ''), event['state']))
+            if self.action_panel and self.action_panel[0].split()[0] == '/agents':
+                title = self.action_panel[0]
+                if self.app.permissions.snapshot()['rules'].get('agents_status') == 'allow':
+                    rows = self.app.runtime.choices()
+                    data = {'roles':list(self.app.runtime.definitions),
+                            'running':sum(r['state']=='running' for r in rows),
+                            'queued':sum(r['state']=='queued' for r in rows),
+                            'tasks':[r for r in rows if title != '/agents active' or r['state'] in ('running','queued')]}
+                    self.action_panel = (title, format_command_result(title,data))
+                else:
+                    self.action_panel = (title, 'Agent status permission required.')
             if self.pending and self.pending.done():
                 try:
                     answer = self.pending.result()
@@ -841,18 +1013,41 @@ class Terminal:
             self.ui.invalidate()
             await asyncio.sleep(.1)
 
+    async def take_queued_steering(self, budget):
+        # This runs on the UI loop, alongside queue editing/clear/pause, never
+        # mutating the deque from the model worker thread.
+        if self.paused or self.command_busy or self.pending_command or self.timer or self.app.stop_event.is_set():
+            return []
+        updates = []
+        while self.queue:
+            text, files = self.queue[0]
+            if len(text) > budget:
+                break
+            self.queue.popleft()
+            updates.append((text, [part for _, parts in files for part in parts]))
+            budget -= len(text) + 1
+        self.ui.invalidate()
+        return updates
+
     async def run(self):
         from terminal.app import ALIASES
         self.aliases = ALIASES
         loop = asyncio.get_running_loop()
         self.app.agent.streaming = True
-        self.app.agent.on_event = lambda kind, text: loop.call_soon_threadsafe(self.append, kind, text)
+        def display_event(kind, text):
+            self.append(kind, text)
+            if kind == 'Steering':
+                self.checkpoint()
+        self.app.agent.on_event = lambda kind, text: loop.call_soon_threadsafe(display_event, kind, text)
+        self.app.agent.take_steering = lambda budget: asyncio.run_coroutine_threadsafe(self.take_queued_steering(budget), loop).result()
         self.executor = ThreadPoolExecutor(max_workers=1)
+        self.poll_executor = ThreadPoolExecutor(max_workers=1, thread_name_prefix="loop-broker")
         try:
-            print(welcome(self.app.client.config['model'], self.app.expert.config['model'], self.app.permissions.snapshot()['mode']))
+            print(welcome(self.app.client.config['model'], self.app.expert.config['model'], self.app.permissions.snapshot()['mode'],
+                          fast_status=getattr(self.app, 'startup_fast_status', None)))
             print('Enter send/queue · Alt-Enter newline · Esc stop · Ctrl-C clear/stop/exit · Ctrl-V image · /attach PATH · /help')
             if self.app.agent.history or self.queue or self.draft:
-                print('Session restored: {} messages, {} queued. /history to review; /resume to browse sessions; /queue resume to run queued messages.'.format(len(self.app.agent.history), len(self.queue)))
+                print('Session restored: {} messages, {} queued. /resume to browse sessions; /queue resume to run queued messages.'.format(len(self.app.agent.history), len(self.queue)))
             self.prompt_stdout, self.prompt_stderr = sys.stdout, sys.stderr
             with patch_stdout(raw=True):
                 await self.session.prompt_async(
@@ -862,8 +1057,10 @@ class Terminal:
             self.flush_stream()
             self.app.stop_event.set()
             self.app.agent.on_event = lambda *args: None
+            self.app.agent.take_steering = None
             await asyncio.to_thread(self.app.nodes.close)
             await asyncio.to_thread(self.executor.shutdown, wait=True)
+            await asyncio.to_thread(self.poll_executor.shutdown, wait=True)
             try:
                 self.checkpoint()
                 print('Session saved: ' + str(self.store.path))

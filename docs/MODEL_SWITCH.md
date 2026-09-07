@@ -1,6 +1,6 @@
 # Loop Switch：轻量模型切换器
 
-默认入口为供应商/URL → API类型 → 隐藏 Key → 模型 ID 向导；旧菜单使用 `loop-switch --advanced`。交互启动 loop 会先检查模型连接，无 Key、认证失败、网络失败或无有效文本响应时自动打开同一向导，保存后重新检查，见 [QUICK_SETUP](QUICK_SETUP.md)。
+默认入口为供应商/URL → API类型 → 隐藏 Key → 自动探测模型并编号选择的向导；旧菜单使用 `loop-switch --advanced`。交互启动 loop 会先检查模型连接，无 Key、认证失败、网络失败或无有效文本响应时自动打开同一向导，保存后重新检查，见 [QUICK_SETUP](QUICK_SETUP.md)。
 
 2026-09-05。参考 [CC Switch](https://github.com/farion1231/cc-switch) 的提供商配置管理与选择模式，实现项目内的小型终端程序，不复制其桌面端、多应用接管、代理或 OAuth 功能。
 
@@ -26,7 +26,7 @@
 ./loop-switch remove my-provider
 ```
 
-add/edit 会逐项询问 base_url、model、api_key_env、timeout_s、token_field；回车采用显示的默认值。api_key_env 填环境变量名，**不是 Key 原值**。目前模型列表来自已保存配置，不自动从提供商发现模型。
+add/edit 会逐项询问 base_url、model、api_key_env、timeout_s、token_field；回车采用显示的默认值。api_key_env 填环境变量名，**不是 Key 原值**。高级 add/edit 保留手动填写；默认向导、`loop-switch setup` 与 `/switch setup` 在输入 Key 后自动查询所选地址的 `/models`，支持编号或直接输入模型 ID。
 
 可明确发起单次连接测试：
 
@@ -34,9 +34,13 @@ add/edit 会逐项询问 base_url、model、api_key_env、timeout_s、token_fiel
 ./loop-switch check my-provider
 ```
 
-check 使用指定环境变量发送简短请求，可能计费；切换、列表和启动菜单本身不请求 API。测试返回有效消息不等于工具调用、视觉或场景能力已验证。该命令不读取另一运行终端中隐藏输入的 Key。
+check 使用指定环境变量发送简短请求，可能计费；已存配置的切换、列表和高级菜单本身不请求 API；配置向导会查询模型列表，但不逐个调用模型推理。测试返回有效消息不等于工具调用、视觉或场景能力已验证。该命令不读取另一运行终端中隐藏输入的 Key。
 
 ## Master 终端内切换
+
+交互终端输入 `/model`，查询当前 URL 和既有 Key 对应的 `GET /models`，在输入框下方按公司 A–Z、目录日期倒序展示，↑/↓ 选择、Enter 切换；不逐个进行推理探测。查询失败时可使用 `/model MODEL_ID`。模型目录不保证工具／视觉支持，日期仅代表目录元数据。`/model` 不改变 URL、Key 或保存的 profile；更换服务商仍用 `/switch`。
+
+`/fast` 切换当前客户端后续前台请求的档位，`/fast on` 请求 `priority`，`/fast off` 请求 `default`，`/fast status` 显示请求档位和最近响应实际回报的档位。未设置时保持服务商默认行为。此设置不写入 profile，重启或重建客户端后重置；不修改已经启动的后台 Task／Agent 请求。服务商拒绝参数时正常报告错误，不静默降档或重放；开关本身不发送推理请求、不保证加速生效。
 
 ```text
 /switch
@@ -84,3 +88,5 @@ loop-switch remove setup-配置ID
 ```
 
 `remove` 参数是列表中的配置 `name`，不是模型 ID；同一个模型可以有多个配置。当前选中的配置不能删除，先用 `/switch master 另一个配置名` 或 `loop-switch use master 另一个配置名` 切换。若使用了自定义状态目录，独立命令也要指定同一个 `--state-dir`。删除配置记录不会删除会话历史或共享的 endpoint 凭据。此操作由用户明确指定记录后执行。
+
+2026-09-07：配置向导自动探测覆盖预设与自定义 URL，完整展示模型列表。公司名称按 A–Z 分组（已识别系列归一到公司，其他使用接口 owned_by，未知在最后），组内按日期降序；优先 released_at/release_date/created，再尝试型号中的完整日期，无日期标 Unknown 并排在后面，同日期按 ID 排序。created 可能是目录创建时间，不保证是发布时间。编号全局连续，越界重新输入，0 取消，探测失败可手填。默认选中列表中的预设型号或首项，需用户确认输入后保存。此列表不代表 API 类型、工具或视觉能力已验证。

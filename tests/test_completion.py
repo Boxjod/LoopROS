@@ -29,7 +29,7 @@ class CompletionTests(unittest.TestCase):
         def matches(text):return [c.text for c in completer.get_completions(Document(text),CompleteEvent())]
         self.assertEqual(matches('/permissions  allow   r'),['run_sim'])
         self.assertEqual(matches('/permissions\task\tr'),['run_sim'])
-        self.assertEqual(matches('/resume   ab'),['abc123'])
+        self.assertEqual(matches('/resume   ab'),['session'])
         self.assertEqual(matches('/permissions allow\nr'),[])
 
     def test_switch_subcommands_after_space(self):
@@ -42,3 +42,16 @@ class CompletionTests(unittest.TestCase):
         self.assertEqual(matches('/switch setup '), [])
         self.assertEqual(matches(' /switch '), [])
         self.assertEqual(matches('/switch\nse'), [])
+
+
+    def test_agent_role_and_title_completion(self):
+        rows=[{'agent_id':'abc','reference':'@1','title':'检查上下文','role':'Reader','state':'running'},
+              {'agent_id':'def','reference':'@2','title':'检查权限','role':'Reviewer','state':'done'}]
+        completer=SlashCompleter(HELP,agents=lambda:rows,roles=lambda:['Reader','Reviewer'])
+        def matches(text): return list(completer.get_completions(Document(text),CompleteEvent()))
+        self.assertEqual([c.text for c in matches('/spawn Rea')],['Reader'])
+        self.assertEqual([c.text for c in matches('/send 检查')],['@1'])
+        self.assertEqual([c.text for c in matches('/result 检查')],['@1','@2'])
+        self.assertEqual([c.text for c in matches('/agent-messages @2')],['@2'])
+        self.assertEqual(matches('/send @1 不要改变地址'),[])
+        self.assertEqual(matches('/send @1 '),[])

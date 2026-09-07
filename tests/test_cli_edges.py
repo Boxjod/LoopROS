@@ -116,32 +116,51 @@ class CliEdges(unittest.IsolatedAsyncioTestCase):
                 dispatch.assert_called_once_with('/viewer')
                 self.assertEqual(app.agent.history,[])
 
-    async def test_task_arrows_only_cycle_running_and_drop_finished_tasks(self):
+    async def test_task_arrows_only_cycle_current_session_unfinished_tasks(self):
         async with self.terminal() as (app,t,pipe):
-            ids={}
-            for state in ('queued','waiting','blocked','succeeded','cancelled','running'):
-                task=t.task_store.submit({'goal':state,'checks':[]})
-                t.task_store.update(task['id'],state)
-                ids[state]=task['id']
-            second=t.task_store.submit({'goal':'second running','checks':[]})['id']
-            t.task_store.update(second,'running')
-            running={ids['running'],second}
-            seen=set()
-            for key in ('\x1b[C','\x1b[C','\x1b[D','\x1b[D'):
-                pipe.send_text(key);await asyncio.sleep(.15)
-                self.assertIn(t.selected_task,running)
-                seen.add(t.selected_task)
-            self.assertEqual(seen,running)
-            ended=t.selected_task
-            t.task_store.update(ended,'succeeded')
-            t.task_poll_at=0
-            await asyncio.sleep(.2)
-            self.assertEqual(t.selected_task,(running-{ended}).pop())
-            t.task_store.cancel(t.selected_task)
-            t.task_poll_at=0
-            await asyncio.sleep(.2)
-            self.assertIsNone(t.selected_task)
-            self.assertEqual(t.action_panel[1],'No running tasks.')
+            old = t.task_store.submit({'goal':'old unbound', 'checks':[]})
+            foreign = t.task_store.submit({'goal':'other session', 'checks':[], 'session_id':'other'})
+            current = [t.task_store.submit({'goal': state, 'checks':[], 'session_id':app.session_id}) for state in ('running','waiting_input')]
+            current.sort(key=lambda task: task['id'])
+            for task in current:
+                t.task_store.update(task['id'], task['spec']['goal'])
+            pipe.send_text('\x1b[C');await asyncio.sleep(.15)
+            self.assertEqual(t.selected_task, current[0]['id'])
+            pipe.send_text('\x1b[C');await asyncio.sleep(.15)
+            self.assertEqual(t.selected_task, current[1]['id'])
             pipe.send_text('\x1b[C');await asyncio.sleep(.15)
             self.assertIsNone(t.selected_task)
-            self.assertEqual(len(t.task_store.list()),7)
+            t.task_store.cancel(current[0]['id'])
+            pipe.send_text('\x1b[C');await asyncio.sleep(.15)
+            self.assertEqual(t.selected_task, current[1]['id'])
+            t.task_store.cancel(current[1]['id'])
+            t.task_poll_at=0
+            await asyncio.sleep(.25)
+            self.assertIsNone(t.selected_task)
+            self.assertIn('No unfinished background tasks in this session.', t.action_panel[1])
+            self.assertEqual(t.task_store.get(old['id'])['state'], 'queued')
+            self.assertEqual(t.task_store.get(foreign['id'])['state'], 'queued')
+
+    async def test_new_enter_with_completion_goal_and_tasks_panel(self):
+        async with self.terminal() as (app, t, pipe):
+            t.checkpoint()
+            first = t.store.session_id
+            with patch.object(app.client, 'complete', side_effect=AssertionError('No model call')):
+                pipe.send_text('/new')
+                await asyncio.sleep(.25)
+                pipe.send_text('\r')
+                await asyncio.sleep(.25)
+                second = t.store.session_id
+                self.assertNotEqual(first, second)
+                self.assertEqual(app.session_task.snapshot()['session_id'], second)
+                pipe.send_text('/new 核对机器人 192.168.1.19\r')
+                await asyncio.sleep(.25)
+                third = t.store.session_id
+                self.assertNotEqual(second, third)
+                self.assertEqual(app.session_task.snapshot()['goal'], '核对机器人 192.168.1.19')
+                pipe.send_text('/tasks\r')
+                await asyncio.sleep(.25)
+                self.assertNotIn(app.session_task.snapshot()['id'], t.action_panel[1])
+                self.assertIn('核对机器人', t.action_panel[1])
+                self.assertFalse(t.queue)
+                self.assertEqual(t.store.read_session(app.client.config, third)['task']['session_id'], third)

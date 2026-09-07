@@ -42,13 +42,13 @@
 - ask：先阻断并记录确切参数，/requests查看后由用户/approve执行一次；模型不会自己批准。审批不会自动继续原先失败的任务链，结果由这次指令返回。
 - deny：禁止。一次审批不能覆盖后来修改的deny规则。
 - plan：禁止仿真推进、场景生成、启动子Agent及策略服务。对话、专家咨询、状态与设备节点只读观察仍可用；必要的会话／权限元数据仍会写盘，不是文件系统只读沙箱。
-- sim：恢复按规则检查，但real模式仍未实现，不能靠修改权限打开真机。
+- sim：按仿真权限检查。real（hardware 别名）可在会话内选择并持久化，回执为 driver_required；切换不连接设备，现有适配器和硬件验收限制仍有效。
 
 generate_scene权限覆盖完整场景流水线及其可能的专家升级；expert_advice仅指独立专家咨询工具，不是禁止所有GPT API流量。对话模型请求本身由API配置管理，不受这组动作规则当作通用网络防火墙拦截。
 
 权限状态写当前state-dir下permissions.sqlite；审批请求只在进程内保留，最多32条，退出丢弃，不自动执行过期队列。权限更新自后续执行检查生效，不撤销正在执行的外部API请求。服务启动的用户确认对应一次授权；未通过用户确认的隐藏工具调用仍会进入ask。被deny或plan禁止时，确认也无效。
 
-模型工具、slash和子Agent已授予工具都经过动作检查；子Agent还必须通过角色工具白名单。/permissions、/approve等管理员命令不注册为模型工具，定时任务不能调用它们。权限层不是OS沙箱，也不替代设备看门狗、进程隔离或驱动限位。
+模型工具、slash和子Agent已授予工具都经过动作检查；子Agent还必须通过角色工具白名单。模型通过 settings_read/settings_update 管理配置；settings_update 默认 ask，沿用 /requests 和 /approve 的确切参数单次审批，用户也可用 /permissions allow settings_update 持续授权。/approve 不注册为模型工具，定时任务和持久任务不能调用配置管理工具。权限层不是OS沙箱，也不替代设备看门狗、进程隔离或驱动限位。
 
 ## 模拟机械臂控制
 
@@ -86,3 +86,34 @@ generate_scene权限覆盖完整场景流水线及其可能的专家升级；exp
 
 
 明确用户输入“允许所有执行权限”“允许全部执行权限”或“放开所有执行权限”时，操作入口将当前已注册动作设为allow并切换sim模式。它不调用模型、不自动运行工具，不增加未实现的驱动能力；定时任务禁止修改权限。具体动作仍需已有工具与实际设备参数。
+
+
+## 会话配置管理（2026-09-07）
+
+`settings_read` / `settings_update` 始终出现在通用会话工具中，无需加载 robotics。可用自然语言要求修改配置，模型先读取目标，提交具体变更并根据回执说明生效时间。默认写操作沿用权限门禁的 ask；已有 allow 授权后直接执行。配置写入不是启动服务或运动授权。plan 允许会话配置元数据变更，执行类工具仍被禁止。
+
+| target | 修改内容 | 生效时间 |
+| --- | --- | --- |
+| permissions | mode: plan/sim/real（hardware）；profile: default/plan/cautious/yolo；action/rule | 当场保存并执行既有节点权限收紧逻辑；预设仍会重置为 plan 或 sim |
+| profiles | save（可 replace）、use、remove；完整 provider 参数 | 当场；保留会话历史，按 endpoint/env 隔离内存 Key |
+| config | 完整替换用户 config.json；llm/expert、scene、services | 下次 Loop 启动；显式 --config 优先，已选 profile 仍权威 |
+| agents | 完整角色注册表 | 当场及下次启动；保留既有角色工具范围校验 |
+| task_runtime | 完整任务策略，写当前 STATE 覆盖 | 下次显式启动监督器，不自动恢复任务 |
+| deployment | manifest 和 host_id | 当场绑定，无设备启动；需先停止拥有的节点，不允许跨 deployment/host 复用 STATE |
+
+写入前校验，文件替换保留备份。permissions 使用与 `/mode`、`/permissions` 相同的即时规则，监督器在线不阻止切换；权限变化在后续工具检查生效，并回收受影响的前台 Node，不自行启动设备。其他配置仍由活动子Agent或任务监督器阻止修改，错误发生在持久化前。Harness/Skills 使用已有专用工具。Key 使用会话内 `/key save` 隐藏输入，不能作为模型工具参数；启动目录环境变量在下次启动生效，不在当前进程迁移状态。
+
+2026-09-07：审批执行遇到明确的配置前置阻塞时保留原 ID、参数和阻塞原因，解除条件后可再次 `/approve ID`；成功后消费一次。重复并发审批会被拒绝。其他执行异常可能已有副作用，不自动保留可重放的授权；旧 ID 或已消费 ID 给出 `/requests` 指引，不再显示裸 KeyError。审批仍只存在当前进程，重启前的 ID 不可恢复。
+
+直接用户命令也支持：
+
+```text
+/mode real
+/config permissions
+/config profiles
+/config set permissions {"mode":"sim"}
+/config set permissions {"profile":"yolo"}
+/config set profiles {"operation":"use","name":"my-profile"}
+```
+
+`/config set TARGET JSON` 是用户直接管理入口；后台定时指令不可调用。配置文档采用完整替换语义，先读后改，不把未提供字段当作隐式补丁。`settings_read` 不带参数返回目标目录及其他配置入口。真实远程机器人驱动仍需按具体型号接入，不能以 real 模式或 carrier 声明冒充连接成功。

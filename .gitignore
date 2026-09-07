@@ -22,3 +22,4 @@ credentials.json
 # Generated test and MuJoCo files
 .pytest_cache/
 /mjmodel.mjb
+reference/

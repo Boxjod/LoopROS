@@ -16,7 +16,7 @@ from terminal.setup import ensure_setup, quick_setup
 from terminal.llm import ChatAgent, QwenClient
 from terminal.scheduler import Scheduler
 from terminal.services import PolicyServices
-from terminal.agents import AgentRuntime, AGENT_TOOLS
+from terminal.agents import AgentRuntime, AGENT_TOOLS, ALLOWED_AGENT_TOOLS
 from terminal.providers import ProviderStore, choose_profile
 from terminal.permissions import PermissionGate, ACTION_NAMES
 from terminal.control import CONTROL_COMMANDS, operator_command, list_devices
@@ -31,17 +31,19 @@ from terminal.files import FILE_TOOLS, FILE_NAMES, tool as files_tool
 HELP = """Loop ROS commands
 /help, /shortcuts         Show help
 /details [ID]            Expand a tool result (interactive terminal)
-/resume [ID]             Browse/select saved conversations
-/history [ID]            View conversation and per-turn summaries
-/new                     Start a new conversation
+/resume [TITLE]             Browse/select saved conversations
+/history [TITLE]            View conversation and per-turn summaries
+/new [GOAL]              Start a new conversation with fresh work
 /rename NAME             Name the current conversation (interactive)
 /sessions [QUERY]        Search saved conversations (interactive)
-/export [ID]             Export conversation Markdown (interactive)
+/export [TITLE]             Export conversation Markdown (interactive)
 /queue [clear|resume]     Inspect, clear or resume queued work
+/skills [list|inspect|run|status|logs|stop|save]  Select saved executable Skills offline
 /node [help|list|start|use|status|move|logs|stop]  Manage persistent processes
 /carrier [list|status|start|move|stop]  Route to configured local robot carriers
 /key [save]              Set API key; save persists in user home
 /model [name]            Show/change the session model
+/fast [on|off|status]    Toggle requested Fast tier for the current client
 /switch [master|expert] [profile]  Select and save a model profile
 /switch list|reload      List profiles / apply external changes
 /switch setup            Open URL + API key quick setup
@@ -56,15 +58,16 @@ HELP = """Loop ROS commands
 /expert-key [save]       Alias for /key; same model credentials
 /agents                  List roles and subagent tasks
 /spawn role task         Start an isolated subagent
-/send ID message         Send task context to a subagent
-/result ID               Inspect a subagent result
-/stop-agent ID           Cancel a subagent
+/send TARGET message     Send context; choose an agent by title in the menu
+/result TARGET           Inspect a subagent result
+/agent-messages TARGET   Inspect message delivery receipts
+/stop-agent TARGET       Cancel a subagent
 /policy pi05|act status|start|stop
 /after seconds task      Schedule a one-time task
 /every seconds task      Schedule a repeating task
 /jobs                    List legacy foreground timers
-/tasks [list|status ID|cancel ID|resume ID|start|stop|config] Persistent task supervisor
-/task goal               Submit persistent goal (acceptance can be supplied by task_submit)
+/tasks [list|all|status TITLE|cancel TITLE|resume TITLE [-- MESSAGE]|start|stop|config] Persistent task supervisor
+/task [goal]             Show tasks, or submit a persistent goal (task_submit can supply acceptance)
 /trigger event           Fire a configured named event
 /cancel ID               Cancel a pending timer
 /clear                   Clear conversation context
@@ -114,7 +117,8 @@ TOOLS.append({'type': 'function', 'function': {'name': 'simulator_control',
 TOOLS += LIBRARY_TOOLS + DOC_TOOLS + ROBOT_TOOLS
 TOOLS += NODE_TOOLS
 TOOLS += WEB_TOOLS
-TOOLS += SKILL_TOOLS
+from terminal.offline_skills import TOOLS as OFFLINE_SKILL_TOOLS, NAMES as OFFLINE_SKILL_NAMES, tool as offline_skill_tool
+TOOLS += SKILL_TOOLS + OFFLINE_SKILL_TOOLS
 TOOLS += FILE_TOOLS
 from terminal.coding import CODING_TOOLS, CODING_NAMES, tool as coding_tool
 from terminal.harness import HARNESS_TOOLS, HARNESS_NAMES, tool as harness_tool
@@ -127,7 +131,14 @@ TOOLS += TASK_TOOLS
 from terminal.learning import Learning, TOOLS as LEARNING_TOOLS, NAMES as LEARNING_NAMES, tool as learning_tool
 TOOLS += LEARNING_TOOLS
 from terminal.carriers import Carriers, TOOLS as CARRIER_TOOLS, NAMES as CARRIER_NAMES, load_bound, validate_bindings
-TOOLS += CARRIER_TOOLS
+from terminal.settings import TOOLS as SETTINGS_TOOLS, NAMES as SETTINGS_NAMES, call as settings_call
+from terminal.session_task import SessionTask, TOOLS as SESSION_TASK_TOOLS, NAMES as SESSION_TASK_NAMES, call as session_task_call
+from terminal.user_tools import TOOLS as USER_TOOLS, NAMES as USER_TOOL_NAMES, call as user_tool_call
+from terminal.files import schema
+TOOLS += [schema('resource_status', 'Read shared host RAM/CPU/GPU telemetry, resource reservations and admission limits across workloads. Does not launch work.', {}, [])]
+TOOLS += CARRIER_TOOLS + SETTINGS_TOOLS + SESSION_TASK_TOOLS + USER_TOOLS
+from terminal.simulation import TOOLS as SIM_TOOLS, NAMES as SIM_NAMES, call as simulation_call
+TOOLS += SIM_TOOLS
 
 
 class App:
@@ -160,14 +171,23 @@ class App:
         self.last_scene_request = None
         self.scene_generation_error = None
         self.restore_scene_state()
-        self.services = PolicyServices(config["services"], state_dir / "services")
+        from core.resources import ResourceManager
+        from toolchain.admission import HostMonitor
+        self.resources = ResourceManager(state_dir / "resource_leases.sqlite", config.get("resources", {}), HostMonitor())
+        self.services = PolicyServices(config["services"], state_dir / "services", resources=self.resources)
         self.scheduler = Scheduler(state_dir / "jobs.sqlite", recover=not background)
         self.client = QwenClient(config["llm"])
         self.expert = self.client  # Legacy role/tool alias; one model and credential source.
         config["expert"] = self.client.config
-        definitions = AgentRuntime.load_definitions(user_config_file("agents.json"), {"run_sim", "generate_scene"})
+        definitions = AgentRuntime.load_definitions(user_config_file("agents.json"), ALLOWED_AGENT_TOOLS)
+        admission = self.resources
         self.runtime = AgentRuntime(definitions, {"llm": self.client, "expert": self.expert},
-                                    TOOLS + AGENT_TOOLS, self.tool, state_dir / "agents.jsonl")
+                                    TOOLS + AGENT_TOOLS, self.tool, state_dir / "agents.jsonl",
+                                    max_workers=admission.policy["max_workers"], admission=admission)
+        # Submission already passed the permission gate; preserve that approval
+        # while rechecking current mode and deny rules at delayed launch.
+        self.runtime.before_start = lambda role, task: self.permissions.confirmed(
+            "spawn_agent", {"role": role, "task": task}, lambda action, args: None)
         self.runtime.before_tool = lambda agent_id, name, args: self.permissions.check(name, args)
         self.stop_event = threading.Event()
         self.agent = ChatAgent(self.client, TOOLS + AGENT_TOOLS, self.tool,
@@ -179,7 +199,14 @@ class App:
             can_recall=lambda: all(self.permissions.snapshot()['rules'].get(name) == 'allow'
                                    for name in ('experience_search', 'experience_read')))
         self.agent.on_turn_recorded = lambda summary, events: self.learning.record_turn(
-            summary, events, cancelled=self.stop_event.is_set())
+            summary, events, cancelled=self.stop_event.is_set(),
+            session_id=self.session_task.data.get('session_id'), task_id=self.session_task.data['id'],
+            task={k: v for k, v in self.session_task.data.items() if k in ('goal', 'state', 'plan', 'progress', 'next_step', 'checks')})
+        import uuid
+        self.session_id = uuid.uuid4().hex[:12]
+        self.session_task = SessionTask(identity=self.session_id)
+        self.agent.on_tool_result = self.observe_tool_result
+        self.agent.on_session_finished = lambda summary, events: self.session_task.finish(summary, events)
         self.agent.prepare_input = self.prepare_input
         self.agent.context_provider = lambda text: build_conversation_context(self, text)
         self.agent.output_guidance = (
@@ -189,15 +216,28 @@ class App:
         )
         from core.nodes import NodeRuntime
         from toolchain.node_workers import definitions
-        self.nodes = NodeRuntime(definitions(), state_dir / "nodes")
+        self.nodes = NodeRuntime(definitions(), state_dir / "nodes", admission=self.resources)
         self.node_focus = "master"
         self.carriers = Carriers(self, self.deployment)
         self.confirm = confirm or (lambda message: input(message + " [y/N] ").strip().lower() == "y")
 
     def prepare_input(self, text, attachments):
         from terminal.references import prepare
+        self.session_task.begin(text)
         self.active_toolsets.clear()  # Specialist schemas last for one turn only.
         return prepare(self, text, attachments)
+
+    def observe_tool_result(self, name, args, result):
+        # Advisory feedback is added to the actual receipt; it never retries an action.
+        from terminal.connection_memory import fallback
+        import sqlite3
+        try:
+            feedback = fallback(self.learning, result)
+            if feedback:
+                result['memory_feedback'] = feedback
+        except (OSError, ValueError, sqlite3.Error):
+            pass  # Memory availability must not mask the operation's real outcome.
+        self.session_task.receipt(name, args, result)
 
     def enforce_node_permissions(self):
         permissions = self.permissions.snapshot()
@@ -206,11 +246,21 @@ class App:
         for node in self.nodes.status()['nodes']:
             if not node['process_alive']:
                 continue
-            dependencies = ['node_start'] + (['open_serial', 'read_serial'] if node['kind'] == 'serial_rx' else ['move_sim', 'node_command'])
+            dependencies = ['node_start'] + (['open_serial', 'read_serial'] if node['kind'] == 'serial_rx' else ['run_python', 'node_command'] if node['kind'] == 'process' else ['move_sim', 'node_command'])
             if permissions['mode'] == 'plan' or any(permissions['rules'][action] == 'deny' for action in dependencies):
                 self.nodes.stop(node['name'])
 
     def tool(self, name, args):
+        if name == 'resource_status':
+            if args != {}: raise ValueError('No arguments expected')
+            self.permissions.check(name, args)
+            return self.resources.status()
+        if name in USER_TOOL_NAMES:
+            return user_tool_call(self, name, args)
+        if name in SESSION_TASK_NAMES:
+            return session_task_call(self, name, args)
+        if name in SETTINGS_NAMES:
+            return settings_call(self, name, args)
         if name == "run_python":
             self.permissions.check(name, args)
             from terminal.python_runner import run
@@ -239,6 +289,8 @@ class App:
             self.permissions.check(name,args)
             from terminal.robotics import dispatch
             return dispatch(self,name,args)
+        if name in SIM_NAMES:
+            return simulation_call(self,name,args)
         if name == 'mujoco_docs':
             self.permissions.check(name, args)
             from terminal.mujoco_docs import lookup
@@ -275,6 +327,8 @@ class App:
         if name in {t['function']['name'] for t in NODE_TOOLS}:
             from terminal.nodes import tool
             return tool(self, name, args)
+        if name in OFFLINE_SKILL_NAMES:
+            return offline_skill_tool(self, name, args)
         if name in SKILL_NAMES:
             return skills_tool(self, name, args)
         if name in {"open_serial", "read_serial", "serial_status", "close_serial"}:
@@ -366,6 +420,10 @@ class App:
             if args != {}:
                 raise ValueError("no arguments expected")
             return self.runtime.status()
+        if name == "agent_messages":
+            if not isinstance(args, dict) or set(args) != {"agent_id"}:
+                raise ValueError("agent_id required")
+            return self.runtime.messages(**args)
         if name == "agent_result":
             return self.runtime.result(**args)
         if name == "send_agent":
@@ -523,15 +581,16 @@ class App:
         return result
 
     def scheduled_tool(self, name, args):
+        if name in SETTINGS_NAMES | SESSION_TASK_NAMES | USER_TOOL_NAMES | {"skill_run", "skill_export"}: raise ValueError("Scheduled tasks cannot manage session settings, tasks or executable Skills")
         if name in CARRIER_NAMES: raise ValueError("Scheduled carrier routing is not enabled")
         if name in TASK_NAMES: raise ValueError("Legacy foreground timers cannot submit persistent tasks; use task_runtime.json schedules")
         if name in {"compose_scene", "generate_scene", "simulator_control", "load_model", "node_start", "node_command", "node_stop", "open_serial", "read_serial", "close_serial", "open_simulator", "close_simulator"} or name not in {tool["function"]["name"] for tool in TOOLS}:
             raise ValueError("Scheduled tasks cannot call agent management tools")
         return self.tool(name, args)
 
-    def apply_profiles(self):
+    def apply_profiles(self, clear_history=True):
         with self.runtime.lock:
-            if any(r["state"] == "running" for r in self.runtime.records.values()):
+            if any(r["state"] in ("running", "queued") for r in self.runtime.records.values()):
                 raise ValueError("Wait for or cancel running subagents before switching models")
             selected = self.providers.selected()
             snapshots = {slot: self.providers.get(name) for slot, name in selected.items()}
@@ -544,12 +603,13 @@ class App:
                 client.config = new
                 client.key = self.key_cache.get((new["base_url"], new["api_key_env"]))
             self.config["expert"] = self.client.config
-            self.agent.history.clear(); self.agent.turn_summaries.clear()
+            if clear_history:
+                self.agent.history.clear(); self.agent.turn_summaries.clear()
             return selected
 
     def switch_profile(self, slot, name):
         with self.runtime.lock:
-            if any(r["state"] == "running" for r in self.runtime.records.values()):
+            if any(r["state"] in ("running", "queued") for r in self.runtime.records.values()):
                 raise ValueError("Wait for or cancel running subagents before switching models")
             self.providers.use(slot, name)
             return self.apply_profiles()
@@ -638,7 +698,7 @@ class App:
                 if not sys.stdin.isatty():
                     raise ValueError("Quick setup requires an interactive terminal")
                 with self.runtime.lock:
-                    if any(r["state"] == "running" for r in self.runtime.records.values()):
+                    if any(r["state"] in ("running", "queued") for r in self.runtime.records.values()):
                         raise ValueError("Wait for or cancel running subagents before setup")
                     if quick_setup(self.providers):
                         self.apply_profiles()
@@ -656,24 +716,35 @@ class App:
             if not sys.stdin.isatty():
                 raise ValueError("Specify a profile name for noninteractive calls")
             with self.runtime.lock:
-                if any(r["state"] == "running" for r in self.runtime.records.values()):
+                if any(r["state"] in ("running", "queued") for r in self.runtime.records.values()):
                     raise ValueError("Wait for or cancel running subagents first")
                 name = choose_profile(self.providers, slot)
                 if name:
                     self.apply_profiles()
                 return "Switched: " + name if name else "Cancelled."
         if command == "/agents":
-            return json.dumps(self.runtime.status(), ensure_ascii=False)
+            if tail.strip() not in ('', 'active', 'all'):
+                raise ValueError('Usage: /agents [active|all]')
+            value = self.tool('agents_status', {})
+            if tail.strip() == 'active':
+                value['tasks'] = [row for row in value['tasks'] if row['state'] in ('running','queued')]
+            return json.dumps(value, ensure_ascii=False)
         if command == "/spawn":
             role, _, task = tail.partition(" ")
             return json.dumps(self.tool("spawn_agent", {"role": role, "task": task}), ensure_ascii=False)
         if command == "/send":
-            agent_id, _, message = tail.partition(" ")
-            return json.dumps(self.runtime.send(agent_id, message), ensure_ascii=False)
-        if command == "/result":
-            return json.dumps(self.runtime.result(tail.strip()), ensure_ascii=False)
-        if command == "/stop-agent":
-            return json.dumps(self.runtime.cancel(tail.strip()), ensure_ascii=False)
+            target, _, message = tail.partition(" ")
+            if not message.strip():
+                raise ValueError('Usage: /send TARGET message')
+            agent_id = self.runtime.resolve(target)
+            return json.dumps(self.tool('send_agent', {'agent_id':agent_id, 'message':message}), ensure_ascii=False)
+        if command in ('/result', '/stop-agent', '/agent-messages'):
+            agent_id = self.runtime.resolve(tail.strip())
+            tool = {'/result':'agent_result', '/stop-agent':'cancel_agent', '/agent-messages':'agent_messages'}[command]
+            return json.dumps(self.tool(tool, {'agent_id':agent_id}), ensure_ascii=False)
+        if command == "/skills":
+            from terminal.offline_skills import dispatch
+            return dispatch(self, tail)
         if command in ("/help", "/shortcuts"):
             return HELP
         if command == "/status":
@@ -697,9 +768,24 @@ class App:
             return "API key set in memory." if self.client.key else "No key set."
         if command == "/model":
             if tail.strip():
+                with self.runtime.lock:
+                    if any(r['state'] in ('running', 'queued') for r in self.runtime.records.values()):
+                        raise ValueError('Wait for or cancel running subagents before changing model')
                 self.config["llm"]["model"] = tail.strip()
+                self.client.config['model'] = tail.strip()
                 self.agent.history.clear(); self.agent.turn_summaries.clear()
             return self.config["llm"]["model"]
+        if command == '/fast':
+            option = tail.strip().lower()
+            if option not in ('', 'on', 'off', 'status'):
+                raise ValueError('Usage: /fast [on|off|status]')
+            if option != 'status':
+                enabled = option == 'on' or (not option and self.client.request_service_tier != 'priority')
+                self.client.request_service_tier = 'priority' if enabled else 'default'
+            requested = self.client.request_service_tier or 'provider default'
+            return ('Fast requested tier: ' + requested + '. Last response tier: '
+                    + (self.client.last_service_tier or 'not confirmed')
+                    + '. Applies to subsequent foreground requests; provider support is not guaranteed.')
         if command == "/clear":
             self.agent.history.clear(); self.agent.turn_summaries.clear()
             return "Conversation context cleared."
@@ -716,22 +802,40 @@ class App:
                 return json.dumps(self.permissions.confirmed("policy_start", {"name": name}, self.tool))
             return json.dumps(getattr(self.services, action)(name))
         if command == '/task':
-            return json.dumps(self.tool('task_submit',{'goal':tail}),ensure_ascii=False)
+            if tail.strip():
+                return json.dumps(self.tool('task_submit',{'goal':tail}),ensure_ascii=False)
+            command = '/tasks'
         if command == '/trigger':
             return json.dumps(self.tool('task_signal',{'name':tail}),ensure_ascii=False)
         if command == '/tasks':
             from terminal.task_service import start,stop,policy_path
             from core.tasks import TaskStore
             parts=tail.split();action=parts[0] if parts else 'list'
-            if action in ('list','start','stop','config') and len(parts)<=1:
+            if action in ('list','all','start','stop','config') and len(parts)<=1:
                 if action=='start': result=start(self)
                 elif action=='stop': result=stop(self.state_dir)
                 elif action=='config': result={'path':str(policy_path(self.state_dir)),'config':json.loads(policy_path(self.state_dir).read_text())}
-                else: result=self.tool('task_status',{})
-            elif action in ('status','cancel','resume') and (len(parts)==2 or action=='resume' and len(parts)>2):
-                result=self.tool({'status':'task_status','cancel':'task_cancel','resume':'task_resume'}[action],{'task_id':parts[1],**({'message':' '.join(parts[2:])} if len(parts)>2 else {})})
-                if action=='status': result['history']=TaskStore(self.state_dir/'tasks.sqlite').history(parts[1])
-            else: raise ValueError('Usage: /tasks [list|status ID|cancel ID|resume ID|start|stop|config]')
+                else: result=self.tool('task_status',{'scope':'all'} if action=='all' else {})
+            elif action in ('status','cancel','resume') and len(parts)>=2:
+                from terminal.task_tools import resolve_reference
+                reference = tail[len(action):].strip()
+                message = None
+                if action == 'resume':
+                    reference, separator, message = reference.partition(' -- ')
+                    if not separator:
+                        message = None
+                        # Preserve existing /tasks resume ID MESSAGE scripts.
+                        try:
+                            TaskStore(self.state_dir/'tasks.sqlite').get(parts[1])
+                        except ValueError:
+                            pass
+                        else:
+                            reference = parts[1]
+                            message = ' '.join(parts[2:]) or None
+                identity = resolve_reference(self, reference)
+                result=self.tool({'status':'task_status','cancel':'task_cancel','resume':'task_resume'}[action],{'task_id':identity,**({'message':message} if message else {})})
+                if action=='status': result['history']=TaskStore(self.state_dir/'tasks.sqlite').history(identity)
+            else: raise ValueError('Usage: /tasks [list|all|status TITLE|cancel TITLE|resume TITLE [-- MESSAGE]|start|stop|config]')
             return json.dumps(result,ensure_ascii=False)
         if command in ("/after", "/every"):
             seconds, sep, task = tail.partition(" ")
@@ -746,6 +850,8 @@ class App:
         raise ValueError("Unknown command. Type /help")
 
     def close(self):
+        if hasattr(self, 'simulation_workbench'):
+            self.simulation_workbench.close()
         try:
             self.nodes.close()
             self.runtime.close()
@@ -809,7 +915,8 @@ def main(argv=None):
                 from terminal.interactive import run
                 run(app)
                 return 0
-            print(welcome(app.client.config["model"], app.expert.config["model"], app.permissions.snapshot()["mode"]))
+            print(welcome(app.client.config["model"], app.expert.config["model"], app.permissions.snapshot()["mode"],
+                          fast_status=getattr(app, 'startup_fast_status', None)))
             executor = ThreadPoolExecutor(max_workers=1)
             pending = None
             continuations = 0
@@ -828,7 +935,7 @@ def main(argv=None):
                     notifications, app.runtime.notifications = app.runtime.notifications, []
                     has_mail = bool(app.runtime.mail)
                 for event in notifications:
-                    print("\n[{} {}] {}".format(event["role"], event["agent_id"], event["state"]), flush=True)
+                    print("\n[{} {}] {} · {}".format(event["role"], event.get("reference", ""), event.get("title", "Agent"), event["state"]), flush=True)
                 if pending is None and has_mail and continuations < 8:
                     continuations += 1
                     pending = executor.submit(app.agent.reply, "请处理新到达的子任务消息，依据证据继续协调或汇总。")
@@ -849,7 +956,7 @@ def main(argv=None):
                         else:
                             continuations = 0
                             pending = executor.submit(app.dispatch, line, focus="master")
-                    elif pending and line.split()[0] not in ("/node", "/agents", "/send", "/result", "/stop-agent", "/help", "/stop", "/permissions", "/requests", "/mode", "/plan"):
+                    elif pending and line.split()[0] not in ("/node", "/agents", "/spawn", "/send", "/result", "/agent-messages", "/stop-agent", "/help", "/stop", "/permissions", "/requests", "/mode", "/plan"):
                         print("Master is busy; only task management, permissions, stop and help are available.")
                     else:
                         print("Master > " + app.dispatch(line))

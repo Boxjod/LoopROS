@@ -77,4 +77,5 @@ class ToolDisplay:
                 summary = 'Weather data retrieved'
             elif name == 'web_fetch':
                 summary = 'Page retrieved' + (' · truncated' if data.get('truncated') else '')
-        return shorten(summary, 170) + elapsed + f' · /details {event_id}'
+        details = f' · /details {event_id}' if event_id is not None else ''
+        return shorten(summary, 170) + elapsed + details

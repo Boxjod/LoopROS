@@ -4,6 +4,7 @@ import os
 from pathlib import Path
 import sqlite3
 import uuid
+from terminal.titles import conversation_title
 
 
 class SessionStore:
@@ -38,12 +39,14 @@ class SessionStore:
         state['session_id'] = self.session_id
         return state
 
-    def save(self, config, history, queue, draft='', attachments=(), summaries=()):
+    def save(self, config, history, queue, draft='', attachments=(), summaries=(), task=None):
         if self.provider is not None and self.provider != self.identity(config):
             self.new_session()
         self.provider = self.identity(config)
         self.session_id = self.session_id or uuid.uuid4().hex[:12]
-        data = {'session_id':self.session_id, 'summaries':list(summaries), 'provider': self.identity(config), 'history': history, 'queue': list(queue),
+        from terminal.session_task import SessionTask
+        task = SessionTask(task, identity=self.session_id, history=history).snapshot()
+        data = {'task': task, 'session_id':self.session_id, 'summaries':list(summaries), 'provider': self.identity(config), 'history': history, 'queue': list(queue),
                 'draft': draft, 'attachments': list(attachments)}
         with self.db:
             self.db.execute('INSERT OR REPLACE INTO checkpoint VALUES (1, ?)',
@@ -52,20 +55,44 @@ class SessionStore:
                             (self.session_id,json.dumps(self.identity(config)),json.dumps(data,ensure_ascii=False)))
 
     def list_sessions(self, config, query='', limit=30):
-        rows=self.db.execute('SELECT id,data,updated FROM sessions WHERE provider=? ORDER BY updated DESC,rowid DESC',
+        rows=self.db.execute('SELECT id,data,updated,rowid FROM sessions WHERE provider=? ORDER BY updated DESC,rowid DESC',
                              (json.dumps(self.identity(config)),)).fetchall()
         result=[]
-        for identity,raw,updated in rows:
+        for identity,raw,updated,number in rows:
             data=json.loads(raw)
             users=[m.get('content','') for m in data.get('history',[]) if m.get('role')=='user']
-            title=users[0] if users and isinstance(users[0],str) else '[media or empty session]'
+            title=conversation_title(data.get('history', []), data.get('task'))
             named = self.db.execute('SELECT name FROM session_names WHERE id=?', (identity,)).fetchone()
             title = named[0] if named else title
-            if query.casefold() not in (identity + ' ' + title + ' ' + json.dumps(data.get('history', []), ensure_ascii=False)).casefold():
-                continue
-            result.append({'id':identity,'title':title[:100],'turns':len(users),'updated':updated,
-                           'last_summary':data.get('summaries',[])[-1:]})
+            result.append({'id':identity,'title':title[:100],'number':number,'turns':len(users),'updated':updated,
+                           'task_state': data.get('task', {}).get('state', 'idle'), 'last_summary':data.get('summaries',[])[-1:]})
+        from collections import Counter
+        totals = Counter(row['title'] for row in result)
+        for row in result:
+            row['label'] = row['title'] + (' [' + str(row['number']) + ']' if totals[row['title']] > 1 else '')
+        matching = {identity for identity, raw, _, _ in rows if query.casefold() in (identity + ' ' + raw).casefold()}
+        result = [row for row in result if row['id'] in matching or query.casefold() in row['label'].casefold()]
         return result if limit is None else result[:limit]
+
+    def resolve(self, config, reference):
+        rows = self.list_sessions(config, limit=None)
+        for row in rows:
+            if reference == row['id']:
+                return row['id']  # Existing command links remain valid.
+        matches = [row for row in rows if reference == row['label']]
+        if len(matches) == 1:
+            return matches[0]['id']
+        if len(matches) > 1:
+            raise ValueError('Conversation titles are ambiguous; rename one before selecting it')
+        matches = [row for row in rows if reference == row['title']]
+        if len(matches) == 1:
+            return matches[0]['id']
+        if matches:
+            raise ValueError('Several conversations share that title; choose a numbered title from /resume')
+        raise ValueError('Conversation not found; choose a title from /resume')
+
+    def title(self, config):
+        return next((row['label'] for row in self.list_sessions(config, limit=None) if row['id'] == self.session_id), 'New conversation')
 
     def rename(self, config, name):
         name = name.strip()
@@ -77,10 +104,10 @@ class SessionStore:
         return name
 
     def export(self, config, identity=None):
-        identity = identity or self.session_id
+        identity = self.resolve(config, identity or self.session_id)
         data = self.read_session(config, identity)
         title = next(row['title'] for row in self.list_sessions(config, limit=None) if row['id'] == identity)
-        lines = ['# ' + title, '', 'Session: ' + identity, '']
+        lines = ['# ' + title, '']
         for message in data.get('history', []):
             content = message.get('content', '')
             if not isinstance(content, str):
@@ -88,26 +115,35 @@ class SessionStore:
             lines += ['## ' + str(message.get('role', 'message')), '', content, '']
             if message.get('tool_calls'):
                 lines += ['```json', json.dumps(message['tool_calls'], ensure_ascii=False, indent=2), '```', '']
+        if data.get('task'):
+            task = data['task']
+            lines += ['## Task', '', 'State: ' + task['state'], '', task['goal'], '', *['- ' + step for step in task['plan']], '', task['progress'], '', task['next_step'], '']
         from terminal.turn_summary import display
         if data.get('summaries'):
             lines += ['## Turn summaries', ''] + [display(summary) for summary in data['summaries']]
         directory = self.path.parent / 'exports'
         directory.mkdir(mode=0o700, exist_ok=True)
-        path = directory / (identity + '-' + uuid.uuid4().hex[:8] + '.md')
+        import re
+        stem = re.sub(r'[\\/:*?"<>|]', '_', title).strip(' .')[:60] or 'conversation'
+        path = directory / (stem + '-' + uuid.uuid4().hex[:8] + '.md')
         fd = os.open(path, os.O_WRONLY | os.O_CREAT | os.O_EXCL, 0o600)
         with os.fdopen(fd, 'w', encoding='utf-8') as output:
             output.write('\n'.join(lines))
         return path.resolve()
 
     def read_session(self, config, identity):
+        identity = self.resolve(config, identity)
         row=self.db.execute('SELECT data FROM sessions WHERE id=? AND provider=?',
                             (identity,json.dumps(self.identity(config)))).fetchone()
         if not row: raise ValueError('Session not found for the current provider/model')
-        return json.loads(row[0])
+        data = json.loads(row[0])
+        from terminal.session_task import SessionTask
+        data['task'] = SessionTask(data.get('task'), identity=identity, history=data.get('history', [])).snapshot()
+        return data
 
     def resume(self, config, identity):
         data=self.read_session(config,identity)
-        self.session_id=identity
+        self.session_id=data['session_id']
         self.provider=self.identity(config)
         return data
 

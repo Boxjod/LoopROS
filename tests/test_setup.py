@@ -27,13 +27,14 @@ class SetupTests(unittest.TestCase):
         self.tmp.cleanup()
 
     def wizard(self, answers, **kwargs):
-        return quick_setup(self.store, read=Mock(side_effect=answers),
-                           secret=lambda prompt: "test-only", write=lambda text: None, **kwargs)
+        with patch("terminal.setup.build_opener", side_effect=OSError("offline test")):
+            return quick_setup(self.store, read=Mock(side_effect=answers),
+                               secret=lambda prompt: "test-only", write=lambda text: None, **kwargs)
 
     def test_default_two_fields_persist(self):
-        with patch("terminal.setup.discover_models") as discover:
+        with patch("terminal.setup.discover_models", return_value=[]) as discover:
             name = self.wizard(["", "", ""])
-            discover.assert_not_called()
+            discover.assert_called_once()
         config = self.store.get(name)
         self.assertEqual(config["protocol"], "openai-responses")
         self.assertEqual(config["model"], "gpt-6-astra")
@@ -43,7 +44,7 @@ class SetupTests(unittest.TestCase):
         self.assertNotIn("test-only", json.dumps(self.store.list()))
 
     def test_custom_discovery_and_advanced(self):
-        with patch("terminal.setup.discover_models", return_value=["vendor-model"]):
+        with patch("terminal.setup.discover_models", return_value=[{"id": "vendor-model", "company": "Unknown", "date": "Unknown"}]):
             name = self.wizard(["https://custom.example/v1", "", ""])
         self.assertEqual(self.store.get(name)["model"], "vendor-model")
         name = self.wizard(["https://custom.example/v2", "2", "explicit-model"])
@@ -51,9 +52,9 @@ class SetupTests(unittest.TestCase):
 
     def test_custom_gpt6_uses_explicit_endpoint_and_preserves_profiles(self):
         before = {item["name"]: self.store.get(item["name"]) for item in self.store.list()}
-        with patch("terminal.setup.discover_models") as discover:
+        with patch("terminal.setup.discover_models", return_value=[]) as discover:
             name = self.wizard(["https://gateway.example/v1", "2", "gpt-6-astra"])
-            discover.assert_not_called()
+            discover.assert_called_once()
         config = self.store.get(name)
         self.assertEqual(config["base_url"], "https://gateway.example/v1")
         self.assertEqual(config["protocol"], "openai-responses")
@@ -119,14 +120,17 @@ class SetupTests(unittest.TestCase):
             payload = ({'choices': [{'message': {'content': 'OK'}}]} if protocol == 'openai' else
                        {'status': 'completed', 'output': [{'type': 'message', 'content': [{'type': 'output_text', 'text': 'OK'}]}]})
             with patch('terminal.llm.build_opener') as opener:
-                opener.return_value.open.return_value = io.BytesIO(json.dumps(payload).encode())
+                opener.return_value.open.side_effect = lambda *args, **kwargs: io.BytesIO(json.dumps(payload).encode())
                 check_connection(client)
-                request = opener.return_value.open.call_args.args[0]
+                initial = opener.return_value.open.call_args_list[0]
+                request = initial.args[0]
                 self.assertEqual(request.full_url, 'https://gateway.example/v1' + endpoint)
                 body = json.loads(request.data)
                 self.assertNotIn('tools', body)
                 self.assertFalse(body['stream'])
-                self.assertEqual(opener.return_value.open.call_args.kwargs['timeout'], client.config['timeout_s'])
+                self.assertEqual(initial.kwargs['timeout'], client.config['timeout_s'])
+                self.assertEqual(opener.return_value.open.call_count, 2)
+                self.assertEqual(opener.return_value.open.call_args.kwargs['timeout'], 10)
                 self.assertEqual(request.get_header('Authorization'), 'Bearer probe-secret')
                 self.assertEqual(client.config['timeout_s'], 60)
             with patch('terminal.setup.QwenClient.complete', return_value={'content': ''}):
@@ -138,7 +142,7 @@ class SetupTests(unittest.TestCase):
         with patch("terminal.setup.build_opener") as opener:
             opener.return_value.open.return_value = response
             result = discover_models({"base_url": "https://example.com/v1"}, "test")
-            self.assertEqual(result, ["chat-a", "chat-b"])
+            self.assertEqual([item["id"] for item in result], ["chat-a", "chat-b"])
             request = opener.return_value.open.call_args[0][0]
             self.assertEqual(request.full_url, "https://example.com/v1/models")
             self.assertEqual(request.get_method(), "GET")
@@ -168,3 +172,52 @@ class SetupTests(unittest.TestCase):
             decode(config, {"status": "incomplete", "output": []})
         with self.assertRaises(ValueError):
             validate_provider({**config, "protocol": "unsupported"})
+
+    def test_catalog_company_time_sort_and_malformed_entries(self):
+        data = [
+            {"id": "gpt-new", "created": 200},
+            {"id": "claude-old", "created": 100, "owned_by": "gateway"},
+            {"id": "qwen-20260901"},
+            {"id": "claude-new", "created": 300},
+            {"id": "gpt-undated", "created": "invalid"},
+            {"id": "gpt-old", "created": 100},
+            {"id": "claude-new", "created": 200},
+            {"id": "custom", "owned_by": "Acme", "release_date": "2026-09-02"},
+            {"id": "unknown"}, {"id": "bad\nID"}, {"id": 123}, {}, None,
+        ]
+        with patch("terminal.setup.build_opener") as opener:
+            opener.return_value.open.return_value = io.BytesIO(json.dumps({"data": data}).encode())
+            result = discover_models({"base_url": "https://gateway.example/v1"}, "private-key")
+        self.assertEqual([m["id"] for m in result], ["custom", "qwen-20260901", "claude-new",
+                         "claude-old", "gpt-new", "gpt-old", "gpt-undated", "unknown"])
+        self.assertEqual(result[1]["date"], "2026-09-01")
+        self.assertEqual(result[2]["timestamp"], 300)
+        self.assertEqual(result[-2]["date"], "Unknown")
+
+    def test_selection_lists_all_models_and_reprompts_bad_number(self):
+        models = [{"id": "model-{}".format(i), "company": "Acme", "date": "Unknown"} for i in range(45)]
+        output = []
+        with patch("terminal.setup.discover_models", return_value=models):
+            name = quick_setup(self.store, read=Mock(side_effect=["c", "https://gateway.example/v1", "1", "99", "45"]),
+                               secret=lambda _: "private-key", write=output.append)
+        self.assertEqual(self.store.get(name)["model"], "model-44")
+        self.assertIn("  45. model-44 | Unknown", output)
+        self.assertNotIn("private-key", "\n".join(output))
+
+    def test_catalog_cancel_does_not_save_key_or_profile(self):
+        before = self.store.list()
+        with patch("terminal.setup.discover_models", return_value=[{"id": "gpt-test", "company": "OpenAI", "date": "Unknown"}]):
+            self.assertIsNone(self.wizard(["1", "2", "0"]))
+        self.assertEqual(self.store.list(), before)
+        self.assertFalse((Path(self.tmp.name) / "credentials.json").exists())
+
+    def test_discovery_errors_are_sanitized(self):
+        for response in (b'not-json', b'{"data": {}}', b'x' * (1024 * 1024 + 1)):
+            with patch("terminal.setup.build_opener") as opener:
+                opener.return_value.open.return_value = io.BytesIO(response)
+                with self.assertRaisesRegex(ValueError, "Model discovery unavailable"):
+                    discover_models({"base_url": "https://gateway.example/v1"}, "private-key")
+        with patch("terminal.setup.build_opener", side_effect=OSError("private-key")):
+            with self.assertRaises(ValueError) as error:
+                discover_models({"base_url": "https://gateway.example/v1"}, "private-key")
+            self.assertNotIn("private-key", str(error.exception))
